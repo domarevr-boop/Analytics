@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getBrands, getGroups, getProducts, getMemberships, getProducts as getProductsStore, addCabinet, addGroup, addProduct, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getBrands, getGroups, getMemberships, getProducts as getProductsStore, addCabinet, addGroup, addProduct, UNGROUPED_GROUP_ID } from '../data/store';
 import EntityEditPanel from './EntityEditPanel';
 
 type EntityType = 'cabinet' | 'group' | 'product';
@@ -59,7 +59,7 @@ export default function DictionaryPage() {
     setExpanded(prev => { const next = new Set(prev); next.add(grp.id); return next; });
   };
 
-  const handleAddProduct = (groupId: string) => {
+  const handleAddProduct = (_groupId: string) => {
     const name = newName.trim();
     if (!name) return;
     const defaultBrandId = brands[0]?.id || '';

@@ -113,9 +113,9 @@ export default function ImportPage() {
       const [y, m, d] = s.split('-');
       return `${d}.${m}.${y}`;
     };
-    return log.dataStart === log.dataEnd
-      ? d(log.dataStart)
-      : `${d(log.dataStart)} — ${d(log.dataEnd)}`;
+    if (!log.dataStart) return '';
+    if (!log.dataEnd || log.dataStart === log.dataEnd) return d(log.dataStart);
+    return `${d(log.dataStart)} — ${d(log.dataEnd)}`;
   };
 
   const formatDate = (iso: string) => {

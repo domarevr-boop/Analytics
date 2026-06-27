@@ -3,8 +3,6 @@ import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMembersh
 import type { MonthlyPlanRecord } from '../types';
 import * as XLSX from 'xlsx';
 
-const MONTHS_RU = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-
 const PLAN_FIELDS: { key: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>; label: string; suffix: string; decimals: number }[] = [
   { key: 'avgQtyPerDay', label: 'Ср шт/день', suffix: '', decimals: 1 },
   { key: 'costPrice', label: 'Себес', suffix: ' ₽', decimals: 2 },
@@ -16,16 +14,6 @@ const PLAN_FIELDS: { key: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>; label:
   { key: 'totalRubles', label: 'Заказы, руб', suffix: ' ₽', decimals: 0 },
   { key: 'buyoutRate', label: '% выкупа', suffix: '%', decimals: 1 },
 ];
-
-function parseMonth(month: string): { year: number; monthNum: number } {
-  const [y, m] = month.split('-').map(Number);
-  return { year: y, monthNum: m };
-}
-
-function monthLabel(month: string): string {
-  const { year, monthNum } = parseMonth(month);
-  return `${MONTHS_RU[monthNum]} ${year}`;
-}
 
 function f(v: number, d: number = 0): string {
   return v.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });

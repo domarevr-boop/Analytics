@@ -496,11 +496,6 @@ export function getMonthlyPlansForMonth(month: string): MonthlyPlanRecord[] {
   return _monthlyPlans.filter(p => p.month === month).map(p => ({ ...p }));
 }
 
-function _monthPlanToPatch(rec: MonthlyPlanRecord): Partial<MonthlyPlanRecord> {
-  const { avgQtyPerDay, costPrice, checkAmount, netProfitPerUnit, totalNetProfit, profitability, totalQty, totalRubles, buyoutRate } = rec;
-  return { avgQtyPerDay, costPrice, checkAmount, netProfitPerUnit, totalNetProfit, profitability, totalQty, totalRubles, buyoutRate };
-}
-
 export function updateMonthlyPlanField(sku: string, month: string, field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>, value: number) {
   const rec = _monthlyPlans.find(p => p.sku === sku && p.month === month);
   if (!rec) return;

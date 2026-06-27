@@ -64,10 +64,6 @@ function getPlanMap(periodStart: string): Map<string, { totalRubles: number; buy
   return map;
 }
 
-interface ProductInfo {
-  sku: string;
-}
-
 function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, { totalRubles: number; buyoutRate: number }>, productSku?: string) {
   const rows = getMetrics().filter(m => m.product_id === productId && m.date >= start && m.date <= end);
   const total = (fn: (m: typeof rows[0]) => number) => rows.reduce((s, m) => s + fn(m), 0);
