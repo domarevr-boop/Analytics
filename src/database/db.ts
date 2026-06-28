@@ -85,7 +85,7 @@ class LocalRepository implements IDataRepository {
   // ── IDataRepository implementation ─────────────────
 
   async initialize(): Promise<void> {
-    const resp = await fetch('/sql-wasm.wasm');
+    const resp = await fetch(`${import.meta.env.BASE_URL}sql-wasm.wasm`);
     const wasmBinary = await resp.arrayBuffer();
     this.SQL = await initSqlJs({ wasmBinary });
     const saved = await this._loadFromIdb();
