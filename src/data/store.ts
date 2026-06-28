@@ -288,6 +288,58 @@ export function detectSourceFromFilename(fileName: string): ImportSource {
  * Headers are internal field names (sku, date, impressions, …).
  * Source is passed explicitly — no content-based detection.
  */
+const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
+  wb_funnel: new Set([
+    'impressions', 'clicks', 'carts', 'orders', 'buyouts', 'cancellations',
+    'ordered_amount', 'buyout_amount', 'cancellation_amount',
+    'stock',
+  ]),
+  xway: new Set([
+    'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend',
+  ]),
+  profitability: new Set([
+    'actual_profit', 'actual_margin',
+  ]),
+  plan_template: new Set([]),
+};
+
+export function clearMetricsRange(source: ImportSource, dateFrom: string, dateTo: string): number {
+  const fields = SOURCE_FIELDS[source];
+  if (!fields || fields.size === 0) return 0;
+  let count = 0;
+  for (const m of _metrics) {
+    if (m.date >= dateFrom && m.date <= dateTo) {
+      let touched = false;
+      for (const f of fields) {
+        if (m[f] !== 0) {
+          (m as any)[f] = 0;
+          touched = true;
+        }
+      }
+      if (touched) count++;
+    }
+  }
+  if (count > 0) notify();
+  return count;
+}
+
+export function resetAllData(): void {
+  _cabinets = [];
+  _brands = [];
+  _groups = [];
+  _products = [];
+  _memberships = [];
+  _metrics = [];
+  _importLog = [];
+  _plans = [];
+  _monthlyPlans = [];
+  _nextId = 100;
+  _nextLogId = 1;
+  seed();
+  persistAll();
+  notify();
+}
+
 export function importMappedData(fileName: string, source: ImportSource, rows: Record<string, string>[], dateOverride?: string, cabinetId?: string, cabinetName?: string): ImportFileLog {
   const log: ImportFileLog = {
     id: `log-${_nextLogId++}`, fileName, source, rowCount: 0,
@@ -324,8 +376,9 @@ export function importMappedData(fileName: string, source: ImportSource, rows: R
       }
       const patch: Partial<DailyMetrics> = {};
 
+      const allowed = SOURCE_FIELDS[source];
       for (const [field, metricKey] of Object.entries(METRIC_FIELD_MAP)) {
-        if (row[field]) {
+        if (allowed?.has(metricKey) && row[field]) {
           const val = toNumber(row[field]);
           (patch as any)[metricKey] = val;
         }

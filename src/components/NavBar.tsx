@@ -41,6 +41,11 @@ export default function NavBar({ activePage, onNavigate, syncStatus }: NavBarPro
           className={`nav-tab ${activePage === 'import' ? 'active' : ''}`}
           onClick={() => onNavigate('import')}
         >Импорт</span>
+        <span className="nav-sep">|</span>
+        <span
+          className={`nav-tab ${activePage === 'dev' ? 'active' : ''}`}
+          onClick={() => onNavigate('dev')}
+        >Разработка</span>
       </div>
       <div className="navbar-right">
         <span className="sync-indicator" title={isOnline ? `Облако: ${time ? 'синхронизировано в ' + formatTime(time) : 'доступно'}` : 'Офлайн-режим'}>

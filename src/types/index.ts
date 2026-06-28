@@ -94,7 +94,7 @@ export interface TableRow {
 
 export type EntityType = 'cabinet' | 'group' | 'product';
 
-export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning';
+export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'dev';
 
 export interface PlanRecord {
   entityId: string;

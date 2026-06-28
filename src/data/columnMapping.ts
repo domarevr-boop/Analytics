@@ -96,6 +96,7 @@ const XWAY_OVERRIDES: Record<string, string> = {
   'показы': 'ad_impressions',
   'клики': 'ad_clicks',
   'заказы, руб': 'ad_orders',
+  'заказы, шт': 'xway_orders_qty',
 };
 
 export const FIELD_LABELS: Record<string, string> = {

@@ -12,6 +12,7 @@ import DateRangeFilter from './components/DateRangeFilter';
 import PlanningPage from './components/PlanningPage';
 import ImportPage from './components/ImportPage';
 import DictionaryPage from './components/DictionaryPage';
+import DevPage from './components/DevPage';
 import './App.css';
 
 function App() {
@@ -66,6 +67,8 @@ function App() {
         <PlanningPage />
       ) : page === 'import' ? (
         <ImportPage />
+      ) : page === 'dev' ? (
+        <DevPage />
       ) : (
         <DictionaryPage />
       )}
