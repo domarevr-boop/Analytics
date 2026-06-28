@@ -263,6 +263,16 @@ function toNumber(v: string): number {
   return isNaN(n) ? 0 : n;
 }
 
+function normalizeDate(s: string): string {
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const m2 = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2})$/);
+  if (m2) return `20${m2[3]}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`;
+  return s;
+}
+
 // Internal field name → DailyMetrics property mapping
 const METRIC_FIELD_MAP: Record<string, keyof DailyMetrics> = {
   impressions: 'impressions', clicks: 'clicks', carts: 'carts',
@@ -362,7 +372,7 @@ export function importMappedData(fileName: string, source: ImportSource, rows: R
     let maxDate = '';
     const productIds = new Set<string>();
     for (const row of rows) {
-      const date = dateOverride || row.date;
+      const date = normalizeDate(dateOverride || row.date);
       const sku = row.sku;
       const rawAdSpend = row.ad_spend;
       if (!date || !sku) {
