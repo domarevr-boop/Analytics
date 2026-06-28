@@ -44,7 +44,7 @@ function scoreRow(cells: string[]): number {
   for (const key of ALL_KEY_COLUMNS) {
     const nk = normHeader(key);
     const sk = stripNonAlpha(nk);
-    if (normalized.includes(nk) || stripped.includes(sk)) {
+    if (normalized.some(nh => nh.includes(nk)) || stripped.some(sh => sh.includes(sk))) {
       score++;
     }
   }
