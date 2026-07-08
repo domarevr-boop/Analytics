@@ -1,4 +1,4 @@
-import type { DataSnapshot, IDataRepository } from '../types';
+import type { DataSnapshot, IDataRepository, SaveResult } from '../types';
 import { CloudRepository } from './cloudRepository';
 
 export type RepoStatus = { cloudAvailable: boolean; lastSyncTime: Date | null };
@@ -54,14 +54,14 @@ class CloudOnlyRepository implements IDataRepository {
     }
   }
 
-  async saveAll(data: DataSnapshot): Promise<void> {
-    try {
-      await this.cloud.saveAll(data);
+  async saveAll(data: DataSnapshot): Promise<SaveResult> {
+    const result = await this.cloud.saveAll(data);
+    if (result.ok) {
       markSyncSuccess();
-    } catch (err) {
+    } else {
       markSyncError();
-      throw err;
     }
+    return result;
   }
 
   async deleteMetrics(opts: { productIds: string[]; dateStart?: string; dateEnd?: string }): Promise<void> {
@@ -102,6 +102,6 @@ export async function loadAllData(): Promise<DataSnapshot> {
   return repository.loadAll();
 }
 
-export async function saveAllData(data: DataSnapshot): Promise<void> {
+export async function saveAllData(data: DataSnapshot): Promise<SaveResult> {
   return repository.saveAll(data);
 }

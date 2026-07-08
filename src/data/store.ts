@@ -9,23 +9,13 @@ let _version = 0;
 const _listeners = new Set<() => void>();
 let _initCalled = false;
 let _suppressPersist = false;
-let _flushPending = false;
 const DEV = import.meta.env.DEV;
-
-function flushStore() {
-  if (_flushPending) return;
-  _flushPending = true;
-  setTimeout(() => {
-    _flushPending = false;
-    persistAll();
-  }, 150);
-}
 
 function notify() {
   _version++;
   if (DEV) console.log('[notify] _version=' + _version + ' _metrics.length=' + _metrics.length);
   _listeners.forEach(fn => fn());
-  if (_initCalled && !_suppressPersist) flushStore();
+  if (_initCalled && !_suppressPersist) persistAll();
 }
 
 export function subscribe(fn: () => void) {
@@ -738,7 +728,11 @@ function persistAll() {
     monthlyPlans: _monthlyPlans,
     profitability: _profitability,
     importLogs: _importLog,
-  }).catch(e => console.error('[persist] saveAll failed', e));
+  }).then(r => {
+    if (!r.ok && DEV) console.warn('[persist] some tables failed:', r.errors);
+  }, e => {
+    console.error('[persist] saveAll failed', e);
+  });
 }
 
 export async function initStore() {

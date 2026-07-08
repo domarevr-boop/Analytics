@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
-import type { DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ImportFileLog, ProfitabilityRecord } from '../types';
+import type { DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ImportFileLog, ProfitabilityRecord, SaveResult } from '../types';
 
-// Supabase row shapes returned from queries
 interface MetricsRow { date: string; product_id: string; impressions: number; clicks: number; carts: number; orders: number; buyouts: number; cancellations: number; ordered_amount: number; buyout_amount: number; cancellation_amount: number; ad_impressions: number; ad_clicks: number; ad_orders: number; ad_spend: number; stock: number; plan_orders: number; forecast_profit_per_order: number; actual_profit: number; actual_margin: number; profit_revenue: number }
 interface PlanRow { entity_id: string; entity_type: 'cabinet' | 'group' | 'product'; parent_id: string | null; name: string; orders_qty: number; avg_price: number; orders_sum: number; profitability: number; net_profit: number }
 interface MonthlyPlanRow { sku: string; month: string; avg_qty_per_day: number; cost_price: number; check_amount: number; net_profit_per_unit: number; total_net_profit: number; profitability: number; total_qty: number; total_rubles: number; buyout_rate: number }
@@ -137,23 +136,32 @@ export class CloudRepository implements IDataRepository {
     if (error) throw error;
   }
 
-  async saveAll(data: DataSnapshot): Promise<void> {
-    if (!this._ready) return;
-    const c = supabase;
-    const dev = import.meta.env.DEV;
+  async saveAll(data: DataSnapshot): Promise<SaveResult> {
+    const errors: string[] = [];
+    const dev = this.DEV;
 
-    const TABLE_NAMES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'import_logs'];
+    const upsert = async (table: string, rows: unknown[], conflict: string) => {
+      if (!rows || rows.length === 0) return;
+      const { error } = await supabase.from(table as any).upsert(rows as any, { onConflict: conflict });
+      if (error) {
+        const msg = `[cloud] ${table} upsert failed: ${error.message}`;
+        errors.push(msg);
+        console.warn(msg);
+      } else if (dev) {
+        console.log('[cloud] ' + table + ' upserted ' + rows.length + ' rows');
+      }
+    };
 
-    const tasks = [
-      c.from('cabinets').upsert(data.cabinets, { onConflict: 'id' }),
-      c.from('brands').upsert(data.brands, { onConflict: 'id' }),
-      c.from('product_groups').upsert(data.groups.map(g => ({ id: g.id, name: g.name, cabinet_id: g.cabinet_id })), { onConflict: 'id' }),
-      c.from('products').upsert(data.products.map(p => ({
+    await Promise.all([
+      upsert('cabinets', data.cabinets, 'id'),
+      upsert('brands', data.brands, 'id'),
+      upsert('product_groups', data.groups.map(g => ({ id: g.id, name: g.name, cabinet_id: g.cabinet_id })), 'id'),
+      upsert('products', data.products.map(p => ({
         id: p.id, sku: p.sku, wb_sku: p.wb_sku, name: p.name,
         category: p.category, brand_id: p.brand_id, cabinet_id: p.cabinet_id,
-      })), { onConflict: 'id' }),
-      c.from('group_memberships').upsert(data.memberships, { onConflict: 'product_id,group_id' }),
-      c.from('daily_metrics').upsert(data.metrics.map(m => ({
+      })), 'id'),
+      upsert('group_memberships', data.memberships, 'product_id,group_id'),
+      upsert('daily_metrics', data.metrics.map(m => ({
         date: m.date, product_id: m.product_id,
         impressions: m.impressions, clicks: m.clicks, carts: m.carts,
         orders: m.orders, buyouts: m.buyouts, cancellations: m.cancellations,
@@ -164,52 +172,38 @@ export class CloudRepository implements IDataRepository {
         stock: m.stock, plan_orders: m.plan_orders,
         forecast_profit_per_order: m.forecast_profit_per_order,
         actual_profit: m.actual_profit, actual_margin: m.actual_margin, profit_revenue: m.profit_revenue || 0,
-      })), { onConflict: 'date,product_id' }),
-      c.from('plans').upsert(data.plans.map(p => ({
+      })), 'date,product_id'),
+      upsert('plans', data.plans.map(p => ({
         entity_id: p.entityId, entity_type: p.entityType,
         parent_id: p.parentId, name: p.name,
         orders_qty: p.ordersQty, avg_price: p.avgPrice,
         orders_sum: p.ordersSum, profitability: p.profitability,
         net_profit: p.netProfit,
-      })), { onConflict: 'entity_id,entity_type' }),
-      c.from('monthly_plans').upsert(data.monthlyPlans.map(p => ({
+      })), 'entity_id,entity_type'),
+      upsert('monthly_plans', data.monthlyPlans.map(p => ({
         sku: p.sku, month: p.month,
         avg_qty_per_day: p.avgQtyPerDay, cost_price: p.costPrice,
         check_amount: p.checkAmount, net_profit_per_unit: p.netProfitPerUnit,
         total_net_profit: p.totalNetProfit, profitability: p.profitability,
         total_qty: p.totalQty, total_rubles: p.totalRubles,
         buyout_rate: p.buyoutRate,
-      })), { onConflict: 'sku,month' }),
-      c.from('profitability_reports').upsert(data.profitability.map(r => ({
+      })), 'sku,month'),
+      upsert('profitability_reports', data.profitability.map(r => ({
         id: r.id, product_id: r.product_id,
         period_start: r.period_start, period_end: r.period_end,
         actual_profit: r.actual_profit, actual_margin: r.actual_margin,
         profit_revenue: r.profit_revenue || 0,
-      })), { onConflict: 'id' }),
-      c.from('import_logs').upsert(data.importLogs.map(l => ({
+      })), 'id'),
+      upsert('import_logs', data.importLogs.map(l => ({
         id: l.id, file_name: l.fileName, source: l.source,
         row_count: l.rowCount, uploaded_at: l.uploadedAt,
         status: l.status, error: l.error || null,
         cabinet_id: l.cabinetId || null, cabinet_name: l.cabinetName || null,
         data_start: l.dataStart || null, data_end: l.dataEnd || null,
         product_ids: l.productIds ? JSON.stringify(l.productIds) : null,
-      })), { onConflict: 'id' }),
-    ];
+      })), 'id'),
+    ]);
 
-    const results = await Promise.allSettled(tasks.map(t => Promise.resolve(t)));
-    let hasError = false;
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === 'rejected') {
-        hasError = true;
-        if (dev) console.warn('[saveAll] ' + TABLE_NAMES[i] + ' rejected:', r.reason);
-        else console.warn('[saveAll] ' + TABLE_NAMES[i] + ' rejected');
-      } else if (r.value && typeof r.value === 'object' && 'error' in r.value && r.value.error) {
-        hasError = true;
-        if (dev) console.warn('[saveAll] ' + TABLE_NAMES[i] + ' error:', r.value.error);
-        else console.warn('[saveAll] ' + TABLE_NAMES[i] + ' error');
-      }
-    }
-    if (hasError && dev) console.warn('[saveAll] some tables failed, see above');
+    return { ok: errors.length === 0, errors };
   }
 }

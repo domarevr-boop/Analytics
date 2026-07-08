@@ -1,4 +1,4 @@
-import type { IDataRepository, DataSnapshot } from '../types';
+import type { IDataRepository, DataSnapshot, SaveResult } from '../types';
 
 export interface RepoStatus {
   cloudAvailable: boolean;
@@ -57,16 +57,21 @@ export class RepositoryManager implements IDataRepository {
     return localSnapshot;
   }
 
-  async saveAll(data: DataSnapshot): Promise<void> {
-    await this.local.saveAll(data);
-    if (this._cloudAvailable) {
-      try {
-        await this.cloud.saveAll(data);
-        this._lastSyncTime = new Date();
-      } catch (err) {
-        this._cloudAvailable = false;
-        console.warn('[repo] cloud sync failed:', err);
-      }
+  async saveAll(data: DataSnapshot): Promise<SaveResult> {
+    const localResult = await this.local.saveAll(data);
+    if (!localResult.ok) {
+      return localResult;
     }
+    if (this._cloudAvailable) {
+      const cloudResult = await this.cloud.saveAll(data);
+      if (cloudResult.ok) {
+        this._lastSyncTime = new Date();
+      } else {
+        this._cloudAvailable = false;
+        console.warn('[repo] cloud sync failed:', cloudResult.errors.join('; '));
+      }
+      return cloudResult;
+    }
+    return { ok: true, errors: [] };
   }
 }

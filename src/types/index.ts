@@ -170,11 +170,16 @@ export interface DataSnapshot {
   importLogs: ImportFileLog[];
 }
 
+export interface SaveResult {
+  ok: boolean;
+  errors: string[];
+}
+
 export interface IDataRepository {
   readonly name: string;
   initialize(): Promise<void>;
   loadAll(): Promise<DataSnapshot>;
-  saveAll(data: DataSnapshot): Promise<void>;
+  saveAll(data: DataSnapshot): Promise<SaveResult>;
   deleteMetrics?(opts: { productIds: string[]; dateStart?: string; dateEnd?: string }): Promise<void>;
   deleteImportLog?(logId: string): Promise<void>;
   deleteProfitability?(productId: string): Promise<void>;
