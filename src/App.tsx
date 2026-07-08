@@ -33,6 +33,7 @@ function App() {
   const [periodA, setPeriodA] = useState<DatePeriod>({ start: '', end: '' });
   const [periodB, setPeriodB] = useState<DatePeriod>({ start: '', end: '' });
   const [maxDate, setMaxDate] = useState('');
+  const [allTimeMaxDate, setAllTimeMaxDate] = useState('');
   const [dataReady, setDataReady] = useState(false);
   const [adminMeta, setAdminMeta] = useState<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null } | null>(null);
 
@@ -78,7 +79,8 @@ function App() {
       try {
         await initStore();
         if (!cancelled) {
-          const d = getDefaultPeriods();
+          const d = getDefaultPeriods(allTimeMaxDate || undefined);
+          if (d.maxDate > allTimeMaxDate) setAllTimeMaxDate(d.maxDate);
           setPeriodA(d.a);
           setPeriodB(d.b);
           setMaxDate(d.maxDate);
@@ -93,7 +95,8 @@ function App() {
 
   useEffect(() => {
     if (!dataReady) return;
-    const d = getDefaultPeriods();
+    const d = getDefaultPeriods(allTimeMaxDate || undefined);
+    if (d.maxDate > allTimeMaxDate) setAllTimeMaxDate(d.maxDate);
     setPeriodA(d.a);
     setPeriodB(d.b);
     setMaxDate(d.maxDate);

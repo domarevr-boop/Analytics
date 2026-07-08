@@ -140,8 +140,11 @@ export class CloudRepository implements IDataRepository {
   async saveAll(data: DataSnapshot): Promise<void> {
     if (!this._ready) return;
     const c = supabase;
+    const dev = import.meta.env.DEV;
 
-    const results = await Promise.all([
+    const TABLE_NAMES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'import_logs'];
+
+    const tasks = [
       c.from('cabinets').upsert(data.cabinets, { onConflict: 'id' }),
       c.from('brands').upsert(data.brands, { onConflict: 'id' }),
       c.from('product_groups').upsert(data.groups.map(g => ({ id: g.id, name: g.name, cabinet_id: g.cabinet_id })), { onConflict: 'id' }),
@@ -191,11 +194,22 @@ export class CloudRepository implements IDataRepository {
         data_start: l.dataStart || null, data_end: l.dataEnd || null,
         product_ids: l.productIds ? JSON.stringify(l.productIds) : null,
       })), { onConflict: 'id' }),
-    ]);
+    ];
 
-    const firstError = results.find(r => r && typeof r === 'object' && 'error' in r && r.error);
-    if (firstError && typeof firstError === 'object' && 'error' in firstError && firstError.error) {
-      throw new Error(String(firstError.error));
+    const results = await Promise.allSettled(tasks.map(t => Promise.resolve(t)));
+    let hasError = false;
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'rejected') {
+        hasError = true;
+        if (dev) console.warn('[saveAll] ' + TABLE_NAMES[i] + ' rejected:', r.reason);
+        else console.warn('[saveAll] ' + TABLE_NAMES[i] + ' rejected');
+      } else if (r.value && typeof r.value === 'object' && 'error' in r.value && r.value.error) {
+        hasError = true;
+        if (dev) console.warn('[saveAll] ' + TABLE_NAMES[i] + ' error:', r.value.error);
+        else console.warn('[saveAll] ' + TABLE_NAMES[i] + ' error');
+      }
     }
+    if (hasError && dev) console.warn('[saveAll] some tables failed, see above');
   }
 }

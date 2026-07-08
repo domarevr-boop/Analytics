@@ -12,7 +12,7 @@ export interface DatePeriod {
 
 export { addDays, formatDate, monthToPeriod, getDefaultMonth, toDate, toStr } from './dateUtils';
 
-export function getDefaultPeriods(): { a: DatePeriod; b: DatePeriod; maxDate: string } {
+export function getDefaultPeriods(fallbackMaxDate?: string): { a: DatePeriod; b: DatePeriod; maxDate: string } {
   const metrics = getMetrics();
   if (!metrics.length) {
     const now = new Date();
@@ -26,6 +26,9 @@ export function getDefaultPeriods(): { a: DatePeriod; b: DatePeriod; maxDate: st
   let maxDate = metrics[0].date;
   for (const m of metrics) {
     if (m.date > maxDate) maxDate = m.date;
+  }
+  if (fallbackMaxDate && fallbackMaxDate > maxDate) {
+    maxDate = fallbackMaxDate;
   }
   const defPeriods = {
     a: { start: addDays(maxDate, -6), end: maxDate },

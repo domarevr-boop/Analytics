@@ -742,6 +742,7 @@ function persistAll() {
 }
 
 export async function initStore() {
+  if (_initCalled) return;
   await repository.initialize();
   _suppressPersist = true;
 
