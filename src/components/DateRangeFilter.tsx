@@ -1,91 +1,194 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, forwardRef } from 'react';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import { ru } from 'date-fns/locale/ru';
 import type { DatePeriod } from '../data/mock';
+import { addDays, daysBetween, toDate, toStr, rangeDisplay, fmtDate } from '../data/dateUtils';
+import 'react-datepicker/dist/react-datepicker.css';
+
+registerLocale('ru', ru);
 
 interface Props {
   periodA: DatePeriod;
   periodB: DatePeriod;
   onChange: (a: DatePeriod, b: DatePeriod) => void;
+  maxDate: string;
 }
 
 const PRESETS = [
-  { value: 3, label: '3 дня' },
-  { value: 7, label: '7 дней' },
-  { value: 14, label: '14 дней' },
-  { value: 30, label: '30 дней' },
-  { value: 90, label: '90 дней' },
+  { value: 1, label: 'Вчера' },
+  { value: 7, label: 'Неделя' },
+  { value: 30, label: 'Месяц' },
 ];
 
-const CUSTOM_VALUE = 0;
-
-function addDays(dateStr: string, days: number) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function detectPreset(p: DatePeriod): number {
-  const s = new Date(p.start);
-  const e = new Date(p.end);
-  const len = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
-  return PRESETS.find(pr => pr.value === len)?.value ?? CUSTOM_VALUE;
+  const len = daysBetween(p.start, p.end);
+  return PRESETS.find(pr => pr.value === len)?.value ?? 0;
 }
 
-export default function DateRangeFilter({ periodA, periodB, onChange }: Props) {
-  const [presetA, setPresetA] = useState(() => detectPreset(periodA));
-  const [presetB, setPresetB] = useState(() => detectPreset(periodB));
+const DateBtn = forwardRef<HTMLButtonElement, { value?: string; onClick?: () => void; children: React.ReactNode }>(
+  ({ children, onClick }, ref) => (
+    <button className="drf-date-btn" type="button" onClick={onClick} ref={ref}>
+      {children}
+    </button>
+  )
+);
 
-  const handlePreset = (side: 'A' | 'B', p: number) => {
-    if (p === CUSTOM_VALUE) {
-      side === 'A' ? setPresetA(p) : setPresetB(p);
-      return;
-    }
-    const period = side === 'A' ? periodA : periodB;
-    const end = period.end;
+const DEV = import.meta.env.DEV;
+
+export default function DateRangeFilter({ periodA, periodB, onChange, maxDate }: Props) {
+  if (DEV) console.log('[DateRangeFilter] render', { maxDate, periodA, periodB });
+  const [open, setOpen] = useState(false);
+  const [synced, setSynced] = useState(true);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const handleClick = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [open]);
+
+  function calcSyncedPeriodB(nextA: DatePeriod): DatePeriod {
+    const len = daysBetween(nextA.start, nextA.end);
+    const bEnd = addDays(nextA.start, -1);
+    const bStart = addDays(bEnd, -(len - 1));
+    return { start: bStart, end: bEnd };
+  }
+
+  const apply = (nextA: DatePeriod) => {
+    const nextB = synced ? calcSyncedPeriodB(nextA) : periodB;
+    onChange(nextA, nextB);
+  };
+
+  const applyPreset = (p: number) => {
+    const end = p === 1 ? addDays(maxDate, -1) : maxDate;
     const start = addDays(end, -(p - 1));
-    const next = { start, end };
-    if (side === 'A') { setPresetA(p); onChange(next, periodB); }
-    else { setPresetB(p); onChange(periodA, next); }
+    if (DEV) console.log('[DateRangeFilter] applyPreset', { preset: p, maxDate, computed: { start, end } });
+    apply({ start, end });
+    setOpen(false);
   };
 
-  const handleStart = (side: 'A' | 'B', start: string) => {
-    if (side === 'A') { setPresetA(CUSTOM_VALUE); onChange({ start, end: periodA.end }, periodB); }
-    else { setPresetB(CUSTOM_VALUE); onChange(periodA, { start, end: periodB.end }); }
+  const handleStartChange = (date: Date | null) => {
+    if (!date) return;
+    const start = toStr(date);
+    const end = start > periodA.end ? start : periodA.end;
+    if (DEV) console.log('[DateRangeFilter] handleStartChange', { raw: date.toString(), start, end, periodA });
+    apply({ start, end });
   };
 
-  const handleEnd = (side: 'A' | 'B', end: string) => {
-    const p = side === 'A' ? presetA : presetB;
-    const period = side === 'A' ? periodA : periodB;
-    if (p !== CUSTOM_VALUE) {
-      const start = addDays(end, -(p - 1));
-      const next = { start, end };
-      if (side === 'A') onChange(next, periodB);
-      else onChange(periodA, next);
+  const handleEndChange = (date: Date | null) => {
+    if (!date) return;
+    const end = toStr(date);
+    const start = end < periodA.start ? end : periodA.start;
+    if (DEV) console.log('[DateRangeFilter] handleEndChange', { raw: date.toString(), start, end, periodA });
+    apply({ start, end });
+  };
+
+  const toggleSync = () => {
+    if (synced) {
+      setSynced(false);
     } else {
-      if (side === 'A') onChange({ start: period.start, end }, periodB);
-      else onChange(periodA, { start: period.start, end });
+      setSynced(true);
+      onChange(periodA, calcSyncedPeriodB(periodA));
     }
   };
 
-  const renderGroup = (label: string, period: DatePeriod, preset: number, side: 'A' | 'B') => (
-    <div className="daterange-group">
-      <span className="daterange-label">{label}</span>
-      <select className="daterange-select" value={preset} onChange={e => handlePreset(side, Number(e.target.value))}>
-        {PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-        <option value={CUSTOM_VALUE}>Произвольно</option>
-      </select>
-      <input type="date" className="daterange-input" value={period.start} onChange={e => handleStart(side, e.target.value)} />
-      <span className="daterange-sep">—</span>
-      <input type="date" className="daterange-input" value={period.end} onChange={e => handleEnd(side, e.target.value)} />
-    </div>
-  );
+  const presetActive = detectPreset(periodA);
+  const startDate = toDate(periodA.start);
+  const endDate = toDate(periodA.end);
 
   return (
-    <div className="daterange">
-      {renderGroup('Текущий:', periodA, presetA, 'A')}
-      {renderGroup('Прошлый:', periodB, presetB, 'B')}
+    <div className="drf">
+      <div className="drf-trigger-wrap">
+        <button className="drf-trigger" type="button" onClick={() => setOpen(!open)}>
+          <span className="drf-trigger-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </span>
+          <span className="drf-trigger-current">{rangeDisplay(periodA)}</span>
+          <span className="drf-trigger-vs">⚖️</span>
+          <span className="drf-trigger-compare">{rangeDisplay(periodB)}</span>
+        </button>
+
+        <button className={`drf-sync ${synced ? 'active' : ''}`} onClick={toggleSync}
+          title={synced ? 'Синхронизация включена' : 'Синхронизация выключена'}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 12a8 8 0 0 1 8-8 7.9 7.9 0 0 1 5.6 2.3L20 8" />
+            <path d="M4 12a8 8 0 0 0 8 8 7.9 7.9 0 0 0 5.6-2.3L20 16" />
+            <polyline points="16 5 20 5 20 9" />
+            <polyline points="8 19 4 19 4 15" />
+            {synced && <line x1="2" y1="2" x2="22" y2="22" className="drf-sync-x" />}
+          </svg>
+        </button>
+
+        {open && (
+          <div className="drf-popup" ref={popupRef}>
+          <div className="drf-popup-presets">
+            {PRESETS.map(p => (
+              <button
+                key={p.value}
+                className={`drf-popup-chip ${presetActive === p.value ? 'active' : ''}`}
+                onClick={() => applyPreset(p.value)}
+              >
+                {p.label}
+              </button>
+            ))}
+            <div className={`drf-popup-chip drf-popup-chip-custom ${presetActive === 0 ? 'active' : ''}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="drf-popup-dates">
+            <div className="drf-date-field">
+              <span className="drf-date-field-label">От</span>
+              <DatePicker
+                selected={startDate}
+                onChange={handleStartChange}
+                locale="ru"
+                dateFormat="d MMM yyyy"
+                popperPlacement="bottom-start"
+                customInput={<DateBtn>{fmtDate(startDate)}</DateBtn>}
+              />
+            </div>
+            <div className="drf-date-field">
+              <span className="drf-date-field-label">До</span>
+              <DatePicker
+                selected={endDate}
+                onChange={handleEndChange}
+                locale="ru"
+                dateFormat="d MMM yyyy"
+                popperPlacement="bottom-start"
+                customInput={<DateBtn>{fmtDate(endDate)}</DateBtn>}
+              />
+            </div>
+          </div>
+
+          <div className="drf-popup-compare">
+            <span className="drf-popup-compare-label">Сравнение:</span>
+            <span className="drf-popup-compare-dates">
+              {fmtDate(toDate(periodB.start))} – {fmtDate(toDate(periodB.end))}
+            </span>
+          </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

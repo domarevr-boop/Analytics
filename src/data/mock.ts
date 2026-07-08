@@ -1,40 +1,18 @@
 import type { MetricValues, TableRow } from '../types';
 import type { ProductGroup } from '../types';
 import { getProducts, getMetrics, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, UNGROUPED_GROUP_ID } from './store';
-
-
-function pad(n: number) { return n < 10 ? '0' + n : '' + n; }
-
-export function formatDate(d: Date) {
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
-
-function addDays(dateStr: string, days: number) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatDate(d);
-}
+import { addDays, formatDate } from './dateUtils';
+const DEV = import.meta.env.DEV;
+const _zeroLogged = new Set<string>();
 
 export interface DatePeriod {
   start: string;
   end: string;
 }
 
-export function monthToPeriod(month: string): DatePeriod {
-  const [y, m] = month.split('-').map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  return {
-    start: `${month}-01`,
-    end: `${month}-${String(lastDay).padStart(2, '0')}`,
-  };
-}
+export { addDays, formatDate, monthToPeriod, getDefaultMonth, toDate, toStr } from './dateUtils';
 
-export function getDefaultMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-export function getDefaultPeriods(): { a: DatePeriod; b: DatePeriod } {
+export function getDefaultPeriods(): { a: DatePeriod; b: DatePeriod; maxDate: string } {
   const metrics = getMetrics();
   if (!metrics.length) {
     const now = new Date();
@@ -42,30 +20,52 @@ export function getDefaultPeriods(): { a: DatePeriod; b: DatePeriod } {
     return {
       a: { start: addDays(today, -6), end: today },
       b: { start: addDays(today, -13), end: addDays(today, -7) },
+      maxDate: today,
     };
   }
   let maxDate = metrics[0].date;
   for (const m of metrics) {
     if (m.date > maxDate) maxDate = m.date;
   }
-  return {
+  const defPeriods = {
     a: { start: addDays(maxDate, -6), end: maxDate },
     b: { start: addDays(maxDate, -13), end: addDays(maxDate, -7) },
+    maxDate,
   };
+  if (DEV) console.log('[getDefaultPeriods] metrics=' + metrics.length + ' maxDate=' + maxDate + ' periodA=' + JSON.stringify(defPeriods.a));
+  return defPeriods;
 }
 
-function getPlanMap(periodStart: string): Map<string, { totalRubles: number; buyoutRate: number }> {
+export interface PlanData {
+  totalRubles: number; totalQty: number; checkAmount: number;
+  totalNetProfit: number; profitability: number; buyoutRate: number;
+}
+
+export function getPlanMap(periodStart: string): Map<string, PlanData> {
   const month = periodStart.slice(0, 7);
   const plans = getMonthlyPlansForMonth(month);
-  const map = new Map();
+  const map = new Map<string, PlanData>();
   for (const p of plans) {
-    map.set(p.sku, { totalRubles: p.totalRubles, buyoutRate: p.buyoutRate });
+    map.set(p.sku, {
+      totalRubles: p.totalRubles, totalQty: p.totalQty,
+      checkAmount: p.checkAmount, totalNetProfit: p.totalNetProfit,
+      profitability: p.profitability, buyoutRate: p.buyoutRate,
+    });
   }
   return map;
 }
 
-function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, { totalRubles: number; buyoutRate: number }>, productSku?: string) {
-  const rows = getMetrics().filter(m => m.product_id === productId && m.date >= start && m.date <= end);
+export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string) {
+  const allMetrics = getMetrics();
+  const rows = allMetrics.filter(m => m.product_id === productId && m.date >= start && m.date <= end);
+  if (rows.length === 0) {
+    const key = start + '|' + end;
+    if (!_zeroLogged.has(key)) {
+      _zeroLogged.add(key);
+      const dates = [...new Set(allMetrics.map(m => m.date))].sort();
+      if (DEV) console.warn('[sumForProduct] ZERO (first per range): start=' + start + ' end=' + end + ' storeMetrics=' + allMetrics.length + ' storeDateRange=' + (dates.length ? dates[0] + '..' + dates[dates.length-1] : 'empty'));
+    }
+  }
   const total = (fn: (m: typeof rows[0]) => number) => rows.reduce((s, m) => s + fn(m), 0);
   const avg = (fn: (m: typeof rows[0]) => number) => rows.length ? total(fn) / rows.length : 0;
   const planData = productSku ? planMap?.get(productSku) : undefined;
@@ -87,36 +87,47 @@ function sumForProduct(productId: string, start: string, end: string, planMap?: 
     drrForecast: effectiveRevenue ? (adSpend / effectiveRevenue) * 100 : 0,
     drrActual: buyoutAmt ? (adSpend / buyoutAmt) * 100 : 0,
     effectiveRevenue,
+    planOrdersQty: planData?.totalQty || 0,
+    planSum: planRubles,
+    planPrice: planData?.checkAmount || 0,
+    planNetProfit: planData?.totalNetProfit || 0,
+    planProfitability: planData?.profitability || 0,
+    planRevenue: planRubles * (planBuyoutRate / 100),
   };
 }
 
-function toMetrics(s: ReturnType<typeof sumForProduct>): MetricValues {
+export function toMetrics(s: ReturnType<typeof sumForProduct>): MetricValues {
   return {
     impressions: s.imp, clicks: s.cl,
     ctr: s.imp ? (s.cl / s.imp) * 100 : 0, carts: s.cart,
     cr_cart: s.imp ? (s.cart / s.imp) * 100 : 0, orders: s.ord,
+    avg_price: s.ord ? Math.round(s.ordAmt / s.ord) : 0,
     cr_order: s.imp ? (s.ord / s.imp) * 100 : 0, ad_spend: s.adSpend,
     ad_clicks: s.adCl, ad_orders: s.adOrd,
     cpc: s.adCl ? s.adSpend / s.adCl : 0, cpo: s.adOrd ? s.adSpend / s.adOrd : 0,
     drr: s.ordAmt ? (s.adSpend / s.ordAmt) * 100 : 0,
     drrForecast: s.drrForecast,
     drrActual: s.drrActual,
-    plan_orders: s.plan, fact_orders: s.ordAmt,
+    plan_orders: s.plan, plan_orders_qty: s.planOrdersQty, plan_sum: s.planSum,
+    plan_price: s.planPrice, plan_net_profit: s.planNetProfit,
+    plan_profitability: s.planProfitability, plan_revenue: s.planRevenue,
+    fact_orders: s.ordAmt,
     plan_pct: s.plan ? (s.ordAmt / s.plan) * 100 : 0,
     revenue: s.buyoutAmt, effectiveRevenue: s.effectiveRevenue, buyout_amount: s.buyoutAmt, profit: s.profit,
-    margin: s.margin * 100, stock: s.stock,
+    margin: s.margin, stock: s.stock,
   };
 }
 
 function emptyMetrics(): MetricValues {
-  return { impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 };
+  return { impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, avg_price: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, plan_orders_qty: 0, plan_sum: 0, plan_price: 0, plan_net_profit: 0, plan_profitability: 0, plan_revenue: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 };
 }
 
 function addTo(a: MetricValues, b: MetricValues) {
   a.impressions += b.impressions; a.clicks += b.clicks;
   a.carts += b.carts; a.orders += b.orders;
   a.ad_spend += b.ad_spend; a.ad_clicks += b.ad_clicks; a.ad_orders += b.ad_orders;
-  a.plan_orders += b.plan_orders; a.fact_orders += b.fact_orders;
+  a.plan_orders += b.plan_orders; a.plan_orders_qty += b.plan_orders_qty; a.plan_sum += b.plan_sum; a.plan_net_profit += b.plan_net_profit; a.plan_revenue += b.plan_revenue;
+  a.fact_orders += b.fact_orders;
   a.revenue += b.revenue; a.effectiveRevenue += b.effectiveRevenue; a.buyout_amount += b.buyout_amount; a.profit += b.profit; a.stock += b.stock;
 }
 
@@ -125,6 +136,9 @@ function recalcDerived(m: MetricValues) {
   m.ctr = m.impressions ? (m.clicks / m.impressions) * 100 : 0;
   m.cr_cart = m.impressions ? (m.carts / m.impressions) * 100 : 0;
   m.cr_order = m.impressions ? (m.orders / m.impressions) * 100 : 0;
+  m.avg_price = m.orders ? Math.round(m.fact_orders / m.orders) : 0;
+  m.plan_price = m.plan_orders_qty ? Math.round(m.plan_sum / m.plan_orders_qty) : 0;
+  m.plan_profitability = m.plan_revenue ? (m.plan_net_profit / m.plan_revenue) * 100 : 0;
   m.cpc = m.ad_clicks ? m.ad_spend / m.ad_clicks : 0;
   m.cpo = m.ad_orders ? m.ad_spend / m.ad_orders : 0;
   m.drr = m.fact_orders ? (m.ad_spend / m.fact_orders) * 100 : 0;
@@ -148,7 +162,8 @@ export function getTableData(periodA: DatePeriod, periodB: DatePeriod, filters?:
   const groups = getGroups();
   const cabinets = getCabinets();
   const memberships = getMemberships();
-  const planMap = getPlanMap(periodA.start);
+  const planMapA = getPlanMap(periodA.start);
+  const planMapB = getPlanMap(periodB.start);
 
   if (!products.length) return [];
 
@@ -171,8 +186,8 @@ export function getTableData(periodA: DatePeriod, periodB: DatePeriod, filters?:
   const addProducts = (parentId: string, productList: typeof products, depth: number, accCurr: MetricValues, accPrev: MetricValues) => {
     for (const pr of productList) {
       visited.add(pr.id);
-      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMap, pr.sku);
-      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMap, pr.sku);
+      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
+      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);
       const curr = c ? toMetrics(c) : emptyMetrics();
       const prev = p ? toMetrics(p) : emptyMetrics();
       rows.push({ id: pr.id, type: 'product', name: pr.name, sku: pr.sku, parent: parentId, depth, current: curr, previous: prev });
@@ -230,8 +245,8 @@ export function getTableData(periodA: DatePeriod, periodB: DatePeriod, filters?:
     const orphanCurr = emptyMetrics(); const orphanPrev = emptyMetrics();
     for (const pr of orphanProducts) {
       visited.add(pr.id);
-      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMap, pr.sku);
-      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMap, pr.sku);
+      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
+      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);
       const curr = c ? toMetrics(c) : emptyMetrics();
       const prev = p ? toMetrics(p) : emptyMetrics();
       rows.push({ id: pr.id, type: 'product', name: pr.name, sku: pr.sku, parent: null, depth: 0, current: curr, previous: prev });
@@ -239,13 +254,15 @@ export function getTableData(periodA: DatePeriod, periodB: DatePeriod, filters?:
     }
   }
 
+  if (DEV) console.log('[getTableData] periodA=' + JSON.stringify(periodA) + ' periodB=' + JSON.stringify(periodB) + ' filters=' + JSON.stringify(filters) + ' totalRows=' + rows.length);
   return rows;
 }
 
 export function getFilteredKpi(periodA: DatePeriod, periodB: DatePeriod, filters: FilterOptions) {
   const products = getProducts();
   const memberships = getMemberships();
-  const planMap = getPlanMap(periodA.start);
+  const planMapA = getPlanMap(periodA.start);
+  const planMapB = getPlanMap(periodB.start);
 
   const brandProductIds = filters.brandId
     ? new Set(products.filter(p => p.brand_id === filters.brandId).map(p => p.id))
@@ -267,8 +284,8 @@ export function getFilteredKpi(periodA: DatePeriod, periodB: DatePeriod, filters
     if (groupProductIds && !groupProductIds.has(pr.id)) continue;
     if (cabProductIds && !cabProductIds.has(pr.id)) continue;
 
-    const ca = sumForProduct(pr.id, periodA.start, periodA.end, planMap, pr.sku);
-    const cb = sumForProduct(pr.id, periodB.start, periodB.end, planMap, pr.sku);
+    const ca = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
+    const cb = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);
     if (ca) addTo(a, toMetrics(ca));
     if (cb) addTo(b, toMetrics(cb));
   }

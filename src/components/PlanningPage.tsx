@@ -3,7 +3,7 @@ import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMembersh
 import type { MonthlyPlanRecord } from '../types';
 import * as XLSX from 'xlsx';
 
-const PLAN_FIELDS: { key: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>; label: string; suffix: string; decimals: number }[] = [
+const PLAN_FIELDS: { key: string; label: string; suffix: string; decimals: number }[] = [
   { key: 'avgQtyPerDay', label: 'Ср шт/день', suffix: '', decimals: 1 },
   { key: 'costPrice', label: 'Себес', suffix: ' ₽', decimals: 2 },
   { key: 'checkAmount', label: 'Чек', suffix: ' ₽', decimals: 2 },
@@ -12,8 +12,10 @@ const PLAN_FIELDS: { key: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>; label:
   { key: 'profitability', label: 'Рент', suffix: '%', decimals: 1 },
   { key: 'totalQty', label: 'Суммарно', suffix: '', decimals: 0 },
   { key: 'totalRubles', label: 'Заказы, руб', suffix: ' ₽', decimals: 0 },
-  { key: 'buyoutRate', label: '% выкупа', suffix: '%', decimals: 1 },
+  { key: 'revenue', label: 'Выручка', suffix: ' ₽', decimals: 0 },
 ];
+
+
 
 function f(v: number, d: number = 0): string {
   return v.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -21,7 +23,7 @@ function f(v: number, d: number = 0): string {
 
 interface CellEdit {
   sku: string;
-  field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>;
+  field: string;
 }
 
 export default function PlanningPage() {
@@ -40,6 +42,7 @@ export default function PlanningPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [importStatus, setImportStatus] = useState('');
+  const [globalBuyoutRate, setGlobalBuyoutRate] = useState(85);
 
   const toggle = (id: string) => {
     setExpanded(prev => {
@@ -60,6 +63,79 @@ export default function PlanningPage() {
   const getPlan = (sku: string, month: string): MonthlyPlanRecord | undefined => {
     return planMap.get(sku + '|' + month);
   };
+
+  // Aggregate plan totals per group and cabinet
+  const planTotals = useMemo(() => {
+    const totals = new Map<string, Record<string, number>>();
+    const init = (): Record<string, number> => ({
+      avgQtyPerDay: 0, costPrice: 0, checkAmount: 0, netProfitPerUnit: 0,
+      totalNetProfit: 0, profitability: 0, totalQty: 0, totalRubles: 0, revenue: 0,
+      _cpSum: 0, _ckSum: 0, _npSum: 0, _cnt: 0,
+    });
+
+    for (const cab of cabinets) {
+      const cabTotal = init();
+      const cabGroups = groups.filter(g => g.cabinet_id === cab.id);
+
+      for (const grp of cabGroups) {
+        const grpProducts = products.filter(p =>
+          memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
+        );
+        const grpTotal = init();
+
+        for (const pr of grpProducts) {
+          const plan = getPlan(pr.sku, selectedMonth);
+          if (!plan) continue;
+          grpTotal.avgQtyPerDay += plan.avgQtyPerDay;
+          grpTotal.totalNetProfit += plan.totalNetProfit;
+          grpTotal.totalQty += plan.totalQty;
+          grpTotal.totalRubles += plan.totalRubles;
+          grpTotal._cpSum += plan.costPrice;
+          grpTotal._ckSum += plan.checkAmount;
+          grpTotal._npSum += plan.netProfitPerUnit;
+          grpTotal._cnt++;
+        }
+
+        if (grpTotal._cnt > 0) {
+          grpTotal.costPrice = grpTotal._cpSum / grpTotal._cnt;
+          grpTotal.checkAmount = grpTotal._ckSum / grpTotal._cnt;
+          grpTotal.netProfitPerUnit = grpTotal._npSum / grpTotal._cnt;
+        }
+        grpTotal.profitability = grpTotal.totalRubles ? (grpTotal.totalNetProfit / grpTotal.totalRubles) * 100 : 0;
+        totals.set(grp.id, { ...grpTotal });
+
+        for (const k of ['avgQtyPerDay', 'totalNetProfit', 'totalQty', 'totalRubles', '_cpSum', '_ckSum', '_npSum', '_cnt']) {
+          (cabTotal as any)[k] += (grpTotal as any)[k];
+        }
+      }
+      if (cabTotal._cnt > 0) {
+        cabTotal.costPrice = cabTotal._cpSum / cabTotal._cnt;
+        cabTotal.checkAmount = cabTotal._ckSum / cabTotal._cnt;
+        cabTotal.netProfitPerUnit = cabTotal._npSum / cabTotal._cnt;
+      }
+      cabTotal.profitability = cabTotal.totalRubles ? (cabTotal.totalNetProfit / cabTotal.totalRubles) * 100 : 0;
+      totals.set(cab.id, { ...cabTotal });
+    }
+    return totals;
+  }, [cabinets, groups, products, memberships, planMap, selectedMonth]);
+
+  // Grand summary for the top bar
+  const planSummary = useMemo(() => {
+    let totalRubles = 0, totalNetProfit = 0, totalQty = 0, skuCount = 0;
+    for (const cab of cabinets) {
+      const ct = planTotals.get(cab.id);
+      if (!ct) continue;
+      totalRubles += ct.totalRubles;
+      totalNetProfit += ct.totalNetProfit;
+      totalQty += ct.totalQty;
+    }
+    for (const pr of products) {
+      if (getPlan(pr.sku, selectedMonth)) skuCount++;
+    }
+    const profitability = totalRubles ? (totalNetProfit / totalRubles) * 100 : 0;
+    const revenue = totalRubles * globalBuyoutRate / 100;
+    return { totalRubles, totalNetProfit, totalQty, profitability, skuCount, revenue };
+  }, [cabinets, products, planTotals, planMap, selectedMonth, globalBuyoutRate]);
 
   const treeRows = useMemo(() => {
     const rows: { id: string; sku: string; name: string; depth: number; type: 'cabinet' | 'group' | 'product'; parent: string | null }[] = [];
@@ -95,7 +171,8 @@ export default function PlanningPage() {
     return rows;
   }, [cabinets, groups, products, memberships, expanded]);
 
-  const handleStartEdit = (sku: string, field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>) => {
+  const handleStartEdit = (sku: string, field: string) => {
+    if (field === 'revenue') return;
     const plan = getPlan(sku, selectedMonth);
     const val = plan ? (plan as any)[field] as number : 0;
     setEditing({ sku, field });
@@ -117,7 +194,13 @@ export default function PlanningPage() {
     setEditing(null);
   };
 
-  const renderCell = (sku: string, field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>, isEditing: boolean) => {
+  const renderCell = (sku: string, field: string, isEditing: boolean) => {
+    if (field === 'revenue') {
+      const plan = getPlan(sku, selectedMonth);
+      const val = plan ? plan.totalRubles * globalBuyoutRate / 100 : 0;
+      const fieldDef = PLAN_FIELDS.find(f => f.key === 'revenue')!;
+      return <span className="pl-cell-val">{f(val, fieldDef.decimals)}{fieldDef.suffix}</span>;
+    }
     const plan = getPlan(sku, selectedMonth);
     const val = plan ? (plan as any)[field] as number : 0;
     const fieldDef = PLAN_FIELDS.find(f => f.key === field)!;
@@ -219,6 +302,10 @@ export default function PlanningPage() {
             <label>Месяц:</label>
             <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
           </div>
+          <div className="pl-buyout-selector">
+            <label>% выкупа:</label>
+            <input type="number" className="pl-buyout-input" value={globalBuyoutRate} onChange={e => setGlobalBuyoutRate(Number(e.target.value) || 0)} min={0} max={100} />
+          </div>
           <div className="pl-import-area">
             <label className={`pl-import-btn ${importStatus ? 'done' : ''}`}>
               {importStatus || 'Импорт из Excel'}
@@ -233,6 +320,32 @@ export default function PlanningPage() {
       </div>
 
       <div className="pl-table-wrap">
+        <div className="plan-summary">
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">Заказы, руб</div>
+            <div className="plan-summary-value">{f(planSummary.totalRubles)} ₽</div>
+          </div>
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">Выручка</div>
+            <div className="plan-summary-value">{f(planSummary.revenue)} ₽</div>
+          </div>
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">ЧП итого</div>
+            <div className="plan-summary-value">{f(planSummary.totalNetProfit)} ₽</div>
+          </div>
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">Рентаб-сть</div>
+            <div className="plan-summary-value">{f(planSummary.profitability, 1)}%</div>
+          </div>
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">Кол-во</div>
+            <div className="plan-summary-value">{f(planSummary.totalQty)}</div>
+          </div>
+          <div className="plan-summary-card">
+            <div className="plan-summary-label">SKU с планом</div>
+            <div className="plan-summary-value">{planSummary.skuCount}</div>
+          </div>
+        </div>
         <table className="pl-table">
           <thead>
             <tr className="pl-header-field">
@@ -245,6 +358,7 @@ export default function PlanningPage() {
           <tbody>
             {treeRows.map(row => {
               if (row.type !== 'product') {
+                const totals = planTotals.get(row.id) || {};
                 return (
                   <tr key={row.id} className={`pl-row pl-depth-${row.depth}`}>
                     <td className="pl-td pl-td-name" style={{ paddingLeft: 8 + row.depth * 18 }}>
@@ -255,9 +369,17 @@ export default function PlanningPage() {
                       )}
                       <span className={`pl-name pl-name-${row.type}`}>{row.name}</span>
                     </td>
-                    {PLAN_FIELDS.map(f => (
-                      <td key={f.key} className="pl-td pl-td-num"></td>
-                    ))}
+                    {PLAN_FIELDS.map(fd => {
+                      let val = fd.key === 'revenue'
+                        ? ((totals as any).totalRubles || 0) * globalBuyoutRate / 100
+                        : (totals as any)[fd.key];
+                      if (val === undefined || val === null) val = 0;
+                      return (
+                        <td key={fd.key} className="pl-td pl-td-num">
+                          <span className="pl-val">{f(val, fd.decimals)}{fd.suffix}</span>
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               }

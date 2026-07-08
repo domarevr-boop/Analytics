@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { Cabinet, ProductGroup, Product } from '../types';
 import {
-  updateCabinet, updateGroup, updateProduct, getBrands, getGroups, getCabinets, getMemberships,
+  updateCabinet, updateGroup, updateProduct, removeCabinet, removeGroup, removeProduct,
+  getBrands, getGroups, getCabinets, getMemberships,
 } from '../data/store';
 
 interface Props {
@@ -92,6 +93,12 @@ export default function EntityEditPanel({ type, entity, onClose }: Props) {
 
         <div className="dict-edit-actions">
           <button className="dict-btn dict-btn-primary" onClick={handleSave}>Сохранить</button>
+          <button className="dict-btn dict-btn-danger" onClick={() => {
+            if (isCabinet) removeCabinet(entity.id);
+            if (isGroup) removeGroup(entity.id);
+            if (isProduct) removeProduct(entity.id);
+            onClose();
+          }}>Удалить</button>
         </div>
       </div>
     </div>

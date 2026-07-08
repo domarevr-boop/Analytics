@@ -26,6 +26,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function ImportPage() {
+  const DEV = import.meta.env.DEV;
   useSyncExternalStore(subscribe, getVersion);
   const logs = getImportLog();
   const [loading, setLoading] = useState(false);
@@ -34,15 +35,15 @@ export default function ImportPage() {
 
   const handleFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    console.log('[import-ui] file received:', file.name, file.size, 'type:', ext);
+    if (DEV) console.log('[import-ui] file received:', file.name, file.size, 'type:', ext);
     setLoading(true);
     setProgress(`Чтение ${file.name}...`);
     try {
       const result = await parseFile(file);
-      console.log('[import-ui] parsed:', result.fileType, result.totalRows, 'rows,', result.headers.length, 'cols, headers:', result.headers);
+      if (DEV) console.log('[import-ui] parsed:', result.fileType, result.totalRows, 'rows,', result.headers.length, 'cols, headers:', result.headers);
       setParsed(result);
     } catch (err) {
-      console.log('[import-ui] error:', err);
+      if (DEV) console.log('[import-ui] error:', err);
       alert(err instanceof Error ? err.message : 'Ошибка обработки файла');
     } finally {
       setLoading(false);
@@ -50,16 +51,16 @@ export default function ImportPage() {
     }
   }, []);
 
-  const handleConfirmMapping = useCallback((source: ImportSource, _mapping: ColumnMapping, remapped: Record<string, string>[], dateOverride?: string, cabinetId?: string, cabinetName?: string) => {
+  const handleConfirmMapping = useCallback(async (source: ImportSource, _mapping: ColumnMapping, remapped: Record<string, string>[], dateOverride?: string) => {
     if (!parsed) return;
-    console.log('[import-ui] source:', source, 'remapped rows:', remapped.length, 'dateOverride:', dateOverride, 'cabinet:', cabinetName);
-    if (remapped.length > 0) console.log('[import-ui] first remapped row:', remapped[0], 'keys:', Object.keys(remapped[0]));
+    if (DEV) console.log('[import-ui] source:', source, 'remapped rows:', remapped.length, 'dateOverride:', dateOverride);
+    if (DEV && remapped.length > 0) console.log('[import-ui] first remapped row:', remapped[0], 'keys:', Object.keys(remapped[0]));
 
     setProgress(`Импорт ${remapped.length} строк...`);
     setLoading(true);
     try {
-      const result = importMappedData(parsed.fileName, source, remapped, dateOverride, cabinetId, cabinetName);
-      console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
+      const result = await importMappedData(parsed.fileName, source, remapped, dateOverride);
+      if (DEV) console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
       if (result.status === 'error') {
         alert(`Ошибка импорта: ${result.error}`);
       }
@@ -80,7 +81,7 @@ export default function ImportPage() {
       const ext = f.name.split('.').pop()?.toLowerCase();
       return ext === 'csv' || ext === 'xlsx' || ext === 'xls';
     });
-    console.log('[import-ui] drop:', files.length, 'files');
+    if (DEV) console.log('[import-ui] drop:', files.length, 'files');
     for (const f of files) {
       await handleFile(f);
     }
@@ -91,19 +92,19 @@ export default function ImportPage() {
       const ext = f.name.split('.').pop()?.toLowerCase();
       return ext === 'csv' || ext === 'xlsx' || ext === 'xls';
     });
-    console.log('[import-ui] input:', files.length, 'files');
+    if (DEV) console.log('[import-ui] input:', files.length, 'files');
     for (const f of files) {
       await handleFile(f);
     }
     e.target.value = '';
   }, [handleFile]);
 
-  const handleDelete = useCallback((log: ImportFileLog) => {
+  const handleDelete = useCallback(async (log: ImportFileLog) => {
     const msg = log.dataStart
       ? `Удалить импорт "${log.fileName}" и очистить ${log.rowCount} метрик за период ${log.dataStart}—${log.dataEnd || log.dataStart}?`
       : `Удалить импорт "${log.fileName}" и все данные рекламы XWAY?`;
     if (confirm(msg)) {
-      deleteImportLogEntry(log.id);
+      await deleteImportLogEntry(log.id);
     }
   }, []);
 

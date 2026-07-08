@@ -7,20 +7,32 @@ body {
   padding: 0;
   font-family: Inter, 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;
-  color: #172b4d;
-  background: #F6F8FA;
+  color: var(--color-text);
+  background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
-  padding: 24px;
+  padding: 16px;
   width: 100%;
   min-height: 100vh;
 }
 
 select, input, button {
   font-family: inherit;
+}
+
+/* JetBrains Mono for all numeric values */
+.db-val, .db-val-md, .db-val-sm,
+.at-mv, .at-mc,
+.plan-summary-value, .pl-val, .pl-top-val,
+.profit-summary-value, .profit-summary-number,
+.coverage-count, .coverage-range, .coverage-pct,
+.dict-field input,
+.import-count,
+.pt-num, .pt-dim, .pt-pct {
+  font-family: 'JetBrains Mono', monospace;
 }
 
 ::-webkit-scrollbar {

@@ -104,18 +104,6 @@ CREATE TABLE IF NOT EXISTS monthly_plans (
   PRIMARY KEY (sku, month)
 );
 
-CREATE TABLE IF NOT EXISTS profitability_reports (
-  id TEXT PRIMARY KEY,
-  product_id TEXT NOT NULL,
-  period_start TEXT NOT NULL,
-  period_end TEXT NOT NULL,
-  actual_profit REAL DEFAULT 0,
-  actual_margin REAL DEFAULT 0,
-  profit_revenue REAL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_profitability_product ON profitability_reports(product_id);
-
 -- ── Row Level Security ──
 -- Enable RLS + allow anon access on all tables.
 -- Without these policies, anyone with the anon key (visible in browser DevTools)
@@ -130,7 +118,6 @@ ALTER TABLE daily_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE monthly_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE import_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profitability_reports ENABLE ROW LEVEL SECURITY;
 
 -- SECURITY NOTE:
 -- This app is admin-only.
@@ -177,7 +164,6 @@ DROP POLICY IF EXISTS "admin_all" ON monthly_plans;
 DROP POLICY IF EXISTS "admin_all" ON import_logs;
 DROP POLICY IF EXISTS "admin_all" ON app_admins;
 DROP POLICY IF EXISTS "admin_all" ON auth_session_events;
-DROP POLICY IF EXISTS "admin_all" ON profitability_reports;
 
 CREATE POLICY "admin_all" ON cabinets FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "admin_all" ON brands FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
@@ -188,6 +174,5 @@ CREATE POLICY "admin_all" ON daily_metrics FOR ALL TO authenticated USING (publi
 CREATE POLICY "admin_all" ON plans FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "admin_all" ON monthly_plans FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "admin_all" ON import_logs FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
-CREATE POLICY "admin_all" ON profitability_reports FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "admin_all" ON app_admins FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "admin_all" ON auth_session_events FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());

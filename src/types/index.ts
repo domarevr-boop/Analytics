@@ -50,6 +50,7 @@ export interface DailyMetrics {
   forecast_profit_per_order: number;
   actual_profit: number;
   actual_margin: number;
+  profit_revenue: number;
 }
 
 export interface MetricValues {
@@ -59,6 +60,7 @@ export interface MetricValues {
   carts: number;
   cr_cart: number;
   orders: number;
+  avg_price: number;
   cr_order: number;
   ad_spend: number;
   ad_clicks: number;
@@ -69,6 +71,12 @@ export interface MetricValues {
   drrForecast: number;
   drrActual: number;
   plan_orders: number;
+  plan_orders_qty: number;
+  plan_sum: number;
+  plan_price: number;
+  plan_net_profit: number;
+  plan_profitability: number;
+  plan_revenue: number;
   fact_orders: number;
   plan_pct: number;
   revenue: number;
@@ -94,7 +102,7 @@ export interface TableRow {
 
 export type EntityType = 'cabinet' | 'group' | 'product';
 
-export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'dev';
+export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'profitability' | 'admin';
 
 export interface PlanRecord {
   entityId: string;
@@ -106,6 +114,16 @@ export interface PlanRecord {
   ordersSum: number;
   profitability: number;
   netProfit: number;
+}
+
+export interface ProfitabilityRecord {
+  id: string;
+  product_id: string;
+  period_start: string;
+  period_end: string;
+  actual_profit: number;
+  actual_margin: number;
+  profit_revenue: number;
 }
 
 export interface MonthlyPlanRecord {
@@ -148,6 +166,7 @@ export interface DataSnapshot {
   metrics: DailyMetrics[];
   plans: PlanRecord[];
   monthlyPlans: MonthlyPlanRecord[];
+  profitability: ProfitabilityRecord[];
   importLogs: ImportFileLog[];
 }
 
@@ -156,4 +175,7 @@ export interface IDataRepository {
   initialize(): Promise<void>;
   loadAll(): Promise<DataSnapshot>;
   saveAll(data: DataSnapshot): Promise<void>;
+  deleteMetrics?(opts: { productIds: string[]; dateStart?: string; dateEnd?: string }): Promise<void>;
+  deleteImportLog?(logId: string): Promise<void>;
+  deleteProfitability?(productId: string): Promise<void>;
 }

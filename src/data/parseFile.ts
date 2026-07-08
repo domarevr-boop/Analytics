@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
 
+const DEV = import.meta.env.DEV;
+
 export interface ParsedFile {
   fileName: string;
   fileType: 'xlsx' | 'xls' | 'csv';
@@ -83,9 +85,9 @@ function scanSheet(name: string, arr: any[][]): SheetScanResult | null {
 
 function fmtCell(v: any): string {
   if (v instanceof Date) {
-    const y = v.getFullYear();
-    const m = String(v.getMonth() + 1).padStart(2, '0');
-    const d = String(v.getDate()).padStart(2, '0');
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(v.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
   return String(v).trim();
@@ -108,7 +110,7 @@ function buildRows(headers: string[], data: any[][], headerRow: number): Record<
 
 function parseCSV(text: string): { headers: string[]; rawHeaders: string[]; rows: Record<string, string>[] } {
   const delimiter = detectDelimiter(text);
-  console.debug('[parseFile] CSV delimiter:', JSON.stringify(delimiter));
+  if (DEV) console.debug('[parseFile] CSV delimiter:', JSON.stringify(delimiter));
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) throw new Error('Файл пуст или содержит только заголовок');
   const rawHeaders = lines[0].split(delimiter).map(h => h.trim());
@@ -125,7 +127,7 @@ function parseCSV(text: string): { headers: string[]; rawHeaders: string[]; rows
 function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[]; rows: Record<string, string>[] } {
   const workbook = XLSX.read(data, { type: 'array', cellDates: true });
   const sheetNames = workbook.SheetNames;
-  console.debug('[parseFile] Excel sheets:', sheetNames.join(', '));
+  if (DEV) console.debug('[parseFile] Excel sheets:', sheetNames.join(', '));
 
   // Scan all sheets for best header row
   let best: SheetScanResult | null = null;
@@ -142,11 +144,11 @@ function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[
     }
   }
 
-  console.debug('[parseFile] scanned sheets:', scanned);
+  if (DEV) console.debug('[parseFile] scanned sheets:', scanned);
 
   if (!best) {
     // Fallback: first sheet, first row
-    console.debug('[parseFile] no header row found, using first sheet first row');
+    if (DEV) console.debug('[parseFile] no header row found, using first sheet first row');
     const fallback = sheetNames[0];
     const arr: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[fallback], { header: 1, defval: '' });
     if (arr.length < 2) throw new Error('Лист пуст или содержит только заголовок');
@@ -156,7 +158,7 @@ function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[
     return { headers, rawHeaders, rows };
   }
 
-  console.debug('[parseFile] best sheet:', best.sheetName, 'header row:', best.headerRow, 'score:', best.score, 'headers:', best.headers);
+  if (DEV) console.debug('[parseFile] best sheet:', best.sheetName, 'header row:', best.headerRow, 'score:', best.score, 'headers:', best.headers);
 
   // Ignore rows above header (garbage)
   const rows = buildRows(best.headers, best.data, best.headerRow);
@@ -176,7 +178,7 @@ export function parseFile(file: File): Promise<ParsedFile> {
   if (fileType === 'csv') {
     return file.text().then(text => {
       const { headers, rawHeaders, rows } = parseCSV(text);
-      console.debug('[parseFile] CSV parsed:', rows.length, 'rows');
+      if (DEV) console.debug('[parseFile] CSV parsed:', rows.length, 'rows');
       return { fileName: file.name, fileType, headers, rawHeaders, rows, totalRows: rows.length };
     });
   }
@@ -184,7 +186,7 @@ export function parseFile(file: File): Promise<ParsedFile> {
   // xlsx / xls
   return file.arrayBuffer().then(data => {
     const { headers, rawHeaders, rows } = parseExcel(data);
-    console.debug('[parseFile] Excel parsed:', rows.length, 'rows, from sheet with headers:', headers);
+    if (DEV) console.debug('[parseFile] Excel parsed:', rows.length, 'rows, from sheet with headers:', headers);
     return { fileName: file.name, fileType, headers, rawHeaders, rows, totalRows: rows.length };
   });
 }

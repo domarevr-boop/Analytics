@@ -2,8 +2,12 @@ import { normHeader } from './parseFile';
 import type { ImportSource } from '../types';
 
 const COLUMN_DICT: Record<string, string> = {
+  'артикул': 'sku',
   'артикул продавца': 'sku',
+  'nm_id': 'sku',
+  'nm': 'wb_sku',
   'артикул wb': 'wb_sku',
+  'артикул (wb)': 'wb_sku',
   'предмет': 'category',
   'категория': 'category',
   'дата': 'date',
@@ -52,10 +56,12 @@ const COLUMN_DICT: Record<string, string> = {
   'прогнозная прибыль на товар': 'forecast_profit_per_order',
   'фактическая прибыль': 'actual_profit',
   'фактическая маржа': 'actual_margin',
+  'выручка': 'profit_revenue',
+  'валоваяприбыльсучетомрасходовмаркетплейса': 'actual_profit',
+  'итоговая маржинальность,%': 'actual_margin',
   // Английские варианты
   'sku': 'sku',
   'article': 'sku',
-  'nm_id': 'sku',
   'date': 'date',
   'day': 'date',
   'impressions': 'impressions',
@@ -127,13 +133,15 @@ export const FIELD_LABELS: Record<string, string> = {
   forecast_profit_per_order: 'Прогноз прибыли',
   actual_profit: 'Факт. прибыль',
   actual_margin: 'Факт. маржа',
+  profit_revenue: 'Выручка (Сойка)',
   cpc: 'CPC, руб.',
   cpo: 'CPO, руб.',
   drr: 'ДРР, %',
 };
 
 export function getRequiredFields(source?: ImportSource): string[] {
-  return source === 'xway' ? ['sku'] : ['sku', 'date'];
+  if (source === 'xway' || source === 'profitability') return ['sku'];
+  return ['sku', 'date'];
 }
 
 export interface ColumnMapping {
@@ -172,8 +180,9 @@ export function lookupField(header: string): string | null {
 export function autoDetectMapping(headers: string[], source?: ImportSource): ColumnMapping {
   const map: Record<string, string> = {};
   const unmapped: string[] = [];
+  const DEV = import.meta.env.DEV;
 
-  console.log('[cMap] autoDetectMapping source:', source, 'headers:', headers);
+  if (DEV) console.log('[cMap] autoDetectMapping source:', source, 'headers:', headers);
 
   for (const h of headers) {
     const nh = normHeader(h);
@@ -182,22 +191,24 @@ export function autoDetectMapping(headers: string[], source?: ImportSource): Col
     const field = override || dictField;
     if (field) {
       map[h] = field;
-      console.log('[cMap]  mapped:', JSON.stringify(h), '->', JSON.stringify(nh), '->', field, override ? '(xway override)' : '');
+      if (DEV) console.log('[cMap]  mapped:', JSON.stringify(h), '->', JSON.stringify(nh), '->', field, override ? '(xway override)' : '');
     } else {
       unmapped.push(h);
-      console.log('[cMap]  UNMAPPED:', JSON.stringify(h), '->', JSON.stringify(nh));
+      if (DEV) console.log('[cMap]  UNMAPPED:', JSON.stringify(h), '->', JSON.stringify(nh));
     }
   }
 
   if (unmapped.length > 0) {
-    console.log('[cMap] unrecognized columns:', unmapped.join(', '));
+    if (DEV) console.log('[cMap] unrecognized columns:', unmapped.join(', '));
   } else {
-    console.log('[cMap] all columns mapped:', Object.entries(map).map(([h, f]) => `${h}→${f}`).join(', '));
+    if (DEV) console.log('[cMap] all columns mapped:', Object.entries(map).map(([h, f]) => `${h}→${f}`).join(', '));
   }
 
   const found = new Set(Object.values(map));
   const missing = getRequiredFields(source).filter(f => !found.has(f));
-  if (missing.length > 0) console.log('[cMap] missing required fields:', missing);
+  if (missing.length > 0) {
+    if (DEV) console.log('[cMap] missing required fields:', missing);
+  }
 
   return { map, unmapped, missing };
 }
@@ -211,8 +222,8 @@ export function remapRows(rows: Record<string, string>[], mapping: Record<string
     }
     return remapped;
   });
-  if (result.length > 0) {
-    console.log('[cMap] remapRows — first remapped row keys:', Object.keys(result[0]), 'values:', result[0]);
+  if (result.length > 0 && import.meta.env.DEV) {
+    if (DEV) console.log('[cMap] remapRows — first remapped row keys:', Object.keys(result[0]), 'values:', result[0]);
   }
   return result;
 }

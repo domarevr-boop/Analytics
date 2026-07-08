@@ -3,7 +3,7 @@ import type { ParsedFile } from '../data/parseFile';
 import { autoDetectMapping, remapRows, FIELD_LABELS, getRequiredFields, detectSourceFromHeaders } from '../data/columnMapping';
 import type { ColumnMapping } from '../data/columnMapping';
 import type { ImportSource } from '../types';
-import { getCabinets, detectSourceFromFilename } from '../data/store';
+import { detectSourceFromFilename } from '../data/store';
 
 const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
   { value: 'wb_funnel', label: 'WB Воронка' },
@@ -13,7 +13,7 @@ const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
 
 interface Props {
   parsed: ParsedFile;
-  onConfirm: (source: ImportSource, mapping: ColumnMapping, remapped: Record<string, string>[], dateOverride?: string, cabinetId?: string, cabinetName?: string) => void;
+  onConfirm: (source: ImportSource, mapping: ColumnMapping, remapped: Record<string, string>[], dateOverride?: string) => void;
   onCancel: () => void;
 }
 
@@ -26,10 +26,9 @@ function todayStr() {
 }
 
 export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Props) {
+  const DEV = import.meta.env.DEV;
   const [source, setSource] = useState<ImportSource>(() => detectSourceFromHeaders(parsed.headers) || detectSourceFromFilename(parsed.fileName));
   const [xwayDate, setXwayDate] = useState(todayStr);
-  const [cabinetId, setCabinetId] = useState('');
-  const cabinets = getCabinets();
 
   const mapping = useMemo(() => autoDetectMapping(parsed.headers, source), [parsed.headers, source]);
   const required = useMemo(() => getRequiredFields(source), [source]);
@@ -37,15 +36,14 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
   const finalMap = mapping.map;
   const remapped = useMemo(() => remapRows(parsed.rows, finalMap), [parsed.rows, finalMap]);
 
-  console.log('[ImportColumnMapper] render:', { source, xwayDate, totalRows: parsed.totalRows, finalMap, unmapped: mapping.unmapped, remappedLen: remapped.length });
-  if (remapped.length > 0) console.log('[ImportColumnMapper] first remapped:', remapped[0]);
+  if (DEV) console.log('[ImportColumnMapper] render:', { source, xwayDate, totalRows: parsed.totalRows, finalMap, unmapped: mapping.unmapped, remappedLen: remapped.length });
+  if (DEV && remapped.length > 0) console.log('[ImportColumnMapper] first remapped:', remapped[0]);
 
   const mappedFields = Object.values(finalMap);
   const hasDateColumn = mappedFields.includes('date');
   const mappedCount = Object.keys(finalMap).length;
   const totalCount = parsed.headers.length;
   const missingRequired = required.filter(f => !mappedFields.includes(f));
-  const missingCabinet = source !== 'profitability' && !cabinetId;
 
   const previewHeaders = ['sku', ...(source === 'xway' && !hasDateColumn ? [] : ['date']), ...mappedFields.filter(f => f !== 'sku' && f !== 'date').slice(0, 6)];
   const previewRows = remapped.slice(0, 5);
@@ -69,23 +67,12 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-            {source !== 'profitability' && (
-              <span className="import-mapper-cabinet">
-                <label>Кабинет:</label>
-                <select value={cabinetId} onChange={e => setCabinetId(e.target.value)}>
-                  <option value="">— Выберите кабинет —</option>
-                  {cabinets.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </span>
-            )}
-            {source === 'xway' && hasDateColumn && (
+            {(source === 'xway' || source === 'profitability') && hasDateColumn && (
               <span className="import-mapper-date-hint">Дата из файла</span>
             )}
-            {source === 'xway' && !hasDateColumn && (
+            {(source === 'xway' || source === 'profitability') && !hasDateColumn && (
               <span className="import-mapper-date">
-                <label>Дата отчёта:</label>
+                <label>{source === 'profitability' ? 'Период (начало):' : 'Дата отчёта:'}</label>
                 <input type="date" className="daterange-input" value={xwayDate} onChange={e => setXwayDate(e.target.value)} />
               </span>
             )}
@@ -109,17 +96,6 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
             </div>
           )}
 
-          {missingCabinet && (
-            <div className="map-section">
-              <div className="map-section-title map-section-error">
-                ! Не выбран кабинет
-              </div>
-              <div className="map-section-body">
-                <p className="map-error-desc">Выберите кабинет, к которому относятся данные в файле.</p>
-              </div>
-            </div>
-          )}
-
           {mapping.unmapped.length > 0 && (
             <div className="map-section">
               <div className="map-section-title map-section-ignore">
@@ -133,7 +109,7 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
             </div>
           )}
 
-          {mapping.unmapped.length === 0 && missingRequired.length === 0 && !missingCabinet && (
+          {mapping.unmapped.length === 0 && missingRequired.length === 0 && (
             <div className="map-section">
               <div className="map-section-title map-section-ok">
                 v Все {mappedCount} колонок распознаны
@@ -170,8 +146,6 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
           <div className="import-mapper-status">
             {missingRequired.length > 0 ? (
               <span className="import-mapper-error">Импорт заблокирован — нет обязательных полей</span>
-            ) : missingCabinet ? (
-              <span className="import-mapper-error">Импорт заблокирован — не выбран кабинет</span>
             ) : (
               <span className="import-mapper-ok">
                 v Импорт {remapped.length} строк готов
@@ -183,10 +157,10 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
             <button className="dict-btn" onClick={onCancel}>Отмена</button>
             <button
               className="dict-btn dict-btn-primary"
-              disabled={missingRequired.length > 0 || missingCabinet}
-              onClick={() => {
-                const c = cabinets.find(c => c.id === cabinetId);
-                onConfirm(source, mapping, remapped, source === 'xway' && !hasDateColumn ? xwayDate : undefined, cabinetId || undefined, c?.name);
+              disabled={missingRequired.length > 0}
+                onClick={() => {
+                const needsDateOverride = (source === 'xway' || source === 'profitability') && !hasDateColumn;
+                onConfirm(source, mapping, remapped, needsDateOverride ? xwayDate : undefined);
               }}
             >
               Импортировать {remapped.length} строк

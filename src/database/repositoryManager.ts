@@ -6,6 +6,7 @@ export interface RepoStatus {
 }
 
 export class RepositoryManager implements IDataRepository {
+  private readonly DEV = import.meta.env.DEV;
   readonly name = 'manager';
   private local: IDataRepository;
   private cloud: IDataRepository;
@@ -29,10 +30,10 @@ export class RepositoryManager implements IDataRepository {
     try {
       await this.cloud.initialize();
       this._cloudAvailable = true;
-      console.log('[repo] cloud available');
+      if (this.DEV) console.log('[repo] cloud available');
     } catch (err) {
       this._cloudAvailable = false;
-      console.log('[repo] cloud unavailable, offline mode');
+      if (this.DEV) console.log('[repo] cloud unavailable, offline mode');
     }
   }
 
@@ -59,11 +60,13 @@ export class RepositoryManager implements IDataRepository {
   async saveAll(data: DataSnapshot): Promise<void> {
     await this.local.saveAll(data);
     if (this._cloudAvailable) {
-      this.cloud.saveAll(data).then(() => {
+      try {
+        await this.cloud.saveAll(data);
         this._lastSyncTime = new Date();
-      }).catch(err => {
+      } catch (err) {
+        this._cloudAvailable = false;
         console.warn('[repo] cloud sync failed:', err);
-      });
+      }
     }
   }
 }

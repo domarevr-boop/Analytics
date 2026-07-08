@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getBrands, getGroups, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getBrands, getGroups, getProducts, UNGROUPED_GROUP_ID } from '../data/store';
 
 interface FilterBarProps {
   cabinetFilter: string;
@@ -20,7 +20,9 @@ export default function FilterBar({
   const cabinets = getCabinets();
   const brands = getBrands();
   const groups = getGroups();
+  const products = getProducts();
   const filteredGroups = groups.filter(g => !cabinetFilter || g.cabinet_id === cabinetFilter);
+  const allSkus = [...new Set(products.map(p => p.sku).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   return (
     <div className="filterbar">
@@ -37,9 +39,10 @@ export default function FilterBar({
         {filteredGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
         <option value={UNGROUPED_GROUP_ID}>Без склейки</option>
       </select>
-      <div className="filterbar-search">
-        <input type="text" placeholder="Поиск артикула..." value={searchQuery} onChange={e => onSearchChange(e.target.value)} />
-      </div>
+      <select value={searchQuery} onChange={e => onSearchChange(e.target.value)} className="filterbar-sku">
+        <option value="">Все артикулы</option>
+        {allSkus.map(sku => <option key={sku} value={sku}>{sku}</option>)}
+      </select>
     </div>
   );
 }
