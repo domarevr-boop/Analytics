@@ -2,11 +2,6 @@ import { supabase } from '../lib/supabaseClient';
 import type { DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ImportFileLog, ProfitabilityRecord } from '../types';
 
 // Supabase row shapes returned from queries
-interface CabinetRow { id: string; name: string }
-interface BrandRow { id: string; name: string }
-interface GroupRow { id: string; name: string; cabinet_id: string }
-interface ProductRow { id: string; sku: string; wb_sku: string; name: string; category: string; brand_id: string; cabinet_id: string }
-interface MembershipRow { product_id: string; group_id: string }
 interface MetricsRow { date: string; product_id: string; impressions: number; clicks: number; carts: number; orders: number; buyouts: number; cancellations: number; ordered_amount: number; buyout_amount: number; cancellation_amount: number; ad_impressions: number; ad_clicks: number; ad_orders: number; ad_spend: number; stock: number; plan_orders: number; forecast_profit_per_order: number; actual_profit: number; actual_margin: number; profit_revenue: number }
 interface PlanRow { entity_id: string; entity_type: 'cabinet' | 'group' | 'product'; parent_id: string | null; name: string; orders_qty: number; avg_price: number; orders_sum: number; profitability: number; net_profit: number }
 interface MonthlyPlanRow { sku: string; month: string; avg_qty_per_day: number; cost_price: number; check_amount: number; net_profit_per_unit: number; total_net_profit: number; profitability: number; total_qty: number; total_rubles: number; buyout_rate: number }

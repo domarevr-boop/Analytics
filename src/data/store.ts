@@ -46,8 +46,6 @@ let _plans: PlanRecord[] = [];
 let _monthlyPlans: MonthlyPlanRecord[] = [];
 let _profitability: ProfitabilityRecord[] = [];
 let _skuAliases = new Map<string, string>();
-let _nextId = 100;
-
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
 
 function seed() {
@@ -400,7 +398,6 @@ export function resetAllData(): void {
   _monthlyPlans = [];
   _profitability = [];
   _skuAliases.clear();
-  _nextId = 100;
   _nextLogId = 1;
   seed();
   persistAll();
@@ -661,21 +658,6 @@ function seedDerivedData() {
 }
 
 function restoreNextId() {
-  const allIds: string[] = [];
-  for (const c of _cabinets) allIds.push(c.id);
-  for (const b of _brands) allIds.push(b.id);
-  for (const g of _groups) allIds.push(g.id);
-  for (const p of _products) allIds.push(p.id);
-  for (const r of _profitability) allIds.push(r.id);
-  for (const l of _importLog) allIds.push(l.id);
-  let max = 0;
-  for (const id of allIds) {
-    const parts = id.split('-');
-    const num = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(num) && num > max) max = num;
-  }
-  _nextId = max + 1;
-
   let maxLog = 0;
   for (const l of _importLog) {
     const parts = l.id.split('-');
@@ -716,10 +698,6 @@ function upsertProfitabilityRecord(rec: ProfitabilityRecord) {
   } else {
     _profitability.push(rec);
   }
-}
-
-function setProfitabilityAll(records: ProfitabilityRecord[]) {
-  _profitability = records;
 }
 
 export function upsertMonthlyPlan(rec: MonthlyPlanRecord) {

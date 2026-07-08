@@ -223,7 +223,7 @@ export function remapRows(rows: Record<string, string>[], mapping: Record<string
     return remapped;
   });
   if (result.length > 0 && import.meta.env.DEV) {
-    if (DEV) console.log('[cMap] remapRows — first remapped row keys:', Object.keys(result[0]), 'values:', result[0]);
+    console.log('[cMap] remapRows — first remapped row keys:', Object.keys(result[0]), 'values:', result[0]);
   }
   return result;
 }

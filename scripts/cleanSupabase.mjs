@@ -40,6 +40,7 @@ async function main() {
     { table: 'daily_metrics', col: 'date' },
     { table: 'import_logs', col: 'id' },
     { table: 'monthly_plans', col: 'sku' },
+    { table: 'profitability_reports', col: 'id' },
     { table: 'plans', col: 'entity_id' },
     { table: 'products', col: 'id' },
     { table: 'product_groups', col: 'id' },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { PageName } from './types';
 import type { RepoStatus } from './database/db';
 import type { DatePeriod } from './data/mock';
@@ -6,7 +6,7 @@ import { getDefaultPeriods } from './data/mock';
 import { getSyncStatus, subscribeSyncStatus } from './database/db';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
 import { adminMe } from './admin/adminApi';
-import { initStore } from './data/store';
+import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
 import DashboardBlock from './components/DashboardBlock';
 import FilterBar from './components/FilterBar';
@@ -38,6 +38,7 @@ function App() {
 
   const [adminRefreshKey, setAdminRefreshKey] = useState(0);
   const isAdmin = isConfiguredAdminEmail(auth.user?.email) || !!adminMeta?.isAdmin;
+  const storeVersion = useSyncExternalStore(subscribe, getVersion);
 
   useEffect(() => {
     void initAuth();
@@ -46,7 +47,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    return subscribeSyncStatus(s => setSyncStatus(s));
+    const unsub = subscribeSyncStatus(s => setSyncStatus(s));
+    return () => { unsub(); };
   }, []);
 
   useEffect(() => {
@@ -88,6 +90,14 @@ function App() {
     })();
     return () => { cancelled = true; };
   }, [auth.initialized, auth.user, isAdmin, authTick]);
+
+  useEffect(() => {
+    if (!dataReady) return;
+    const d = getDefaultPeriods();
+    setPeriodA(d.a);
+    setPeriodB(d.b);
+    setMaxDate(d.maxDate);
+  }, [storeVersion, dataReady]);
 
   const handlePeriodChange = (a: DatePeriod, b: DatePeriod) => {
     if (import.meta.env.DEV) console.log('[APP] handlePeriodChange', { periodA_before: periodA, periodA_after: a, periodB_before: periodB, periodB_after: b, isSame: periodA === a });
