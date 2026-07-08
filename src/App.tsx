@@ -1,9 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { PageName } from './types';
-import type { RepoStatus } from './database/db';
 import type { DatePeriod } from './data/mock';
 import { getDefaultPeriods } from './data/mock';
-import { getSyncStatus, subscribeSyncStatus } from './database/db';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
@@ -22,7 +20,6 @@ import './App.css';
 
 function App() {
   const [page, setPage] = useState<PageName>('dashboard');
-  const [syncStatus, setSyncStatus] = useState<RepoStatus>(() => getSyncStatus());
   const [authTick, setAuthTick] = useState(0);
   const auth = getAuthState();
 
@@ -45,11 +42,6 @@ function App() {
     void initAuth();
     const unsubscribe = subscribeAuth(() => setAuthTick(v => v + 1));
     return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    const unsub = subscribeSyncStatus(s => setSyncStatus(s));
-    return () => { unsub(); };
   }, []);
 
   useEffect(() => {
@@ -121,7 +113,7 @@ function App() {
   if (!isAdmin && !canBootstrap) {
     return (
       <div className="dashboard">
-        <NavBar activePage={page} onNavigate={setPage} syncStatus={syncStatus} onLogout={() => void signOut()} showAdmin={false} />
+        <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin={false} />
         <div style={{padding: 24}}>Доступ только для админа.</div>
       </div>
     );
@@ -131,7 +123,7 @@ function App() {
 
   return (
     <div className="dashboard">
-      <NavBar activePage={page} onNavigate={setPage} syncStatus={syncStatus} onLogout={() => void signOut()} showAdmin />
+      <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin />
 
       {page === 'dashboard' ? (
         dataReady ? (

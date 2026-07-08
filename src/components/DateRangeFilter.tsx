@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ru } from 'date-fns/locale/ru';
 import type { DatePeriod } from '../data/mock';
-import { addDays, daysBetween, toDate, toStr, rangeDisplay, fmtDate } from '../data/dateUtils';
+import { addDays, daysBetween, toDate, toStr, rangeDisplay, fmtDate, monthToPeriod } from '../data/dateUtils';
 import 'react-datepicker/dist/react-datepicker.css';
 
 registerLocale('ru', ru);
@@ -17,8 +17,19 @@ interface Props {
 const PRESETS = [
   { value: 1, label: 'Вчера' },
   { value: 7, label: 'Неделя' },
-  { value: 30, label: 'Месяц' },
+  { value: 30, label: '30 дней' },
 ];
+
+function getCalendarMonth(dateStr: string): DatePeriod {
+  const d = toDate(dateStr);
+  const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return monthToPeriod(month);
+}
+
+function monthLabel(dateStr: string): string {
+  const d = toDate(dateStr);
+  return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+}
 
 function detectPreset(p: DatePeriod): number {
   const len = daysBetween(p.start, p.end);
@@ -104,6 +115,20 @@ export default function DateRangeFilter({ periodA, periodB, onChange, maxDate }:
     }
   };
 
+  const applyCalendarMonth = () => {
+    const cm = getCalendarMonth(maxDate);
+    const nextB = synced ? calcSyncedPeriodB(cm) : periodB;
+    onChange(cm, nextB);
+    setOpen(false);
+  };
+
+  const isCalendarMonth = (() => {
+    const d = toDate(maxDate);
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const cm = monthToPeriod(month);
+    return periodA.start === cm.start && periodA.end === cm.end;
+  })();
+
   const presetActive = detectPreset(periodA);
   const startDate = toDate(periodA.start);
   const endDate = toDate(periodA.end);
@@ -148,7 +173,13 @@ export default function DateRangeFilter({ periodA, periodB, onChange, maxDate }:
                 {p.label}
               </button>
             ))}
-            <div className={`drf-popup-chip drf-popup-chip-custom ${presetActive === 0 ? 'active' : ''}`}>
+            <button
+              className={`drf-popup-chip ${isCalendarMonth ? 'active' : ''}`}
+              onClick={applyCalendarMonth}
+            >
+              {monthLabel(maxDate)}
+            </button>
+            <div className={`drf-popup-chip drf-popup-chip-custom ${presetActive === 0 && !isCalendarMonth ? 'active' : ''}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
               </svg>
