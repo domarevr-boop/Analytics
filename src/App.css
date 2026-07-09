@@ -357,6 +357,23 @@
   font-size: 11px;
 }
 
+.date-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #fff;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  height: 36px;
+}
+
+.drf-trigger-label {
+  color: var(--color-text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .drf-trigger {
   display: flex;
   align-items: center;
@@ -394,47 +411,6 @@
 .drf-trigger-current {
   font-weight: 600;
   white-space: nowrap;
-}
-
-.drf-trigger-vs {
-  color: var(--color-text-dim);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
-.drf-trigger-compare {
-  color: var(--color-text-secondary);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.drf-sync {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: #fff;
-  cursor: pointer;
-  color: #7a869a;
-  transition: all 0.15s ease;
-}
-
-.drf-sync:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.drf-sync.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: #eff6ff;
-}
-
-.drf-sync-x {
-  opacity: 0.5;
 }
 
 .drf-popup {
@@ -493,7 +469,6 @@
   padding: 0 7px;
 }
 
-/* ── Date filter popup: От / До fields ── */
 .drf-popup-dates {
   display: flex;
   gap: 8px;
@@ -534,27 +509,6 @@
 
 .drf-date-btn:hover {
   border-color: var(--color-primary);
-}
-
-.drf-popup-compare {
-  margin-top: 10px;
-  padding: 6px 10px;
-  background: #f8f9fa;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-}
-
-.drf-popup-compare-label {
-  color: var(--color-text-dim);
-  font-weight: 500;
-}
-
-.drf-popup-compare-dates {
-  color: var(--color-text-secondary);
-  font-weight: 600;
 }
 
 /* ── Table ── */

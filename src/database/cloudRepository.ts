@@ -29,17 +29,20 @@ export class CloudRepository implements IDataRepository {
     if (!this._ready) throw new Error('CloudRepository not initialized');
     const c = supabase;
 
+    const MAX_ROWS = 1000000;
+    console.log('[cloud] loadAll MAX_ROWS=' + MAX_ROWS + ' this._ready=' + this._ready);
+
     const [cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, importLogs] = await Promise.all([
-      c.from('cabinets').select('id,name').order('name'),
-      c.from('brands').select('id,name').order('name'),
-      c.from('product_groups').select('id,name,cabinet_id').order('name'),
-      c.from('products').select('id,sku,wb_sku,name,category,brand_id,cabinet_id').order('name'),
-      c.from('group_memberships').select('product_id,group_id'),
-      c.from('daily_metrics').select('*').order('date'),
-      c.from('plans').select('entity_id,entity_type,parent_id,name,orders_qty,avg_price,orders_sum,profitability,net_profit'),
-      c.from('monthly_plans').select('sku,month,avg_qty_per_day,cost_price,check_amount,net_profit_per_unit,total_net_profit,profitability,total_qty,total_rubles,buyout_rate').order('month,sku'),
-      c.from('profitability_reports').select('*').order('period_start'),
-      c.from('import_logs').select('id,file_name,source,row_count,uploaded_at,status,error,cabinet_id,cabinet_name,data_start,data_end,product_ids').order('uploaded_at', { ascending: false }),
+      c.from('cabinets').select('id,name').order('name').limit(MAX_ROWS),
+      c.from('brands').select('id,name').order('name').limit(MAX_ROWS),
+      c.from('product_groups').select('id,name,cabinet_id').order('name').limit(MAX_ROWS),
+      c.from('products').select('id,sku,wb_sku,name,category,brand_id,cabinet_id').order('name').limit(MAX_ROWS),
+      c.from('group_memberships').select('product_id,group_id').limit(MAX_ROWS),
+      c.from('daily_metrics').select('*').order('date').limit(MAX_ROWS),
+      c.from('plans').select('entity_id,entity_type,parent_id,name,orders_qty,avg_price,orders_sum,profitability,net_profit').limit(MAX_ROWS),
+      c.from('monthly_plans').select('sku,month,avg_qty_per_day,cost_price,check_amount,net_profit_per_unit,total_net_profit,profitability,total_qty,total_rubles,buyout_rate').order('month,sku').limit(MAX_ROWS),
+      c.from('profitability_reports').select('*').order('period_start').limit(MAX_ROWS),
+      c.from('import_logs').select('id,file_name,source,row_count,uploaded_at,status,error,cabinet_id,cabinet_name,data_start,data_end,product_ids').order('uploaded_at', { ascending: false }).limit(MAX_ROWS),
     ]);
 
     if (cabinets.error) throw cabinets.error;

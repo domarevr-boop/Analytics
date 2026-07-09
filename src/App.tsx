@@ -73,9 +73,11 @@ function App() {
         if (!cancelled) {
           const d = getDefaultPeriods(allTimeMaxDate || undefined);
           if (d.maxDate > allTimeMaxDate) setAllTimeMaxDate(d.maxDate);
-          setPeriodA(d.a);
-          setPeriodB(d.b);
           setMaxDate(d.maxDate);
+          if (!periodA.start) {
+            setPeriodA(d.a);
+            setPeriodB(d.b);
+          }
           setDataReady(true);
         }
       } catch (e) {
@@ -89,15 +91,17 @@ function App() {
     if (!dataReady) return;
     const d = getDefaultPeriods(allTimeMaxDate || undefined);
     if (d.maxDate > allTimeMaxDate) setAllTimeMaxDate(d.maxDate);
-    setPeriodA(d.a);
-    setPeriodB(d.b);
     setMaxDate(d.maxDate);
   }, [storeVersion, dataReady]);
 
-  const handlePeriodChange = (a: DatePeriod, b: DatePeriod) => {
-    if (import.meta.env.DEV) console.log('[APP] handlePeriodChange', { periodA_before: periodA, periodA_after: a, periodB_before: periodB, periodB_after: b, isSame: periodA === a });
-    setPeriodA(a);
-    setPeriodB(b);
+  const handlePeriodAChange = (p: DatePeriod) => {
+    if (import.meta.env.DEV) console.log('[APP] handlePeriodAChange', p);
+    setPeriodA(p);
+  };
+
+  const handlePeriodBChange = (p: DatePeriod) => {
+    if (import.meta.env.DEV) console.log('[APP] handlePeriodBChange', p);
+    setPeriodB(p);
   };
 
   if (!auth.initialized || auth.loading) {
@@ -119,8 +123,6 @@ function App() {
     );
   }
 
-  if (import.meta.env.DEV) console.log('[APP] render', { maxDate, periodA, periodB, dataReady, page });
-
   return (
     <div className="dashboard">
       <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin />
@@ -129,7 +131,10 @@ function App() {
         dataReady ? (
           <>
             <DashboardBlock />
-            <DateRangeFilter periodA={periodA} periodB={periodB} onChange={handlePeriodChange} maxDate={maxDate} />
+            <div className="date-filters">
+              <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
+              <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
+            </div>
             <FilterBar
               cabinetFilter={cabinetFilter}
               brandFilter={brandFilter}
