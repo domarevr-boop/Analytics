@@ -11,9 +11,9 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  wb_funnel: '#e9f2ff',
-  xway: '#f0fdf4',
-  profitability: '#fef9e7',
+  wb_funnel: '#F3F4F6',
+  xway: '#F0FDF4',
+  profitability: '#FEF9C3',
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -196,7 +196,7 @@ export default function DevPage() {
                     <tr key={log.id}>
                       <td className="dev-cell-file">{log.fileName}</td>
                       <td>
-                        <span className="dev-badge" style={{background: SOURCE_COLORS[log.source] || '#eee'}}>
+                        <span className="dev-badge" style={{background: SOURCE_COLORS[log.source] || '#F3F4F6'}}>
                           {SOURCE_LABELS[log.source] || log.source}
                         </span>
                       </td>

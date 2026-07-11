@@ -3,7 +3,7 @@ import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
 import { repository } from '../database/db';
 import type { DataSnapshot } from '../types';
-import { normalizeDate } from './dateUtils';
+import { normalizeDate, addDays } from './dateUtils';
 
 let _version = 0;
 const _listeners = new Set<() => void>();
@@ -759,6 +759,65 @@ export async function initStore() {
     _profitability = snapshot.profitability;
     _importLog = snapshot.importLogs;
     restoreNextId();
+
+    // Migration v1: fix UTC date shift in fmtCell (getUTC* → local getters)
+    const MIGRATED_KEY = '_opencode_migrated_v1';
+    const migrationDone = typeof localStorage !== 'undefined' && localStorage.getItem(MIGRATED_KEY);
+    if (!migrationDone && _metrics.length > 0) {
+      let changed = false;
+
+      // Case 1: duplicates after re-import with fixed fmtCell
+      const dupRemove: DailyMetrics[] = [];
+      for (const m of _metrics) {
+        const nextDate = addDays(m.date, 1);
+        const next = _metrics.find(x => x.date === nextDate && x.product_id === m.product_id);
+        if (next && m.impressions === next.impressions && m.clicks === next.clicks && m.orders === next.orders) {
+          dupRemove.push(m);
+        }
+      }
+      if (dupRemove.length > 0) {
+        if (DEV) console.log('[migration] v1: removing', dupRemove.length, 'shifted duplicates');
+        _metrics = _metrics.filter(m => !dupRemove.includes(m));
+        changed = true;
+      }
+
+      // Case 2: all dates shifted (no re-import done)
+      const metricDates = [...new Set(_metrics.map(m => m.date))].sort();
+      if (metricDates.length >= 2) {
+        const months = [...new Set(metricDates.map(d => d.slice(0, 7)))].sort();
+        if (months.length === 2) {
+          const [y1, m1] = months[0].split('-').map(Number);
+          const [y2, m2] = months[1].split('-').map(Number);
+          const consecutive = (y1 === y2 && m2 === m1 + 1) || (y2 === y1 + 1 && m1 === 12 && m2 === 1);
+          if (consecutive) {
+            const prevDays = metricDates.filter(d => d.startsWith(months[0])).map(d => Number(d.split('-')[2]));
+            const lastDayOfPrev = new Date(y1, m1, 0).getDate();
+            if (prevDays.length > 0 && prevDays.every(d => d > lastDayOfPrev - 5)) {
+              const uploadMin = _importLog.reduce((min, l) => l.uploadedAt && (!min || l.uploadedAt < min) ? l.uploadedAt : min, '');
+              if (uploadMin && uploadMin.slice(0, 10) > metricDates[metricDates.length - 1]) {
+                if (DEV) console.log('[migration] v1: shifting all dates +1 day');
+                for (const m of _metrics) {
+                  m.date = addDays(m.date, 1);
+                }
+                for (const p of _profitability) {
+                  p.period_start = addDays(p.period_start, 1);
+                  p.period_end = addDays(p.period_end, 1);
+                }
+                for (const l of _importLog) {
+                  if (l.dataStart) l.dataStart = addDays(l.dataStart, 1);
+                  if (l.dataEnd) l.dataEnd = addDays(l.dataEnd, 1);
+                }
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (changed) {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(MIGRATED_KEY, '1');
+      }
+    }
     const xwayMetrics = _metrics.filter(m => m.ad_spend > 0);
     if (xwayMetrics.length > 0) {
       const sumAdSpend = xwayMetrics.reduce((s, m) => s + m.ad_spend, 0);

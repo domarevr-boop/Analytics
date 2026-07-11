@@ -167,7 +167,7 @@ function MiniBarChart({ values, dates, metricKey }: { values: number[]; dates: s
         <div style={{
           position: 'absolute', top: -22, left: hover.cx,
           transform: 'translateX(-50%)',
-          background: '#1e293b', color: '#fff',
+          background: '#2D2824', color: '#fff',
           padding: '2px 6px', borderRadius: 4,
           fontSize: 11, fontFamily: 'JetBrains Mono, monospace',
           whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 10,

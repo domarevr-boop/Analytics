@@ -14,9 +14,9 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  wb_funnel: '#e9f2ff',
-  xway: '#f0fdf4',
-  profitability: '#fef9e7',
+  wb_funnel: '#F3F4F6',
+  xway: '#F0FDF4',
+  profitability: '#FEF9C3',
 };
 
 const FILE_TYPE_LABELS: Record<string, string> = {
@@ -187,7 +187,7 @@ export default function ImportPage() {
                     <td>
                       <span
                         className="import-source-badge"
-                        style={{ background: SOURCE_COLORS[log.source] || '#eee' }}
+                        style={{ background: SOURCE_COLORS[log.source] || '#F3F4F6' }}
                       >
                         {SOURCE_LABELS[log.source] || log.source}
                       </span>

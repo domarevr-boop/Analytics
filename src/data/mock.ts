@@ -18,8 +18,8 @@ export function getDefaultPeriods(fallbackMaxDate?: string): { a: DatePeriod; b:
     const now = new Date();
     const today = formatDate(now);
     return {
-      a: { start: addDays(today, -29), end: today },
-      b: { start: addDays(today, -59), end: addDays(today, -30) },
+      a: { start: today, end: today },
+      b: { start: addDays(today, -1), end: addDays(today, -1) },
       maxDate: today,
     };
   }
@@ -31,8 +31,8 @@ export function getDefaultPeriods(fallbackMaxDate?: string): { a: DatePeriod; b:
     maxDate = fallbackMaxDate;
   }
   const defPeriods = {
-    a: { start: addDays(maxDate, -29), end: maxDate },
-    b: { start: addDays(maxDate, -59), end: addDays(maxDate, -30) },
+    a: { start: maxDate, end: maxDate },
+    b: { start: addDays(maxDate, -1), end: addDays(maxDate, -1) },
     maxDate,
   };
   if (DEV) console.log('[getDefaultPeriods] metrics=' + metrics.length + ' maxDate=' + maxDate + ' periodA=' + JSON.stringify(defPeriods.a));

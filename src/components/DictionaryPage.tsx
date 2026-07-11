@@ -215,7 +215,7 @@ export default function DictionaryPage() {
             );
           })}
           {!cabinets.length && (
-            <div style={{ padding: 16, color: '#888' }}>Нет данных</div>
+            <div style={{ padding: 16, color: '#9CA3AF' }}>Нет данных</div>
           )}
         </div>
       </div>

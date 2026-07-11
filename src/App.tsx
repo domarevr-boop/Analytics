@@ -16,6 +16,9 @@ import DictionaryPage from './components/DictionaryPage';
 import ProfitabilityPage from './components/ProfitabilityPage';
 import AuthPage from './components/AuthPage';
 import AdminPage from './components/AdminPage';
+import FunnelPage from './pages/analytics/FunnelPage';
+import EntryPointsPage from './pages/analytics/EntryPointsPage';
+import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
 import './App.css';
 
 function App() {
@@ -128,33 +131,47 @@ function App() {
       <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin />
 
       {page === 'dashboard' ? (
-        dataReady ? (
-          <>
-            <DashboardBlock />
-            <div className="date-filters">
-              <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
-              <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
-            </div>
-            <FilterBar
-              cabinetFilter={cabinetFilter}
-              brandFilter={brandFilter}
-              groupFilter={groupFilter}
-              searchQuery={searchQuery}
-              onCabinetChange={setCabinetFilter}
-              onBrandChange={setBrandFilter}
-              onGroupChange={setGroupFilter}
-              onSearchChange={setSearchQuery}
-            />
-            <AnalyticsTable
-              cabinetFilter={cabinetFilter}
-              brandFilter={brandFilter}
-              groupFilter={groupFilter}
-              searchQuery={searchQuery}
-              periodA={periodA}
-              periodB={periodB}
-            />
-          </>
-        ) : <div style={{padding: 24}}>{isAdmin ? 'Загрузка данных...' : 'Данные загрузятся после назначения администратором на вкладке Admin'}</div>
+        <div className="page-content">
+          {dataReady ? (
+            <>
+              <div className="page-card">
+                <DashboardBlock />
+              </div>
+              <div className="page-card filters-card">
+                <div className="date-filters">
+                  <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
+                  <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
+                </div>
+                <FilterBar
+                  cabinetFilter={cabinetFilter}
+                  brandFilter={brandFilter}
+                  groupFilter={groupFilter}
+                  searchQuery={searchQuery}
+                  onCabinetChange={setCabinetFilter}
+                  onBrandChange={setBrandFilter}
+                  onGroupChange={setGroupFilter}
+                  onSearchChange={setSearchQuery}
+                />
+              </div>
+              <div className="page-card table-card">
+                <AnalyticsTable
+                  cabinetFilter={cabinetFilter}
+                  brandFilter={brandFilter}
+                  groupFilter={groupFilter}
+                  searchQuery={searchQuery}
+                  periodA={periodA}
+                  periodB={periodB}
+                />
+              </div>
+            </>
+          ) : <div style={{padding: 24}}>{isAdmin ? 'Загрузка данных...' : 'Данные загрузятся после назначения администратором на вкладке Admin'}</div>}
+        </div>
+      ) : page === 'funnel' ? (
+        <div className="page-content"><FunnelPage /></div>
+      ) : page === 'entry-points' ? (
+        <div className="page-content"><EntryPointsPage /></div>
+      ) : page === 'search-phrases' ? (
+        <div className="page-content"><SearchPhrasesPage /></div>
       ) : page === 'planning' ? (
         <PlanningPage />
       ) : page === 'import' ? (
