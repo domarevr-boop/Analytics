@@ -19,6 +19,7 @@ import AdminPage from './components/AdminPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
+import ChartsBlock from './components/ChartsBlock';
 import './App.css';
 
 function App() {
@@ -137,23 +138,23 @@ function App() {
               <div className="page-card">
                 <DashboardBlock />
               </div>
-              <div className="page-card filters-card">
-                <div className="date-filters">
-                  <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
-                  <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
-                </div>
-                <FilterBar
-                  cabinetFilter={cabinetFilter}
-                  brandFilter={brandFilter}
-                  groupFilter={groupFilter}
-                  searchQuery={searchQuery}
-                  onCabinetChange={setCabinetFilter}
-                  onBrandChange={setBrandFilter}
-                  onGroupChange={setGroupFilter}
-                  onSearchChange={setSearchQuery}
-                />
-              </div>
               <div className="page-card table-card">
+                <div className="table-toolbar">
+                  <div className="date-filters">
+                    <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
+                    <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
+                  </div>
+                  <FilterBar
+                    cabinetFilter={cabinetFilter}
+                    brandFilter={brandFilter}
+                    groupFilter={groupFilter}
+                    searchQuery={searchQuery}
+                    onCabinetChange={setCabinetFilter}
+                    onBrandChange={setBrandFilter}
+                    onGroupChange={setGroupFilter}
+                    onSearchChange={setSearchQuery}
+                  />
+                </div>
                 <AnalyticsTable
                   cabinetFilter={cabinetFilter}
                   brandFilter={brandFilter}
@@ -161,6 +162,15 @@ function App() {
                   searchQuery={searchQuery}
                   periodA={periodA}
                   periodB={periodB}
+                />
+              </div>
+              <div className="page-card">
+                <ChartsBlock
+                  periodStart={periodA.start}
+                  periodEnd={periodA.end}
+                  cabinetFilter={cabinetFilter}
+                  brandFilter={brandFilter}
+                  groupFilter={groupFilter}
                 />
               </div>
             </>
@@ -175,7 +185,7 @@ function App() {
       ) : page === 'planning' ? (
         <PlanningPage />
       ) : page === 'import' ? (
-        <ImportPage />
+        <div className="page-content"><ImportPage /></div>
       ) : page === 'profitability' ? (
         <ProfitabilityPage />
       ) : page === 'admin' ? (
