@@ -63,7 +63,10 @@ export default function TimeSeriesChart({ data, selectedMetrics }: TimeSeriesCha
               const date = new Date(d + 'T00:00:00');
               return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
             }}
-            formatter={(val: number, name: string) => [fmt(val, name), METRIC_LABELS[name] || name]}
+            formatter={(value, name) => {
+              const metricName = String(name ?? '');
+              return [fmt(Number(value ?? 0), metricName), METRIC_LABELS[metricName] || metricName];
+            }}
           />
           <Legend
             wrapperStyle={{ fontSize: 12, paddingTop: 8 }}

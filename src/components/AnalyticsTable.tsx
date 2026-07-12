@@ -1,8 +1,8 @@
 import { useState, useMemo, useSyncExternalStore } from 'react';
 import type { MetricValues, TableRow } from '../types';
 import type { DailyMetrics } from '../types';
-import { subscribe, getVersion, getProducts, getMetrics, UNGROUPED_GROUP_ID } from '../data/store';
-import { getTableData, getHierarchy, sumForProduct, toMetrics as mockToMetrics, getPlanMap } from '../data/mock';
+import { subscribe, getVersion, getProducts, getMetrics } from '../data/store';
+import { getTableData, sumForProduct, toMetrics as mockToMetrics, getPlanMap } from '../data/mock';
 import type { DatePeriod } from '../data/mock';
 import { getWbImageUrls } from '../data/images';
 
@@ -120,7 +120,7 @@ interface Props {
   cabinetFilter: string;
   brandFilter: string;
   groupFilter: string;
-  searchQuery: string;
+  skuFilter: string;
   periodA: DatePeriod;
   periodB: DatePeriod;
 }
@@ -179,7 +179,7 @@ function MiniBarChart({ values, dates, metricKey }: { values: number[]; dates: s
   );
 }
 
-export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter, searchQuery, periodA, periodB }: Props) {
+export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter, skuFilter, periodA, periodB }: Props) {
   const version = useSyncExternalStore(subscribe, getVersion);
   if (import.meta.env.DEV) console.log('[AnalyticsTable] render', { periodA, periodB, version });
   const filters = useMemo(() => {
@@ -194,7 +194,6 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
     if (import.meta.env.DEV) console.log('[AnalyticsTable] allRows computed', { periodA, periodB, filters, rows: result.length });
     return result;
   }, [version, periodA, periodB, filters]);
-  const hierarchy = useMemo(() => getHierarchy(), [version]);
   const products = useMemo(() => getProducts(), [version]);
   const skuToWbSku = useMemo(() => {
     const m = new Map<string, string>();
@@ -242,20 +241,20 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
     const productsMatchingBrand = brandFilter
       ? new Set(products.filter(p => p.brand_id === brandFilter).map(p => p.id))
       : null;
+    const hasProductFilter = Boolean(brandFilter || skuFilter);
+    const includedIds = new Set<string>();
+    const rowsById = new Map(allRows.map(row => [row.id, row]));
 
-    const q = searchQuery.toLowerCase().trim();
-
-    const matchingIds = new Set<string>();
-    if (productsMatchingBrand) {
+    if (hasProductFilter) {
       for (const row of allRows) {
-        if (row.type === 'product' && productsMatchingBrand.has(row.id)) {
-          matchingIds.add(row.id);
-          let parentId = row.parent;
-          while (parentId) {
-            matchingIds.add(parentId);
-            const parent = allRows.find(r => r.id === parentId);
-            parentId = parent?.parent || null;
-          }
+        if (row.type !== 'product') continue;
+        if (productsMatchingBrand && !productsMatchingBrand.has(row.id)) continue;
+        if (skuFilter && row.sku !== skuFilter) continue;
+
+        let current: TableRow | undefined = row;
+        while (current) {
+          includedIds.add(current.id);
+          current = current.parent ? rowsById.get(current.parent) : undefined;
         }
       }
     }
@@ -263,20 +262,12 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
     const result: TableRow[] = [];
     const walk = (rows: TableRow[]) => {
       for (const row of rows) {
-        const matchCab = !cabinetFilter || row.id === cabinetFilter;
-        const matchBrand = !brandFilter || matchingIds.has(row.id);
-        const matchGroup = !groupFilter || row.id === groupFilter ||
-          (groupFilter === UNGROUPED_GROUP_ID && row.id.endsWith('-' + UNGROUPED_GROUP_ID));
-
-        const matchSearch = !q || (row.sku && (row.sku.toLowerCase().includes(q) || row.name.toLowerCase().includes(q)));
-        if (matchCab && matchBrand && matchGroup) {
-          if (q && row.type === 'product' && !matchSearch) continue;
+        const isIncluded = !hasProductFilter || includedIds.has(row.id);
+        if (isIncluded) {
           result.push(row);
           const children = allRows.filter(r => r.parent === row.id);
-          if (expanded.has(row.id) && children.length) {
-            if (brandFilter || q) {
-              children.forEach(c => { if (!expanded.has(c.id)) expanded.add(c.id); });
-            }
+          const shouldExpand = expanded.has(row.id) || (hasProductFilter && children.some(child => includedIds.has(child.id)));
+          if (shouldExpand && children.length) {
             walk(children);
           }
         }
@@ -284,7 +275,7 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
     };
     walk(allRows.filter(r => r.parent === null));
     return result;
-  }, [allRows, hierarchy, cabinetFilter, brandFilter, groupFilter, searchQuery, expanded]);
+  }, [allRows, products, brandFilter, skuFilter, expanded]);
 
   const totalRow = useMemo(() => {
     if (!visible.length) return null;

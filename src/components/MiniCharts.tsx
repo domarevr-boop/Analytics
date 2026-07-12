@@ -1,9 +1,5 @@
 import { useMemo } from 'react';
-import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts';
-
-interface MiniChartProps {
-  data: { date: string; values: Record<string, number> }[];
-}
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
 function fmt(n: number): string {
   const abs = Math.abs(n);
@@ -36,18 +32,24 @@ function MiniArea({ data, dataKey, color, label, formatter }: {
         )}
       </div>
       <div className="mini-chart-area">
-        <ResponsiveContainer width="100%" height={80}>
-          <AreaChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={180}>
+          <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <defs>
               <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={0.2} />
                 <stop offset="100%" stopColor={color} stopOpacity={0.02} />
               </linearGradient>
             </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#9CA3AF' }} tickLine={false} axisLine={{ stroke: '#E5E7EB' }} tickFormatter={d => d.slice(5)} />
+            <YAxis tick={{ fontSize: 9, fill: '#9CA3AF' }} tickLine={false} axisLine={{ stroke: '#E5E7EB' }} width={40} tickFormatter={n => fmt(Number(n))} />
             <Tooltip
               contentStyle={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 11 }}
               labelFormatter={d => d}
-              formatter={(_: number) => [formatter ? formatter(_) : fmt(_), label]}
+              formatter={value => {
+                const numericValue = Number(value ?? 0);
+                return [formatter ? formatter(numericValue) : fmt(numericValue), label];
+              }}
             />
             <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#grad-${dataKey})`} dot={false} />
           </AreaChart>

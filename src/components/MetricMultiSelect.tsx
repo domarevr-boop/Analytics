@@ -1,11 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-export interface MetricOption {
-  key: string;
-  label: string;
-}
-
-const ALL_METRICS: MetricOption[] = [
+const METRICS = [
   { key: 'orders', label: 'Заказы' },
   { key: 'revenue', label: 'Выручка' },
   { key: 'profit', label: 'Прибыль' },
@@ -31,41 +26,33 @@ export default function MetricMultiSelect({ selected, onChange }: MetricMultiSel
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const toggle = (key: string) => {
+  function toggle(key: string) {
     if (selected.includes(key)) {
-      if (selected.length > 1) onChange(selected.filter(k => k !== key));
+      onChange(selected.filter(k => k !== key));
     } else {
       onChange([...selected, key]);
     }
-  };
-
-  const label = selected.length === 1
-    ? ALL_METRICS.find(m => m.key === selected[0])?.label || selected[0]
-    : `Метрики: ${selected.length}`;
+  }
 
   return (
     <div className="msel" ref={ref}>
-      <button className="msel-trigger" onClick={() => setOpen(!open)}>
-        <span>{label}</span>
-        <svg className={`msel-arrow ${open ? 'open' : ''}`} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
+      <div className="msel-trigger" onClick={() => setOpen(v => !v)}>
+        <span>{selected.length ? `${selected.length} метрики` : 'Метрики'}</span>
+        <span className={`msel-arrow ${open ? 'open' : ''}`}>▾</span>
+      </div>
       {open && (
         <div className="msel-popup">
-          {ALL_METRICS.map(m => (
+          {METRICS.map(m => (
             <label key={m.key} className="msel-item">
               <input type="checkbox" checked={selected.includes(m.key)} onChange={() => toggle(m.key)} />
-              <span>{m.label}</span>
+              {m.label}
             </label>
           ))}
         </div>

@@ -127,11 +127,19 @@ export default function ImportPage() {
   return (
     <div className="import-page">
       {parsed && (
-        <ImportColumnMapper
-          parsed={parsed}
-          onConfirm={handleConfirmMapping}
-          onCancel={handleCancelMapping}
-        />
+        <div className="import-mapper-wrapper">
+          {loading && (
+            <div className="import-mapper-loading">
+              <span className="import-spinner" />
+              <span>{progress || 'Импорт...'}</span>
+            </div>
+          )}
+          <ImportColumnMapper
+            parsed={parsed}
+            onConfirm={handleConfirmMapping}
+            onCancel={handleCancelMapping}
+          />
+        </div>
       )}
 
       <h2 className="import-title">Импорт данных</h2>
@@ -150,7 +158,7 @@ export default function ImportPage() {
           hidden
           onChange={handleInput}
         />
-        <div className="dropzone-icon">{loading ? '...' : '+'}</div>
+        <div className="dropzone-icon">{loading ? <span className="import-spinner" /> : '+'}</div>
         <div className="dropzone-text">
           {loading ? progress || 'Загрузка...' : 'Перетащите файлы сюда или нажмите для выбора'}
         </div>

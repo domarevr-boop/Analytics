@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useSyncExternalStore } from 'react';
 import { subscribe, getVersion, getCabinets, getBrands, getGroups, getProducts, UNGROUPED_GROUP_ID } from '../data/store';
 
@@ -5,16 +6,16 @@ interface FilterBarProps {
   cabinetFilter: string;
   brandFilter: string;
   groupFilter: string;
-  searchQuery: string;
+  skuFilter: string;
   onCabinetChange: (v: string) => void;
   onBrandChange: (v: string) => void;
   onGroupChange: (v: string) => void;
-  onSearchChange: (v: string) => void;
+  onSkuChange: (v: string) => void;
 }
 
 export default function FilterBar({
-  cabinetFilter, brandFilter, groupFilter, searchQuery,
-  onCabinetChange, onBrandChange, onGroupChange, onSearchChange,
+  cabinetFilter, brandFilter, groupFilter, skuFilter,
+  onCabinetChange, onBrandChange, onGroupChange, onSkuChange,
 }: FilterBarProps) {
   useSyncExternalStore(subscribe, getVersion);
   const cabinets = getCabinets();
@@ -22,7 +23,33 @@ export default function FilterBar({
   const groups = getGroups();
   const products = getProducts();
   const filteredGroups = groups.filter(g => !cabinetFilter || g.cabinet_id === cabinetFilter);
-  const allSkus = [...new Set(products.map(p => p.sku).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const allSkus = useMemo(() =>
+    [...new Set(products.map(p => p.sku).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    [products],
+  );
+
+  const [inputValue, setInputValue] = useState(skuFilter);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputValue(skuFilter);
+  }, [skuFilter]);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShowDropdown(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDropdown]);
+
+  const filteredSkus = useMemo(() => {
+    if (!inputValue) return [];
+    const q = inputValue.toLowerCase();
+    return allSkus.filter(s => s.toLowerCase().includes(q)).slice(0, 50);
+  }, [allSkus, inputValue]);
 
   return (
     <div className="filterbar">
@@ -39,10 +66,40 @@ export default function FilterBar({
         {filteredGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
         <option value={UNGROUPED_GROUP_ID}>Без склейки</option>
       </select>
-      <select value={searchQuery} onChange={e => onSearchChange(e.target.value)} className="filterbar-sku">
-        <option value="">Все артикулы</option>
-        {allSkus.map(sku => <option key={sku} value={sku}>{sku}</option>)}
-      </select>
+      <div className="sku-search" ref={ref}>
+        <input
+          className="sku-search-input"
+          type="text"
+          placeholder="Поиск артикула..."
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); setShowDropdown(true); }}
+          onFocus={() => setShowDropdown(true)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') setShowDropdown(false);
+          }}
+        />
+        {skuFilter && (
+          <button type="button" className="sku-search-clear" aria-label="Очистить поиск артикула" onClick={() => { onSkuChange(''); setInputValue(''); setShowDropdown(false); }}>
+            ×
+          </button>
+        )}
+        {showDropdown && inputValue && filteredSkus.length > 0 && (
+          <div className="sku-search-dropdown">
+            {filteredSkus.map(sku => (
+              <div
+                key={sku}
+                className={`sku-search-item${sku === skuFilter ? ' selected' : ''}`}
+                onClick={() => { onSkuChange(sku); setInputValue(sku); setShowDropdown(false); }}
+              >
+                {sku}
+              </div>
+            ))}
+          </div>
+        )}
+        {showDropdown && inputValue && filteredSkus.length === 0 && (
+          <div className="sku-search-dropdown sku-search-empty">Ничего не найдено</div>
+        )}
+      </div>
     </div>
   );
 }

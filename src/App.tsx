@@ -20,6 +20,8 @@ import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
 import ChartsBlock from './components/ChartsBlock';
+import MiniChartsBlock from './components/MiniChartsBlock';
+import { useChartData } from './hooks/useChartData';
 import './App.css';
 
 function App() {
@@ -30,10 +32,11 @@ function App() {
   const [cabinetFilter, setCabinetFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [skuFilter, setSkuFilter] = useState('');
   const [periodA, setPeriodA] = useState<DatePeriod>({ start: '', end: '' });
   const [periodB, setPeriodB] = useState<DatePeriod>({ start: '', end: '' });
   const [maxDate, setMaxDate] = useState('');
+  const chartData = useChartData(periodA.start, periodA.end, cabinetFilter, brandFilter, groupFilter, skuFilter);
   const [allTimeMaxDate, setAllTimeMaxDate] = useState('');
   const [dataReady, setDataReady] = useState(false);
   const [adminMeta, setAdminMeta] = useState<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null } | null>(null);
@@ -148,29 +151,30 @@ function App() {
                     cabinetFilter={cabinetFilter}
                     brandFilter={brandFilter}
                     groupFilter={groupFilter}
-                    searchQuery={searchQuery}
+                    skuFilter={skuFilter}
                     onCabinetChange={setCabinetFilter}
                     onBrandChange={setBrandFilter}
                     onGroupChange={setGroupFilter}
-                    onSearchChange={setSearchQuery}
+                    onSkuChange={setSkuFilter}
                   />
                 </div>
                 <AnalyticsTable
                   cabinetFilter={cabinetFilter}
                   brandFilter={brandFilter}
                   groupFilter={groupFilter}
-                  searchQuery={searchQuery}
+                  skuFilter={skuFilter}
                   periodA={periodA}
                   periodB={periodB}
                 />
               </div>
               <div className="page-card">
                 <ChartsBlock
-                  periodStart={periodA.start}
-                  periodEnd={periodA.end}
-                  cabinetFilter={cabinetFilter}
-                  brandFilter={brandFilter}
-                  groupFilter={groupFilter}
+                  data={chartData}
+                />
+              </div>
+              <div className="page-card">
+                <MiniChartsBlock
+                  data={chartData}
                 />
               </div>
             </>
@@ -187,7 +191,7 @@ function App() {
       ) : page === 'import' ? (
         <div className="page-content"><ImportPage /></div>
       ) : page === 'profitability' ? (
-        <ProfitabilityPage />
+        <div className="page-content"><ProfitabilityPage /></div>
       ) : page === 'admin' ? (
         <AdminPage onAdminChanged={() => setAdminRefreshKey(v => v + 1)} />
       ) : (

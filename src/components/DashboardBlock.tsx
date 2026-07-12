@@ -1,5 +1,5 @@
 import { useState, useMemo, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getMetrics, getMonthlyPlansForMonth, getProducts } from '../data/store';
+import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getMonthlyPlansForMonth, getProducts } from '../data/store';
 import { monthToPeriod, getDefaultMonth } from '../data/mock';
 import { getExtraExpenses } from '../data/profitStore';
 
@@ -79,6 +79,7 @@ export default function DashboardBlock() {
 
   const metrics = useMemo(() => {
     const allMetrics = getMetrics();
+    const allProfitability = getProfitabilityRecords();
     const monthlyPlans = getMonthlyPlansForMonth(selectedMonth);
 
     const filtered = allMetrics.filter(m =>
@@ -97,8 +98,14 @@ export default function DashboardBlock() {
       totalOrderedAmount += m.ordered_amount;
       totalBuyoutAmount += m.buyout_amount;
       totalAdSpend += m.ad_spend;
-      totalActualProfit += m.actual_profit;
-      totalProfitRevenue += m.profit_revenue || 0;
+    }
+
+    // Combine with profitability records (stored separately)
+    for (const r of allProfitability) {
+      if (r.period_start >= periodA.start && r.period_start <= periodA.end) {
+        totalActualProfit += r.actual_profit || 0;
+        totalProfitRevenue += r.profit_revenue || 0;
+      }
     }
 
     const sortedDates = [...new Set(filtered.map(m => m.date))].sort();
