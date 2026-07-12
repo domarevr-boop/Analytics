@@ -1,7 +1,7 @@
 import { useState, useMemo, useSyncExternalStore } from 'react';
 import type { MetricValues, TableRow } from '../types';
 import type { DailyMetrics } from '../types';
-import { subscribe, getVersion, getProducts, getMetrics } from '../data/store';
+import { subscribe, getVersion, getProducts, getMetrics, getProfitabilityRecords } from '../data/store';
 import { getTableData, sumForProduct, toMetrics as mockToMetrics, getPlanMap } from '../data/mock';
 import type { DatePeriod } from '../data/mock';
 import { getWbImageUrls } from '../data/images';
@@ -297,6 +297,20 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
       const arr = map.get(m.product_id) || [];
       arr.push(toAggDay(m));
       map.set(m.product_id, arr);
+    }
+    // Merge profitability records by date
+    const allProfitability = getProfitabilityRecords();
+    for (const r of allProfitability) {
+      if (r.period_start < last7Start || r.period_start > periodA.end) continue;
+      const arr = map.get(r.product_id) || [];
+      const existing = arr.find(a => a.date === r.period_start);
+      if (existing) {
+        existing.actual_profit += r.actual_profit;
+        existing.profit_revenue += r.profit_revenue;
+      } else {
+        arr.push({ date: r.period_start, impressions: 0, clicks: 0, carts: 0, orders: 0, ordered_amount: 0, buyout_amount: 0, ad_spend: 0, actual_profit: r.actual_profit, profit_revenue: r.profit_revenue });
+        map.set(r.product_id, arr);
+      }
     }
     for (const [, arr] of map) {
       arr.sort((a, b) => a.date.localeCompare(b.date));

@@ -1,6 +1,6 @@
 import type { MetricValues, TableRow } from '../types';
 import type { ProductGroup } from '../types';
-import { getProducts, getMetrics, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, UNGROUPED_GROUP_ID } from './store';
+import { getProducts, getMetrics, getProfitabilityRecords, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, UNGROUPED_GROUP_ID } from './store';
 import { addDays, formatDate } from './dateUtils';
 const DEV = import.meta.env.DEV;
 const _zeroLogged = new Set<string>();
@@ -69,8 +69,21 @@ export function sumForProduct(productId: string, start: string, end: string, pla
       if (DEV) console.warn('[sumForProduct] ZERO (first per range): start=' + start + ' end=' + end + ' storeMetrics=' + allMetrics.length + ' storeDateRange=' + (dates.length ? dates[0] + '..' + dates[dates.length-1] : 'empty'));
     }
   }
+
+  // Aggregate from _metrics
   const total = (fn: (m: typeof rows[0]) => number) => rows.reduce((s, m) => s + fn(m), 0);
   const avg = (fn: (m: typeof rows[0]) => number) => rows.length ? total(fn) / rows.length : 0;
+
+  // Aggregate from _profitability
+  const allProfitability = getProfitabilityRecords();
+  const profitRows = allProfitability.filter(r =>
+    r.product_id === productId && r.period_start >= start && r.period_start <= end
+  );
+  const profitFromRecords = profitRows.reduce((s, r) => s + r.actual_profit, 0);
+  const revenueFromRecords = profitRows.reduce((s, r) => s + r.profit_revenue, 0);
+  const marginFromRecords = profitRows.reduce((s, r) => s + r.actual_margin, 0);
+  const profitCount = profitRows.length;
+
   const planData = productSku ? planMap?.get(productSku) : undefined;
   const planRubles = planData?.totalRubles || 0;
   const planBuyoutRate = planData?.buyoutRate || 85;
@@ -78,11 +91,16 @@ export function sumForProduct(productId: string, start: string, end: string, pla
   const buyoutAmt = total(m => m.buyout_amount);
   const adSpend = total(m => m.ad_spend);
   const effectiveRevenue = ordAmt * (planBuyoutRate / 100);
+  const dailyProfit = total(m => m.actual_profit);
+  const dailyMarginSum = rows.reduce((s, m) => s + m.actual_margin, 0);
+  const marginTotal = dailyMarginSum + marginFromRecords;
+  const marginCount = rows.length + profitCount;
   return {
     imp: total(m => m.impressions), cl: total(m => m.clicks),
     cart: total(m => m.carts), ord: total(m => m.orders),
-    ordAmt, profit: total(m => m.actual_profit),
-    margin: avg(m => m.actual_margin),
+    ordAmt, profit: dailyProfit + profitFromRecords,
+    margin: marginCount > 0 ? marginTotal / marginCount : 0,
+    profit_revenue: total(m => m.profit_revenue || 0) + revenueFromRecords,
     adImp: total(m => m.ad_impressions), adCl: total(m => m.ad_clicks),
     adOrd: total(m => m.ad_orders), adSpend,
     buyoutAmt,

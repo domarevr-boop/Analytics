@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getMetrics, getProducts, getMemberships } from '../data/store';
+import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getProducts, getMemberships } from '../data/store';
 import type { DailyMetrics } from '../types';
 
 export interface ChartDataPoint {
@@ -87,6 +87,29 @@ export function useChartData(
       const arr = dateMap.get(m.date);
       if (arr) arr.push(m);
       else dateMap.set(m.date, [m]);
+    }
+
+    // Merge profitability records by date
+    const allProfitability = getProfitabilityRecords();
+    for (const r of allProfitability) {
+      if (!productIds.has(r.product_id)) continue;
+      if (r.period_start < periodStart || r.period_start > periodEnd) continue;
+      let arr = dateMap.get(r.period_start);
+      if (!arr) {
+        arr = [];
+        dateMap.set(r.period_start, arr);
+      }
+      // Add a synthetic row for this date with only profitability fields
+      arr.push({
+        date: r.period_start, product_id: r.product_id,
+        impressions: 0, clicks: 0, carts: 0, orders: 0, buyouts: 0, cancellations: 0,
+        ordered_amount: 0, buyout_amount: 0, cancellation_amount: 0,
+        ad_impressions: 0, ad_clicks: 0, ad_orders: 0, ad_spend: 0,
+        stock: 0, plan_orders: 0, forecast_profit_per_order: 0,
+        actual_profit: r.actual_profit,
+        actual_margin: r.actual_margin,
+        profit_revenue: r.profit_revenue,
+      });
     }
 
     const sorted = [...dateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
