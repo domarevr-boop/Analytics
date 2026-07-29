@@ -8,7 +8,8 @@ import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
 import DashboardBlock from './components/DashboardBlock';
 import FilterBar from './components/FilterBar';
-import AnalyticsTable from './components/AnalyticsTable';
+import AnalyticsTable, { TABLE_METRIC_GROUPS, type TableMetricKey } from './components/AnalyticsTable';
+import MetricColumnPicker from './components/MetricColumnPicker';
 import DateRangeFilter from './components/DateRangeFilter';
 import PlanningPage from './components/PlanningPage';
 import ImportPage from './components/ImportPage';
@@ -16,27 +17,95 @@ import DictionaryPage from './components/DictionaryPage';
 import ProfitabilityPage from './components/ProfitabilityPage';
 import AuthPage from './components/AuthPage';
 import AdminPage from './components/AdminPage';
+import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
+import NicheDynamicsPage from './pages/analytics/NicheDynamicsPage';
+import GeographyPage from './pages/analytics/GeographyPage';
+import ProductOverviewPage from './pages/ProductOverviewPage';
 import ChartsBlock from './components/ChartsBlock';
 import MiniChartsBlock from './components/MiniChartsBlock';
 import { useChartData } from './hooks/useChartData';
 import './App.css';
 
+const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
+const LAST_PAGE_KEY = 'analytics_last_page_v1';
+const ALL_TABLE_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
+const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'niche', 'geography', 'product'];
+
+function getInitialPage(): PageName {
+  if (typeof localStorage === 'undefined') return 'dashboard';
+  const savedPage = localStorage.getItem(LAST_PAGE_KEY);
+  return PAGE_NAMES.includes(savedPage as PageName) ? savedPage as PageName : 'dashboard';
+}
+
+function getInitialTableMetrics(): TableMetricKey[] {
+  if (typeof localStorage === 'undefined') return ALL_TABLE_METRICS;
+  try {
+    const saved = JSON.parse(localStorage.getItem(TABLE_METRICS_KEY) || '[]') as string[];
+    const valid = ALL_TABLE_METRICS.filter(metric => saved.includes(metric));
+    return valid.length > 0 ? valid : ALL_TABLE_METRICS;
+  } catch {
+    return ALL_TABLE_METRICS;
+  }
+}
+
 function App() {
-  const [page, setPage] = useState<PageName>('dashboard');
+  const [page, setPage] = useState<PageName>(getInitialPage);
+  const [selectedProductId, setSelectedProductId] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('product') || '');
   const [authTick, setAuthTick] = useState(0);
   const auth = getAuthState();
 
   const [cabinetFilter, setCabinetFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
   const [skuFilter, setSkuFilter] = useState('');
+  const [visibleTableMetrics, setVisibleTableMetrics] = useState<TableMetricKey[]>(getInitialTableMetrics);
   const [periodA, setPeriodA] = useState<DatePeriod>({ start: '', end: '' });
   const [periodB, setPeriodB] = useState<DatePeriod>({ start: '', end: '' });
   const [maxDate, setMaxDate] = useState('');
-  const chartData = useChartData(periodA.start, periodA.end, cabinetFilter, brandFilter, groupFilter, skuFilter);
+  const chartData = useChartData(periodA.start, periodA.end, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter);
+  const exportDashboardData = () => {
+    const columns = ['Дата', 'Заказы, ₽', 'Заказы, шт', 'Выручка, ₽', 'Прибыль, ₽', 'Рентабельность, %', 'Расходы на рекламу, ₽', 'ДРР, %'];
+    const rows = chartData.map(point => [
+      point.date,
+      point.values.fact_orders || 0,
+      point.values.orders || 0,
+      point.values.revenue || 0,
+      point.values.profit || 0,
+      point.values.margin || 0,
+      point.values.ad_spend || 0,
+      point.values.drr || 0,
+    ]);
+    const csv = [columns, ...rows].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analytics-${periodA.start}-${periodA.end}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleVisibleTableMetricsChange = (metrics: TableMetricKey[]) => {
+    setVisibleTableMetrics(metrics);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TABLE_METRICS_KEY, JSON.stringify(metrics));
+    }
+  };
+  const filterBarProps = {
+    cabinetFilter,
+    categoryFilter,
+    brandFilter,
+    groupFilter,
+    skuFilter,
+    onCabinetChange: setCabinetFilter,
+    onCategoryChange: setCategoryFilter,
+    onBrandChange: setBrandFilter,
+    onGroupChange: setGroupFilter,
+    onSkuChange: setSkuFilter,
+  };
   const [allTimeMaxDate, setAllTimeMaxDate] = useState('');
   const [dataReady, setDataReady] = useState(false);
   const [adminMeta, setAdminMeta] = useState<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null } | null>(null);
@@ -49,6 +118,46 @@ function App() {
     void initAuth();
     const unsubscribe = subscribeAuth(() => setAuthTick(v => v + 1));
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LAST_PAGE_KEY, page);
+  }, [page]);
+
+  useEffect(() => {
+    if (selectedProductId) setPage('product');
+  }, []);
+
+  const openProduct = (productId: string) => {
+    setSelectedProductId(productId);
+    setPage('product');
+    const url = new URL(window.location.href);
+    url.searchParams.set('product', productId);
+    window.history.pushState({}, '', url);
+  };
+
+  const closeProduct = () => {
+    setSelectedProductId('');
+    setPage('dashboard');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('product');
+    window.history.pushState({}, '', url);
+  };
+
+  const navigatePage = (nextPage: PageName) => {
+    if (nextPage !== 'product' && selectedProductId) {
+      setSelectedProductId('');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('product');
+      window.history.pushState({}, '', url);
+    }
+    setPage(nextPage);
+  };
+
+  useEffect(() => {
+    const openPlanning = () => setPage('planning');
+    window.addEventListener('analytics:open-planning', openPlanning);
+    return () => window.removeEventListener('analytics:open-planning', openPlanning);
   }, []);
 
   useEffect(() => {
@@ -124,7 +233,7 @@ function App() {
   if (!isAdmin && !canBootstrap) {
     return (
       <div className="dashboard">
-        <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin={false} />
+        <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={false} />
         <div style={{padding: 24}}>Доступ только для админа.</div>
       </div>
     );
@@ -132,15 +241,24 @@ function App() {
 
   return (
     <div className="dashboard">
-      <NavBar activePage={page} onNavigate={setPage} onLogout={() => void signOut()} showAdmin />
+      <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={isAdmin} />
 
       {page === 'dashboard' ? (
         <div className="page-content">
           {dataReady ? (
             <>
-              <div className="page-card">
-                <DashboardBlock />
-              </div>
+              <section className="dashboard-overview">
+                <DashboardBlock
+                  selectedCategory={categoryFilter}
+                  onCategorySelect={category => {
+                    setCategoryFilter(current => current === category ? '' : category);
+                    setBrandFilter('');
+                    setGroupFilter('');
+                    setSkuFilter('');
+                  }}
+                  onExport={exportDashboardData}
+                />
+              </section>
               <div className="page-card table-card">
                 <div className="table-toolbar">
                   <div className="date-filters">
@@ -148,52 +266,66 @@ function App() {
                     <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
                   </div>
                   <FilterBar
-                    cabinetFilter={cabinetFilter}
-                    brandFilter={brandFilter}
-                    groupFilter={groupFilter}
-                    skuFilter={skuFilter}
-                    onCabinetChange={setCabinetFilter}
-                    onBrandChange={setBrandFilter}
-                    onGroupChange={setGroupFilter}
-                    onSkuChange={setSkuFilter}
+                    {...filterBarProps}
+                    variant="dashboard"
+                    afterControls={(
+                      <MetricColumnPicker
+                        selected={visibleTableMetrics}
+                        onChange={handleVisibleTableMetricsChange}
+                      />
+                    )}
                   />
                 </div>
                 <AnalyticsTable
                   cabinetFilter={cabinetFilter}
+                  categoryFilter={categoryFilter}
                   brandFilter={brandFilter}
                   groupFilter={groupFilter}
                   skuFilter={skuFilter}
                   periodA={periodA}
                   periodB={periodB}
+                  visibleMetrics={visibleTableMetrics}
+                  onProductOpen={openProduct}
                 />
               </div>
-              <div className="page-card">
-                <ChartsBlock
-                  data={chartData}
-                />
-              </div>
-              <div className="page-card">
+              <section className="dashboard-insights-grid">
+                <div className="page-card overview-chart-card"><ChartsBlock data={chartData} /></div>
                 <MiniChartsBlock
                   data={chartData}
+                  periodStart={periodA.start}
+                  periodEnd={periodA.end}
+                  cabinetFilter={cabinetFilter}
+                  categoryFilter={categoryFilter}
+                  brandFilter={brandFilter}
+                  groupFilter={groupFilter}
+                  skuFilter={skuFilter}
                 />
-              </div>
+              </section>
             </>
           ) : <div style={{padding: 24}}>{isAdmin ? 'Загрузка данных...' : 'Данные загрузятся после назначения администратором на вкладке Admin'}</div>}
         </div>
+      ) : page === 'product' && selectedProductId ? (
+        <div className="page-content"><ProductOverviewPage productId={selectedProductId} onBack={closeProduct} /></div>
       ) : page === 'funnel' ? (
         <div className="page-content"><FunnelPage /></div>
       ) : page === 'entry-points' ? (
         <div className="page-content"><EntryPointsPage /></div>
       ) : page === 'search-phrases' ? (
         <div className="page-content"><SearchPhrasesPage /></div>
+      ) : page === 'niche' ? (
+        <div className="page-content"><NicheDynamicsPage /></div>
+      ) : page === 'geography' ? (
+        <div className="page-content"><GeographyPage /></div>
       ) : page === 'planning' ? (
-        <PlanningPage />
+        <PlanningPage {...filterBarProps} />
       ) : page === 'import' ? (
         <div className="page-content"><ImportPage /></div>
       ) : page === 'profitability' ? (
-        <div className="page-content"><ProfitabilityPage /></div>
+        <div className="page-content"><ProfitabilityPage {...filterBarProps} /></div>
       ) : page === 'admin' ? (
         <AdminPage onAdminChanged={() => setAdminRefreshKey(v => v + 1)} />
+      ) : page === 'dev' ? (
+        <DevPage />
       ) : (
         <DictionaryPage />
       )}
