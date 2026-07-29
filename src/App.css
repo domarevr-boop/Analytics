@@ -5374,10 +5374,7 @@ thead .at-metric:last-child {
 .niche-kpi-sheet {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) repeat(2, minmax(0, .82fr));
-  overflow: hidden;
-  border: 1px solid #DCE3EB;
-  border-radius: 10px;
-  background: #FFF;
+  gap: 8px;
 }
 .niche-kpi-sheet article {
   display: flex;
@@ -5387,9 +5384,11 @@ thead .at-metric:last-child {
   min-width: 0;
   min-height: 72px;
   padding: 10px 12px;
-  border-right: 1px solid #E3E8EF;
+  border: 1px solid #DCE3EB;
+  border-radius: 10px;
+  background: #FFF;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
 }
-.niche-kpi-sheet article:last-child { border-right: 0; }
 .niche-kpi-support { background: #FAFBFC; }
 .niche-kpi-sheet article > div { min-width: 0; }
 .niche-kpi-sheet span { display: block; overflow: hidden; color: #69788D; font-size: 8px; font-weight: 700; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
@@ -5428,7 +5427,7 @@ thead .at-metric:last-child {
 .niche-matrix-card > .niche-card-head { align-items: center; margin: 0; padding: 10px 12px 8px; }
 .niche-matrix-period { padding: 4px 7px; border: 1px solid #DFE5EC; border-radius: 6px; color: #758297; font-size: 8px; }
 .niche-matrix-wrap { max-height: 520px; overflow: auto; border-top: 1px solid #E2E7EE; }
-.niche-matrix-wrap table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 9px; }
+.niche-matrix-wrap table { width: max-content; min-width: max-content; border-collapse: separate; border-spacing: 0; font-size: 9px; }
 .niche-matrix-wrap th,
 .niche-matrix-wrap td { height: 24px; padding: 3px 7px; border-right: 1px solid #EEF1F5; border-bottom: 1px solid #EEF1F5; text-align: center; white-space: nowrap; }
 .niche-matrix-wrap th { position: sticky; top: 0; z-index: 5; height: 28px; background: #F5F7FA; color: #718096; font-size: 8px; font-weight: 650; }
@@ -5444,7 +5443,8 @@ thead .at-metric:last-child {
 .niche-matrix-wrap tbody tr:not(.niche-matrix-group):hover td { box-shadow: inset 0 1px rgb(79 142 247 / 22%), inset 0 -1px rgb(79 142 247 / 22%); }
 .niche-matrix-wrap td strong { color: #30455F; font-size: 9px; font-weight: 600; }
 .niche-matrix-wrap td:nth-child(3) span { font-size: 8px; font-weight: 700; }
-.niche-matrix-wrap td:nth-child(n+4) { min-width: 66px; }
+.niche-matrix-wrap th:nth-child(n+4),
+.niche-matrix-wrap td:nth-child(n+4) { width: 72px; min-width: 72px; max-width: 72px; }
 .niche-matrix-wrap .niche-sparkline { width: 58px; height: 16px; margin: auto; }
 .niche-matrix-group td {
   position: sticky !important;
@@ -5465,8 +5465,6 @@ thead .at-metric:last-child {
 
 @media (max-width: 1400px) {
   .niche-kpi-sheet { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .niche-kpi-sheet article:nth-child(3) { border-right: 0; }
-  .niche-kpi-sheet article:nth-child(n+4) { border-top: 1px solid #E3E8EF; }
   .niche-chart-grid { grid-template-columns: minmax(0, 1.35fr) minmax(330px, .85fr); }
 }
 @media (max-width: 1100px) {
@@ -5482,8 +5480,6 @@ thead .at-metric:last-child {
   .niche-control select,
   .niche-metric-control select { width: 100%; }
   .niche-kpi-sheet { grid-template-columns: 1fr 1fr; }
-  .niche-kpi-sheet article:nth-child(odd) { border-right: 1px solid #E3E8EF; }
-  .niche-kpi-sheet article:nth-child(even) { border-right: 0; }
   .niche-market-strip { grid-template-columns: 1fr 1fr; }
   .niche-context-line { align-items: flex-start; flex-direction: column; }
 }
