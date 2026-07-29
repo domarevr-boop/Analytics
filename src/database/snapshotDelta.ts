@@ -43,6 +43,7 @@ function compareStore<T extends Record<string, unknown>>(
     const serializedKey = mapKey(key);
     currentKeys.add(serializedKey);
     const before = previousByKey.get(serializedKey)?.record;
+    if (before === record) continue;
     if (!before || JSON.stringify(before) !== JSON.stringify(record)) upserts.push(record);
   }
 

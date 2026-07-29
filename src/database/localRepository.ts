@@ -38,14 +38,6 @@ function getAll<T>(store: IDBObjectStore): Promise<T[]> {
   });
 }
 
-function put(store: IDBObjectStore, key: IDBValidKey, value: unknown): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const req = store.put(value, key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
 function del(store: IDBObjectStore, key: IDBValidKey): Promise<void> {
   return new Promise((resolve, reject) => {
     const req = store.delete(key);
@@ -135,19 +127,22 @@ export class LocalRepository implements IDataRepository {
     const db = this.db;
     if (!db) { return { ok: false, errors: ['LocalRepository not initialized'] }; }
 
-    const tx = getTX(db, [...STORES], 'readwrite');
     try {
-      for (const { store: name, rows } of tables) {
-        const store = tx.objectStore(name);
-        for (const row of rows) {
-          const key = getKey(name, row);
-          await put(store, key, row);
-        }
-      }
       await new Promise<void>((resolve, reject) => {
+        const tx = getTX(db, [...STORES], 'readwrite');
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.commit?.();
+        tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+        tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+        try {
+          for (const { store: name, rows } of tables) {
+            const store = tx.objectStore(name);
+            for (const row of rows) store.put(row, getKey(name, row));
+          }
+          tx.commit?.();
+        } catch (error) {
+          tx.abort();
+          reject(error);
+        }
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

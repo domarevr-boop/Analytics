@@ -4,6 +4,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import { getCabinets, getGroups, getMemberships, getMetrics, getProducts, getVersion, subscribe } from '../../data/store';
 import { getFilteredProductIds } from '../../data/productFilters';
+import { appendToMap } from '../../data/collectionUtils';
 
 type Grouping = 'product' | 'group' | 'cabinet'; type Volume = 'impressions' | 'clicks' | 'carts' | 'orders' | 'ordered_amount'; type Rate = 'impressionOrderCr' | 'ctr' | 'cartCr' | 'clickOrderCr';
 const fmt = (value: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value);
@@ -15,7 +16,8 @@ const parseRanges = (value: string) => value.split(',').map(item => item.trim().
 
 export default function FunnelPage() {
   useSyncExternalStore(subscribe, getVersion);
-  const metrics = getMetrics(), products = getProducts(), groups = getGroups(), memberships = getMemberships(), cabinets = getCabinets(); const dates = metrics.map(m => m.date).sort();
+  const metrics = getMetrics(), products = getProducts(), groups = getGroups(), memberships = getMemberships(), cabinets = getCabinets();
+  const dates = useMemo(() => [...new Set(metrics.map(metric => metric.date))].sort(), [metrics]);
   const [start, setStart] = useState(() => dates[0] || ''), [end, setEnd] = useState(() => dates.at(-1) || ''), [cabinet, setCabinet] = useState(''), [category, setCategory] = useState(''), [brand, setBrand] = useState(''), [group, setGroup] = useState(''), [query, setQuery] = useState('');
   const [grouping, setGrouping] = useState<Grouping>('product'), [xMetric, setXMetric] = useState<Volume>('impressions'), [yMetric, setYMetric] = useState<Rate>('impressionOrderCr'), [sizeMetric, setSizeMetric] = useState<Volume>('ordered_amount');
   const [rangesInput, setRangesInput] = useState('0-1000, 1000-2000, 2000-4000, 4000-∞'), [hideAnomalies, setHideAnomalies] = useState(true);
@@ -23,10 +25,10 @@ export default function FunnelPage() {
   const allowedProductIds = useMemo(() => getFilteredProductIds(products, memberships, { cabinetFilter: cabinet, categoryFilter: category, brandFilter: brand, groupFilter: group, skuFilter: query }), [products, memberships, cabinet, category, brand, group, query]);
   const filtered = useMemo(() => metrics.filter(row => (!start || row.date >= start) && (!end || row.date <= end) && allowedProductIds.has(row.product_id)), [metrics, allowedProductIds, start, end]);
   const totals = useMemo(() => aggregate(filtered), [filtered]);
-  const mapData = useMemo(() => { const result = new Map<string, typeof filtered>(); filtered.forEach(row => { const p = productMap.get(row.product_id); const name = grouping === 'cabinet' ? cabinets.find(c => c.id === p?.cabinet_id)?.name || 'Без кабинета' : grouping === 'group' ? groupByProduct.get(row.product_id)?.name || 'Без склейки' : p?.sku || row.product_id; result.set(name, [...(result.get(name) || []), row]); }); return [...result.entries()].map(([name, rows]) => ({ name, ...aggregate(rows) })).filter(row => row.impressions > 0).sort((a, b) => b.orders - a.orders); }, [filtered, grouping, productMap, groupByProduct, cabinets]);
+  const mapData = useMemo(() => { const result = new Map<string, typeof filtered>(); filtered.forEach(row => { const p = productMap.get(row.product_id); const name = grouping === 'cabinet' ? cabinets.find(c => c.id === p?.cabinet_id)?.name || 'Без кабинета' : grouping === 'group' ? groupByProduct.get(row.product_id)?.name || 'Без склейки' : p?.sku || row.product_id; appendToMap(result, name, row); }); return [...result.entries()].map(([name, rows]) => ({ name, ...aggregate(rows) })).filter(row => row.impressions > 0).sort((a, b) => b.orders - a.orders); }, [filtered, grouping, productMap, groupByProduct, cabinets]);
   const mapLimitX = useMemo(() => percentile(mapData.map(row => row[xMetric]), .99), [mapData, xMetric]); const mapLimitY = useMemo(() => percentile(mapData.map(row => row[yMetric]), .99), [mapData, yMetric]);
   const visibleMap = useMemo(() => hideAnomalies ? mapData.filter(row => row[xMetric] <= mapLimitX && row[yMetric] <= mapLimitY) : mapData, [mapData, hideAnomalies, xMetric, yMetric, mapLimitX, mapLimitY]);
-  const dynamic = useMemo(() => { const byDate = new Map<string, typeof filtered>(); filtered.forEach(row => byDate.set(row.date, [...(byDate.get(row.date) || []), row])); return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => ({ date: date.slice(5), ...aggregate(rows) })); }, [filtered]);
+  const dynamic = useMemo(() => { const byDate = new Map<string, typeof filtered>(); filtered.forEach(row => appendToMap(byDate, row.date, row)); return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => ({ date: date.slice(5), ...aggregate(rows) })); }, [filtered]);
   const segments = useMemo(() => parseRanges(rangesInput).map(range => { const rows = mapData.filter(row => row.avgPrice >= range.from && row.avgPrice < range.to); const top = [...rows].sort((a, b) => b.impressionOrderCr - a.impressionOrderCr).slice(0, Math.max(1, Math.ceil(rows.length * .25))); return { label: `${fmt(range.from)}–${range.to === Infinity ? '∞' : fmt(range.to)} ₽`, products: rows.length, orders: aggregate(rows).orders, avgCr: aggregate(rows).impressionOrderCr, topCr: aggregate(top).impressionOrderCr }; }), [mapData, rangesInput]);
   if (!metrics.length) return <section className="funnel-page analytics-empty-page">
     <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Воронка продаж</h1><p>Эффективность ассортимента, склеек и ценовых сегментов по данным основной воронки.</p></header>

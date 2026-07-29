@@ -6,6 +6,7 @@ import { getGeographyOrders, getGeographyPlans, getMemberships, getMetrics, getP
 import { getFilteredProductIds } from '../../data/productFilters';
 import { getCabinetExtraExpense } from '../../data/profitStore';
 import { getReportNetProfit } from '../../data/profitabilityCalculations';
+import { appendToMap } from '../../data/collectionUtils';
 import type { GeographyOrderRecord } from '../../types';
 
 type ChartMetric = 'orders' | 'localOrders' | 'nonlocalOrders' | 'localShare' | 'deliveryHours' | 'stock';
@@ -82,7 +83,7 @@ export default function GeographyPage() {
 
   const chartData = useMemo(() => {
     const byDate = new Map<string, GeographyOrderRecord[]>();
-    filtered.forEach(record => byDate.set(record.date, [...(byDate.get(record.date) || []), record]));
+    filtered.forEach(record => appendToMap(byDate, record.date, record));
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => {
       const values = aggregate(rows);
       return { date: date.slice(5), value: metric === 'orders' ? values.total : metric === 'localOrders' ? values.local : metric === 'nonlocalOrders' ? values.nonlocal : metric === 'localShare' ? values.localShare : metric === 'deliveryHours' ? values.deliveryHours || 0 : values.stock };
@@ -138,7 +139,7 @@ export default function GeographyPage() {
     const allGeoTotals = new Map<string, number>();
     records.forEach(row => { const key = `${row.date}|${row.product_id}`; allGeoTotals.set(key, (allGeoTotals.get(key) || 0) + row.orders_total); });
     const byDate = new Map<string, GeographyOrderRecord[]>();
-    filtered.forEach(record => byDate.set(record.date, [...(byDate.get(record.date) || []), record]));
+    filtered.forEach(record => appendToMap(byDate, record.date, record));
     return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, rows]) => {
       const delivery = aggregate(rows).deliveryHours || 0;
       const sums = rows.reduce((result, row) => {
@@ -161,12 +162,12 @@ export default function GeographyPage() {
   const topRegions = useMemo(() => financeHierarchy.slice(0, 7).map(row => ({ name: row.name, value: row.orderedAmount })), [financeHierarchy]);
   const topAreas = useMemo(() => {
     const byName = new Map<string, FinanceGeoRow[]>();
-    financeLeaves.forEach(row => byName.set(row.area, [...(byName.get(row.area) || []), row]));
+    financeLeaves.forEach(row => appendToMap(byName, row.area, row));
     return [...byName.entries()].map(([name, rows]) => ({ name, value: sumFinance(rows).orderedAmount })).sort((left, right) => right.value - left.value).slice(0, 5);
   }, [financeLeaves]);
   const topCities = useMemo(() => {
     const byName = new Map<string, FinanceGeoRow[]>();
-    financeLeaves.forEach(row => byName.set(row.city, [...(byName.get(row.city) || []), row]));
+    financeLeaves.forEach(row => appendToMap(byName, row.city, row));
     return [...byName.entries()].map(([name, rows]) => ({ name, value: sumFinance(rows).orderedAmount })).sort((left, right) => right.value - left.value).slice(0, 5);
   }, [financeLeaves]);
   const selectedGeoRecords = useMemo(() => selectedGeo ? filtered.filter(row => row.region === selectedGeo.district && (!selectedGeo.area || row.area === selectedGeo.area) && (!selectedGeo.city || row.city === selectedGeo.city)) : [], [filtered, selectedGeo]);
@@ -174,12 +175,12 @@ export default function GeographyPage() {
   const selectedGeoFinance = useMemo(() => selectedGeo ? sumFinance(financeLeaves.filter(row => row.region === selectedGeo.district && (!selectedGeo.area || row.area === selectedGeo.area) && (!selectedGeo.city || row.city === selectedGeo.city))) : null, [financeLeaves, selectedGeo]);
   const selectedGeoProducts = useMemo(() => {
     const byProduct = new Map<string, GeographyOrderRecord[]>();
-    selectedGeoRecords.forEach(row => byProduct.set(row.product_id, [...(byProduct.get(row.product_id) || []), row]));
+    selectedGeoRecords.forEach(row => appendToMap(byProduct, row.product_id, row));
     return [...byProduct.entries()].map(([productId, rows]) => ({ product: productById.get(productId), ...aggregate(rows) })).sort((left, right) => right.total - left.total);
   }, [selectedGeoRecords, productById]);
   const selectedGeoTrend = useMemo(() => {
     const byDate = new Map<string, GeographyOrderRecord[]>();
-    selectedGeoRecords.forEach(row => byDate.set(row.date, [...(byDate.get(row.date) || []), row]));
+    selectedGeoRecords.forEach(row => appendToMap(byDate, row.date, row));
     return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, rows]) => { const values = aggregate(rows); return { date: date.slice(5), delivery: values.deliveryHours || 0, localShare: values.localShare }; });
   }, [selectedGeoRecords]);
   const potential = Math.min(totals.nonlocal, totals.stock);

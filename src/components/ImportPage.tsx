@@ -34,9 +34,13 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   xls: 'Excel',
   csv: 'CSV',
 };
+const DEV = import.meta.env.DEV;
+
+function waitForPaint() {
+  return new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+}
 
 export default function ImportPage() {
-  const DEV = import.meta.env.DEV;
   useSyncExternalStore(subscribe, getVersion);
   const logs = getImportLog();
   const latestLogs = useMemo(() => {
@@ -56,6 +60,7 @@ export default function ImportPage() {
     setLoading(true);
     setProgress(`Чтение ${file.name}...`);
     try {
+      await waitForPaint();
       const result = await parseFile(file);
       if (DEV) console.log('[import-ui] parsed:', result.fileType, result.totalRows, 'rows,', result.headers.length, 'cols, headers:', result.headers);
       setParsed(result);
@@ -83,6 +88,7 @@ export default function ImportPage() {
     setProgress(`Импорт ${remapped.length} строк...`);
     setLoading(true);
     try {
+      await waitForPaint();
       const result = await importMappedData(parsed.fileName, source, remapped, dateOverride, dateEndOverride, dateYearOverride);
       if (DEV) console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
       if (result.status === 'error') {

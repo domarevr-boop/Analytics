@@ -15,6 +15,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import { getEntryPoints, getMemberships, getProducts, getVersion, subscribe } from '../../data/store';
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
+import { appendToMap } from '../../data/collectionUtils';
 import type { EntryPointRecord, Product } from '../../types';
 
 type AbsoluteMetric = 'impressions' | 'clicks' | 'carts' | 'orders';
@@ -130,7 +131,7 @@ export default function EntryPointsPage() {
     products.forEach(product => {
       const canonicalSku = product.sku.replace(/\u00a0/g, ' ').trim().replace(/\.0+$/, '').replace(/\s*\(\d+\)\s*$/, '');
       const identities = [...new Set([product.sku, product.wb_sku, ...(product.aliases || []), canonicalSku].map(value => String(value || '').trim()).filter(Boolean))];
-      identities.forEach(identity => idsByIdentity.set(identity, [...(idsByIdentity.get(identity) || []), product.id]));
+      identities.forEach(identity => appendToMap(idsByIdentity, identity, product.id));
     });
     idsByIdentity.forEach(ids => ids.slice(1).forEach(id => union(ids[0], id)));
     return new Map(products.map(product => [product.id, find(product.id)]));
@@ -187,12 +188,12 @@ export default function EntryPointsPage() {
     const byPoint = new Map<string, EntryPointRecord[]>();
     filtered.forEach(row => {
       const name = pointName(row);
-      byPoint.set(name, [...(byPoint.get(name) || []), row]);
+      appendToMap(byPoint, name, row);
     });
     return [...byPoint.entries()]
       .map(([name, records]) => {
         const byDate = new Map<string, EntryPointRecord[]>();
-        records.forEach(row => byDate.set(row.date, [...(byDate.get(row.date) || []), row]));
+        records.forEach(row => appendToMap(byDate, row.date, row));
         const daily = new Map(dates.map(date => [date, aggregate(byDate.get(date) || [])]));
         return { name, section: records[0].section, entryPoint: records[0].entry_point, total: aggregate(records), daily };
       })
@@ -208,7 +209,7 @@ export default function EntryPointsPage() {
 
   const topProducts = useMemo(() => topSections.map(channel => {
     const byProduct = new Map<string, EntryPointRecord[]>();
-    topFiltered.filter(row => channel.match(row.section)).forEach(row => byProduct.set(row.product_id, [...(byProduct.get(row.product_id) || []), row]));
+    topFiltered.filter(row => channel.match(row.section)).forEach(row => appendToMap(byProduct, row.product_id, row));
     const items = [...byProduct.entries()].map(([productId, records]) => {
       const finance = records.reduce((result, row) => {
         const share = row.product_orders_total ? row.orders / row.product_orders_total : 0;
@@ -237,7 +238,7 @@ export default function EntryPointsPage() {
     const grouped = new Map<string, EntryPointRecord[]>();
     filtered.forEach(row => {
       const key = structureLevel === 'section' ? row.section : pointName(row);
-      grouped.set(key, [...(grouped.get(key) || []), row]);
+      appendToMap(grouped, key, row);
     });
     const sorted = [...grouped.entries()].map(([name, records]) => ({ name, orderedAmount: records.reduce((sum, row) => sum + allocatedOrderedAmount(row), 0) })).sort((left, right) => right.orderedAmount - left.orderedAmount);
     const top = sorted.slice(0, 10);

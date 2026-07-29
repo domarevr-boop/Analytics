@@ -5,6 +5,7 @@ import { getBrands, getCabinets, getEntryPoints, getGeographyOrders, getGroups, 
 import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { getWbImageUrls } from '../data/images';
+import { appendToMap } from '../data/collectionUtils';
 
 const fmt = (value: number, digits = 0) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: digits }).format(value);
 type ProductMetric = 'orderedAmount' | 'orders' | 'impressions' | 'clicks' | 'carts' | 'ctr' | 'profit' | 'profitability' | 'adSpend' | 'drr' | 'entryOrders' | 'entryCtr' | 'localShare' | 'delivery';
@@ -13,12 +14,16 @@ const productMetricLabels: Record<ProductMetric, string> = { orderedAmount: 'С�
 export default function ProductOverviewPage({ productId, onBack }: { productId: string; onBack: () => void }) {
   useSyncExternalStore(subscribe, getVersion);
   const products = getProducts();
+  const metricRows = getMetrics();
+  const profitabilityRows = getProfitabilityRecords();
+  const geographyRows = getGeographyOrders();
+  const entryPointRows = getEntryPoints();
   const product = products.find(item => item.id === productId);
   const cabinet = getCabinets().find(item => item.id === product?.cabinet_id);
   const brand = getBrands().find(item => item.id === product?.brand_id);
   const groupIds = getMemberships().filter(item => item.product_id === productId).map(item => item.group_id);
   const productGroups = getGroups().filter(item => groupIds.includes(item.id));
-  const allMetrics = getMetrics().filter(row => row.product_id === productId).sort((a, b) => a.date.localeCompare(b.date));
+  const allMetrics = useMemo(() => metricRows.filter(row => row.product_id === productId).sort((a, b) => a.date.localeCompare(b.date)), [metricRows, productId]);
   const maxDate = allMetrics.at(-1)?.date || new Date().toISOString().slice(0, 10);
   const [period, setPeriod] = useState(() => ({ start: `${maxDate.slice(0, 7)}-01`, end: maxDate }));
   const [primaryMetric, setPrimaryMetric] = useState<ProductMetric>('orderedAmount');
@@ -26,9 +31,9 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const [geoRegion, setGeoRegion] = useState('');
   const [entryPointFilter, setEntryPointFilter] = useState('');
   const metrics = useMemo(() => allMetrics.filter(row => row.date >= period.start && row.date <= period.end), [allMetrics, period]);
-  const profitability = useMemo(() => getProfitabilityRecords().filter(row => row.product_id === productId && row.period_start >= period.start && row.period_start <= period.end), [productId, period]);
-  const geography = useMemo(() => getGeographyOrders().filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [productId, period]);
-  const entryPoints = useMemo(() => getEntryPoints().filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [productId, period]);
+  const profitability = useMemo(() => profitabilityRows.filter(row => row.product_id === productId && row.period_start >= period.start && row.period_start <= period.end), [profitabilityRows, productId, period]);
+  const geography = useMemo(() => geographyRows.filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [geographyRows, productId, period]);
+  const entryPoints = useMemo(() => entryPointRows.filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [entryPointRows, productId, period]);
   const entryPointOptions = useMemo(() => [...new Set(entryPoints.map(row => `${row.section} · ${row.entry_point}`))].sort((left, right) => left.localeCompare(right, 'ru')), [entryPoints]);
 
   const totals = useMemo(() => {
@@ -50,7 +55,7 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   }), [metrics, profitability, product, entryPoints, geography, geoRegion, entryPointFilter, primaryMetric, secondaryMetric]);
   const topPoints = useMemo(() => {
     const map = new Map<string, typeof entryPoints>();
-    entryPoints.forEach(row => { const name = `${row.section} · ${row.entry_point}`; map.set(name, [...(map.get(name) || []), row]); });
+    entryPoints.forEach(row => { const name = `${row.section} · ${row.entry_point}`; appendToMap(map, name, row); });
     return [...map.entries()].map(([name, rows]) => { const impressions = rows.reduce((s,r)=>s+r.impressions,0), clicks = rows.reduce((s,r)=>s+r.clicks,0), carts = rows.reduce((s,r)=>s+r.carts,0), orders = rows.reduce((s,r)=>s+r.orders,0); return { name, impressions, clicks, carts, orders, ctr: impressions ? clicks/impressions*100 : 0, cr: impressions ? orders/impressions*100 : 0 }; }).sort((a,b)=>b.orders-a.orders);
   }, [entryPoints]);
   const geoSummary = useMemo(() => {

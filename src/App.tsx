@@ -51,22 +51,49 @@ function getInitialTableMetrics(): TableMetricKey[] {
   }
 }
 
-function App() {
-  const [page, setPage] = useState<PageName>(getInitialPage);
-  const [selectedProductId, setSelectedProductId] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('product') || '');
-  const [authTick, setAuthTick] = useState(0);
-  const auth = getAuthState();
+interface DashboardContentProps {
+  cabinetFilter: string;
+  categoryFilter: string;
+  brandFilter: string;
+  groupFilter: string;
+  skuFilter: string;
+  onCabinetChange: (value: string) => void;
+  onCategoryChange: (value: string) => void;
+  onBrandChange: (value: string) => void;
+  onGroupChange: (value: string) => void;
+  onSkuChange: (value: string) => void;
+  periodA: DatePeriod;
+  periodB: DatePeriod;
+  maxDate: string;
+  visibleTableMetrics: TableMetricKey[];
+  onVisibleTableMetricsChange: (metrics: TableMetricKey[]) => void;
+  onPeriodAChange: (period: DatePeriod) => void;
+  onPeriodBChange: (period: DatePeriod) => void;
+  onProductOpen: (productId: string) => void;
+}
 
-  const [cabinetFilter, setCabinetFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
-  const [groupFilter, setGroupFilter] = useState('');
-  const [skuFilter, setSkuFilter] = useState('');
-  const [visibleTableMetrics, setVisibleTableMetrics] = useState<TableMetricKey[]>(getInitialTableMetrics);
-  const [periodA, setPeriodA] = useState<DatePeriod>({ start: '', end: '' });
-  const [periodB, setPeriodB] = useState<DatePeriod>({ start: '', end: '' });
-  const [maxDate, setMaxDate] = useState('');
-  const chartData = useChartData(periodA.start, periodA.end, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter);
+function DashboardContent(props: DashboardContentProps) {
+  const chartData = useChartData(
+    props.periodA.start,
+    props.periodA.end,
+    props.cabinetFilter,
+    props.categoryFilter,
+    props.brandFilter,
+    props.groupFilter,
+    props.skuFilter,
+  );
+  const filterBarProps = {
+    cabinetFilter: props.cabinetFilter,
+    categoryFilter: props.categoryFilter,
+    brandFilter: props.brandFilter,
+    groupFilter: props.groupFilter,
+    skuFilter: props.skuFilter,
+    onCabinetChange: props.onCabinetChange,
+    onCategoryChange: props.onCategoryChange,
+    onBrandChange: props.onBrandChange,
+    onGroupChange: props.onGroupChange,
+    onSkuChange: props.onSkuChange,
+  };
   const exportDashboardData = () => {
     const columns = ['Дата', 'Заказы, ₽', 'Заказы, шт', 'Выручка, ₽', 'Прибыль, ₽', 'Рентабельность, %', 'Расходы на рекламу, ₽', 'ДРР, %'];
     const rows = chartData.map(point => [
@@ -84,10 +111,79 @@ function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `analytics-${periodA.start}-${periodA.end}.csv`;
+    link.download = `analytics-${props.periodA.start}-${props.periodA.end}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  return <div className="page-content">
+    <section className="dashboard-overview">
+      <DashboardBlock
+        selectedCategory={props.categoryFilter}
+        onCategorySelect={category => {
+          props.onCategoryChange(props.categoryFilter === category ? '' : category);
+          props.onBrandChange('');
+          props.onGroupChange('');
+          props.onSkuChange('');
+        }}
+        onExport={exportDashboardData}
+      />
+    </section>
+    <div className="page-card table-card">
+      <div className="table-toolbar">
+        <div className="date-filters">
+          <DateRangeFilter label="Период" value={props.periodA} onChange={props.onPeriodAChange} maxDate={props.maxDate} />
+          <DateRangeFilter label="Сравнение" value={props.periodB} onChange={props.onPeriodBChange} maxDate={props.maxDate} />
+        </div>
+        <FilterBar
+          {...filterBarProps}
+          variant="dashboard"
+          afterControls={<MetricColumnPicker selected={props.visibleTableMetrics} onChange={props.onVisibleTableMetricsChange} />}
+        />
+      </div>
+      <AnalyticsTable
+        cabinetFilter={props.cabinetFilter}
+        categoryFilter={props.categoryFilter}
+        brandFilter={props.brandFilter}
+        groupFilter={props.groupFilter}
+        skuFilter={props.skuFilter}
+        periodA={props.periodA}
+        periodB={props.periodB}
+        visibleMetrics={props.visibleTableMetrics}
+        onProductOpen={props.onProductOpen}
+      />
+    </div>
+    <section className="dashboard-insights-grid">
+      <div className="page-card overview-chart-card"><ChartsBlock data={chartData} /></div>
+      <MiniChartsBlock
+        data={chartData}
+        periodStart={props.periodA.start}
+        periodEnd={props.periodA.end}
+        cabinetFilter={props.cabinetFilter}
+        categoryFilter={props.categoryFilter}
+        brandFilter={props.brandFilter}
+        groupFilter={props.groupFilter}
+        skuFilter={props.skuFilter}
+      />
+    </section>
+  </div>;
+}
+
+function App() {
+  const [page, setPage] = useState<PageName>(getInitialPage);
+  const [selectedProductId, setSelectedProductId] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('product') || '');
+  const [authTick, setAuthTick] = useState(0);
+  const auth = getAuthState();
+
+  const [cabinetFilter, setCabinetFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [skuFilter, setSkuFilter] = useState('');
+  const [visibleTableMetrics, setVisibleTableMetrics] = useState<TableMetricKey[]>(getInitialTableMetrics);
+  const [periodA, setPeriodA] = useState<DatePeriod>({ start: '', end: '' });
+  const [periodB, setPeriodB] = useState<DatePeriod>({ start: '', end: '' });
+  const [maxDate, setMaxDate] = useState('');
   const handleVisibleTableMetricsChange = (metrics: TableMetricKey[]) => {
     setVisibleTableMetrics(metrics);
     if (typeof localStorage !== 'undefined') {
@@ -207,11 +303,11 @@ function App() {
   }, [auth.initialized, auth.user, isAdmin, authTick]);
 
   useEffect(() => {
-    if (!dataReady) return;
+    if (!dataReady || page !== 'dashboard') return;
     const d = getDefaultPeriods(allTimeMaxDate || undefined);
     if (d.maxDate > allTimeMaxDate) setAllTimeMaxDate(d.maxDate);
     setMaxDate(d.maxDate);
-  }, [storeVersion, dataReady]);
+  }, [storeVersion, dataReady, page]);
 
   const handlePeriodAChange = (p: DatePeriod) => {
     if (import.meta.env.DEV) console.log('[APP] handlePeriodAChange', p);
@@ -251,66 +347,26 @@ function App() {
           {dataError ? <><strong>Не удалось загрузить локальные данные</strong><p>{dataError}</p></> : 'Загрузка локальных данных...'}
         </div></div>
       ) : page === 'dashboard' ? (
-        <div className="page-content">
-          {dataReady ? (
-            <>
-              <section className="dashboard-overview">
-                <DashboardBlock
-                  selectedCategory={categoryFilter}
-                  onCategorySelect={category => {
-                    setCategoryFilter(current => current === category ? '' : category);
-                    setBrandFilter('');
-                    setGroupFilter('');
-                    setSkuFilter('');
-                  }}
-                  onExport={exportDashboardData}
-                />
-              </section>
-              <div className="page-card table-card">
-                <div className="table-toolbar">
-                  <div className="date-filters">
-                    <DateRangeFilter label="Период" value={periodA} onChange={handlePeriodAChange} maxDate={maxDate} />
-                    <DateRangeFilter label="Сравнение" value={periodB} onChange={handlePeriodBChange} maxDate={maxDate} />
-                  </div>
-                  <FilterBar
-                    {...filterBarProps}
-                    variant="dashboard"
-                    afterControls={(
-                      <MetricColumnPicker
-                        selected={visibleTableMetrics}
-                        onChange={handleVisibleTableMetricsChange}
-                      />
-                    )}
-                  />
-                </div>
-                <AnalyticsTable
-                  cabinetFilter={cabinetFilter}
-                  categoryFilter={categoryFilter}
-                  brandFilter={brandFilter}
-                  groupFilter={groupFilter}
-                  skuFilter={skuFilter}
-                  periodA={periodA}
-                  periodB={periodB}
-                  visibleMetrics={visibleTableMetrics}
-                  onProductOpen={openProduct}
-                />
-              </div>
-              <section className="dashboard-insights-grid">
-                <div className="page-card overview-chart-card"><ChartsBlock data={chartData} /></div>
-                <MiniChartsBlock
-                  data={chartData}
-                  periodStart={periodA.start}
-                  periodEnd={periodA.end}
-                  cabinetFilter={cabinetFilter}
-                  categoryFilter={categoryFilter}
-                  brandFilter={brandFilter}
-                  groupFilter={groupFilter}
-                  skuFilter={skuFilter}
-                />
-              </section>
-            </>
-          ) : <div style={{padding: 24}}>{isAdmin ? 'Загрузка данных...' : 'Данные загрузятся после назначения администратором на вкладке Admin'}</div>}
-        </div>
+        <DashboardContent
+          cabinetFilter={cabinetFilter}
+          categoryFilter={categoryFilter}
+          brandFilter={brandFilter}
+          groupFilter={groupFilter}
+          skuFilter={skuFilter}
+          onCabinetChange={setCabinetFilter}
+          onCategoryChange={setCategoryFilter}
+          onBrandChange={setBrandFilter}
+          onGroupChange={setGroupFilter}
+          onSkuChange={setSkuFilter}
+          periodA={periodA}
+          periodB={periodB}
+          maxDate={maxDate}
+          visibleTableMetrics={visibleTableMetrics}
+          onVisibleTableMetricsChange={handleVisibleTableMetricsChange}
+          onPeriodAChange={handlePeriodAChange}
+          onPeriodBChange={handlePeriodBChange}
+          onProductOpen={openProduct}
+        />
       ) : page === 'product' && selectedProductId ? (
         <div className="page-content"><ProductOverviewPage productId={selectedProductId} onBack={closeProduct} /></div>
       ) : page === 'funnel' ? (

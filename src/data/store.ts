@@ -1590,7 +1590,7 @@ export async function initStore() {
   if (_initCalled) return;
   await repository.initialize();
   _suppressPersist = true;
-  let needsPersistence = false;
+  const dirtyStores = new Set<DataStoreName>();
 
   const snapshot: DataSnapshot = await repository.loadAll();
   if (isCloudStorage && snapshot.cabinets.length === 0) {
@@ -1605,12 +1605,12 @@ export async function initStore() {
     _groups = snapshot.groups.map(item => ({ ...item }));
     _products = snapshot.products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
     for (const product of _products) {
-      if (!product.aliases) { product.aliases = []; needsPersistence = true; }
-      if (!product.status) { product.status = 'active'; needsPersistence = true; }
-      if (!product.data_source) { product.data_source = 'seed'; needsPersistence = true; }
+      if (!product.aliases) { product.aliases = []; dirtyStores.add('products'); }
+      if (!product.status) { product.status = 'active'; dirtyStores.add('products'); }
+      if (!product.data_source) { product.data_source = 'seed'; dirtyStores.add('products'); }
       if (product.wb_sku === product.sku && product.wb_sku.replace(/\D/g, '').length < 7) {
         product.wb_sku = '';
-        needsPersistence = true;
+        dirtyStores.add('products');
       }
     }
     _memberships = snapshot.memberships.map(item => ({ ...item }));
@@ -1633,9 +1633,17 @@ export async function initStore() {
 
     const MIGRATED_KEY = '_analytics_date_migration_v2';
     const migrationDone = typeof localStorage !== 'undefined' && localStorage.getItem(MIGRATED_KEY);
-    const metricDates = _metrics.map(metric => metric.date).filter(Boolean).sort();
-    const hasConfirmedShiftedRange = metricDates[0] === '2025-10-06'
-      && metricDates[metricDates.length - 1] === '2026-07-09';
+    let hasConfirmedShiftedRange = false;
+    if (!migrationDone) {
+      let firstMetricDate = '';
+      let lastMetricDate = '';
+      for (const metric of _metrics) {
+        if (!metric.date) continue;
+        if (!firstMetricDate || metric.date < firstMetricDate) firstMetricDate = metric.date;
+        if (!lastMetricDate || metric.date > lastMetricDate) lastMetricDate = metric.date;
+      }
+      hasConfirmedShiftedRange = firstMetricDate === '2025-10-06' && lastMetricDate === '2026-07-09';
+    }
 
     if (!migrationDone && hasConfirmedShiftedRange) {
       for (const metric of _metrics) {
@@ -1647,20 +1655,27 @@ export async function initStore() {
         if (log.dataEnd) log.dataEnd = addDays(log.dataEnd, 1);
       }
       if (typeof localStorage !== 'undefined') localStorage.setItem(MIGRATED_KEY, '1');
-      needsPersistence = true;
+      dirtyStores.add('metrics');
+      dirtyStores.add('importLogs');
       if (DEV) console.log('[migration] v2: shifted confirmed WB/XWay metric dates +1 day');
     }
-    const xwayMetrics = _metrics.filter(m => m.ad_spend > 0);
-    if (xwayMetrics.length > 0) {
-      const sumAdSpend = xwayMetrics.reduce((s, m) => s + m.ad_spend, 0);
-      const dates = [...new Set(xwayMetrics.map(m => m.date))].sort();
-      if (DEV) console.log('[diag] XWAY metrics found:', xwayMetrics.length, 'sumAdSpend:', sumAdSpend, 'dates:', dates, 'sample:', xwayMetrics.slice(0, 2));
-    } else {
-      if (DEV) console.log('[diag] NO XWAY metrics (ad_spend > 0)');
+    if (DEV) {
+      const xwayMetrics = _metrics.filter(m => m.ad_spend > 0);
+      if (xwayMetrics.length > 0) {
+        const sumAdSpend = xwayMetrics.reduce((s, m) => s + m.ad_spend, 0);
+        const dates = [...new Set(xwayMetrics.map(m => m.date))].sort();
+        console.log('[diag] XWAY metrics found:', xwayMetrics.length, 'sumAdSpend:', sumAdSpend, 'dates:', dates, 'sample:', xwayMetrics.slice(0, 2));
+      } else {
+        console.log('[diag] NO XWAY metrics (ad_spend > 0)');
+      }
     }
     if (DEV) console.log('[diag] after SQLite load — cabinets:', _cabinets.length, 'brands:', _brands.length, 'groups:', _groups.length, 'products:', _products.length, 'memberships:', _memberships.length, 'plans:', _plans.length, 'metrics:', _metrics.length);
+    const derivedCounts = { products: _products.length, memberships: _memberships.length, plans: _plans.length };
     seedDerivedData();
-    if (propagateWbSkuToCanonicalProducts()) needsPersistence = true;
+    if (_products.length !== derivedCounts.products) dirtyStores.add('products');
+    if (_memberships.length !== derivedCounts.memberships) dirtyStores.add('memberships');
+    if (_plans.length !== derivedCounts.plans) dirtyStores.add('plans');
+    if (propagateWbSkuToCanonicalProducts()) dirtyStores.add('products');
     buildAliasMap();
     if (DEV) console.log('[diag] after seedDerivedData — products:', _products.length, 'memberships:', _memberships.length, 'plans:', _plans.length);
   }
@@ -1676,16 +1691,19 @@ export async function initStore() {
     || record.product_net_profit === undefined
     || record.product_profitability === undefined
   );
-  if (needsEntryPointFinancialBackfill && refreshEntryPointFinancialFields()) needsPersistence = true;
+  if (needsEntryPointFinancialBackfill && refreshEntryPointFinancialFields()) dirtyStores.add('entryPoints');
 
   _suppressPersist = false;
   _initCalled = true;
   invalidateReadCache(DATA_STORE_NAMES);
 
-  if (snapshot.cabinets.length === 0 || needsPersistence) {
-    if (DEV) console.log('[diag] persisting initial or migrated data');
-    persistAll();
+  if (snapshot.cabinets.length === 0) {
+    if (DEV) console.log('[diag] persisting initial data');
+    await persistAll();
+  } else if (dirtyStores.size > 0) {
+    if (DEV) console.log('[diag] persisting migrated stores:', [...dirtyStores]);
+    await persistStores(dirtyStores);
   } else {
-    if (DEV) console.log('[diag] subsequent run — NO persistAll');
+    if (DEV) console.log('[diag] subsequent run — no startup persistence');
   }
 }
