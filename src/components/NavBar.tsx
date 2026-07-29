@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import type { PageName } from '../types';
+import { getVersion, subscribe } from '../data/store';
 
 interface NavBarProps {
   activePage: PageName;
@@ -37,8 +38,20 @@ const GROUPS: DropdownGroup[] = [
 ];
 
 export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: NavBarProps) {
+  const version = useSyncExternalStore(subscribe, getVersion);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [storageUsage, setStorageUsage] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const estimate = navigator.storage?.estimate;
+    if (!estimate) return;
+    void estimate.call(navigator.storage).then(result => {
+      if (!cancelled && typeof result.usage === 'number') setStorageUsage(result.usage);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [version]);
 
   useEffect(() => {
     if (!openDropdown) return;
@@ -122,10 +135,15 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: 
       <div className="navbar-right">
         <span className="sync-indicator" title="Локальное хранилище">
           <span className="sync-dot online" />
-          локально
+          локально{storageUsage === null ? '' : ` · ${formatBytes(storageUsage)}`}
         </span>
         {onLogout && <button className="nav-logout" onClick={onLogout}>Выход</button>}
       </div>
     </div>
   );
+}
+
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} MB`;
 }

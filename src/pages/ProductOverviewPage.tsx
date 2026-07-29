@@ -1,17 +1,60 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { getBrands, getCabinets, getEntryPoints, getGeographyOrders, getGroups, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../data/store';
+import { getBrands, getCabinets, getEntryPoints, getGeographyOrders, getGroups, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getRelatedProductIds, getVersion, subscribe } from '../data/store';
 import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { getWbImageUrls } from '../data/images';
-import { appendToMap } from '../data/collectionUtils';
+import type { DailyMetrics } from '../types';
 
 const fmt = (value: number, digits = 0) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: digits }).format(value);
 type ProductMetric = 'orderedAmount' | 'orders' | 'impressions' | 'clicks' | 'carts' | 'ctr' | 'profit' | 'profitability' | 'adSpend' | 'drr' | 'entryOrders' | 'entryCtr' | 'localShare' | 'delivery';
-const productMetricLabels: Record<ProductMetric, string> = { orderedAmount: 'Сумма заказов', orders: 'Заказы, шт', impressions: 'Показы', clicks: 'Клики', carts: 'Корзины', ctr: 'CTR', profit: 'Чистая прибыль', profitability: 'Рентабельность', adSpend: 'Реклама', drr: 'ДРР', entryOrders: 'Заказы точек входа', entryCtr: 'CTR точек входа', localShare: 'Локальность', delivery: 'СВД, ч' };
+type FunnelTotals = Pick<DailyMetrics, 'impressions' | 'clicks' | 'carts' | 'orders' | 'ordered_amount'>;
 
-export default function ProductOverviewPage({ productId, onBack }: { productId: string; onBack: () => void }) {
+const productMetricLabels: Record<ProductMetric, string> = {
+  orderedAmount: 'Сумма заказов', orders: 'Заказы, шт', impressions: 'Показы', clicks: 'Клики', carts: 'Корзины', ctr: 'CTR',
+  profit: 'Чистая прибыль', profitability: 'Рентабельность', adSpend: 'Реклама', drr: 'ДРР', entryOrders: 'Заказы точек входа',
+  entryCtr: 'CTR точек входа', localShare: 'Локальность', delivery: 'СВД, ч',
+};
+
+function emptyFunnel(): FunnelTotals {
+  return { impressions: 0, clicks: 0, carts: 0, orders: 0, ordered_amount: 0 };
+}
+
+function sumFunnel(rows: DailyMetrics[]): FunnelTotals {
+  return rows.reduce((sum, row) => ({
+    impressions: sum.impressions + row.impressions,
+    clicks: sum.clicks + row.clicks,
+    carts: sum.carts + row.carts,
+    orders: sum.orders + row.orders,
+    ordered_amount: sum.ordered_amount + row.ordered_amount,
+  }), emptyFunnel());
+}
+
+function funnelWidth(value: number, maximum: number) {
+  if (!maximum || !value) return '30%';
+  return `${Math.min(100, 24 + Math.sqrt(value / maximum) * 76)}%`;
+}
+
+function FunnelSteps({ totals, productTotals }: { totals: FunnelTotals; productTotals?: FunnelTotals }) {
+  const stages = [
+    { label: 'Показы', value: totals.impressions, productValue: productTotals?.impressions ?? 0 },
+    { label: 'Клики', value: totals.clicks, productValue: productTotals?.clicks ?? 0, conversion: totals.impressions ? totals.clicks / totals.impressions * 100 : 0, conversionLabel: 'CTR' },
+    { label: 'Корзины', value: totals.carts, productValue: productTotals?.carts ?? 0, conversion: totals.clicks ? totals.carts / totals.clicks * 100 : 0, conversionLabel: 'CR в корзину' },
+    { label: 'Заказы', value: totals.orders, productValue: productTotals?.orders ?? 0, conversion: totals.impressions ? totals.orders / totals.impressions * 100 : 0, conversionLabel: 'CR показ → заказ' },
+  ];
+  return <div className="product-funnel-steps">
+    {stages.map((stage, index) => <div className="product-funnel-stage" key={stage.label}>
+      {index > 0 && <i>{stage.conversionLabel} <b>{fmt(stage.conversion || 0, index === 3 ? 2 : 1)}%</b></i>}
+      <div style={{ '--step-width': funnelWidth(stage.value, totals.impressions) } as React.CSSProperties}>
+        <span>{stage.label}</span><strong>{fmt(stage.value)}</strong>
+        {productTotals && <small>Доля товара: {fmt(stage.value ? stage.productValue / stage.value * 100 : 0, 1)}%</small>}
+      </div>
+    </div>)}
+  </div>;
+}
+
+export default function ProductOverviewPage({ productId }: { productId: string; onBack: () => void }) {
   useSyncExternalStore(subscribe, getVersion);
   const products = getProducts();
   const metricRows = getMetrics();
@@ -19,11 +62,13 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const geographyRows = getGeographyOrders();
   const entryPointRows = getEntryPoints();
   const product = products.find(item => item.id === productId);
+  const relatedIds = useMemo(() => new Set(getRelatedProductIds(productId)), [productId, products]);
   const cabinet = getCabinets().find(item => item.id === product?.cabinet_id);
   const brand = getBrands().find(item => item.id === product?.brand_id);
-  const groupIds = getMemberships().filter(item => item.product_id === productId).map(item => item.group_id);
+  const groupIds = getMemberships().filter(item => relatedIds.has(item.product_id)).map(item => item.group_id);
   const productGroups = getGroups().filter(item => groupIds.includes(item.id));
-  const allMetrics = useMemo(() => metricRows.filter(row => row.product_id === productId).sort((a, b) => a.date.localeCompare(b.date)), [metricRows, productId]);
+  const groupProductIds = useMemo(() => new Set(getMemberships().filter(item => groupIds.includes(item.group_id)).map(item => item.product_id)), [groupIds, products]);
+  const allMetrics = useMemo(() => metricRows.filter(row => relatedIds.has(row.product_id)).sort((a, b) => a.date.localeCompare(b.date)), [metricRows, relatedIds]);
   const maxDate = allMetrics.at(-1)?.date || new Date().toISOString().slice(0, 10);
   const [period, setPeriod] = useState(() => ({ start: `${maxDate.slice(0, 7)}-01`, end: maxDate }));
   const [primaryMetric, setPrimaryMetric] = useState<ProductMetric>('orderedAmount');
@@ -31,33 +76,22 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const [geoRegion, setGeoRegion] = useState('');
   const [entryPointFilter, setEntryPointFilter] = useState('');
   const metrics = useMemo(() => allMetrics.filter(row => row.date >= period.start && row.date <= period.end), [allMetrics, period]);
-  const profitability = useMemo(() => profitabilityRows.filter(row => row.product_id === productId && row.period_start >= period.start && row.period_start <= period.end), [profitabilityRows, productId, period]);
-  const geography = useMemo(() => geographyRows.filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [geographyRows, productId, period]);
-  const entryPoints = useMemo(() => entryPointRows.filter(row => row.product_id === productId && row.date >= period.start && row.date <= period.end), [entryPointRows, productId, period]);
+  const profitability = useMemo(() => profitabilityRows.filter(row => relatedIds.has(row.product_id) && row.period_start >= period.start && row.period_start <= period.end), [profitabilityRows, relatedIds, period]);
+  const geography = useMemo(() => geographyRows.filter(row => relatedIds.has(row.product_id) && row.date >= period.start && row.date <= period.end), [geographyRows, relatedIds, period]);
+  const entryPoints = useMemo(() => entryPointRows.filter(row => relatedIds.has(row.product_id) && row.date >= period.start && row.date <= period.end), [entryPointRows, relatedIds, period]);
+  const groupMetrics = useMemo(() => metricRows.filter(row => groupProductIds.has(row.product_id) && row.date >= period.start && row.date <= period.end), [metricRows, groupProductIds, period]);
   const entryPointOptions = useMemo(() => [...new Set(entryPoints.map(row => `${row.section} · ${row.entry_point}`))].sort((left, right) => left.localeCompare(right, 'ru')), [entryPoints]);
 
   const totals = useMemo(() => {
-    const result = metrics.reduce((sum, row) => ({ impressions: sum.impressions + row.impressions, clicks: sum.clicks + row.clicks, carts: sum.carts + row.carts, orders: sum.orders + row.orders, orderedAmount: sum.orderedAmount + row.ordered_amount, revenue: sum.revenue + row.buyout_amount, adSpend: sum.adSpend + row.ad_spend }), { impressions: 0, clicks: 0, carts: 0, orders: 0, orderedAmount: 0, revenue: 0, adSpend: 0 });
+    const funnel = sumFunnel(metrics);
+    const revenue = metrics.reduce((sum, row) => sum + row.buyout_amount, 0);
+    const adSpend = metrics.reduce((sum, row) => sum + row.ad_spend, 0);
     const netProfit = profitability.reduce((sum, row) => sum + getReportNetProfit(row, getCabinetExtraExpense(row.period_start.slice(0, 7), product?.cabinet_id || '')), 0);
     const profitRevenue = profitability.reduce((sum, row) => sum + row.profit_revenue, 0);
-    return { ...result, netProfit, profitability: profitRevenue ? netProfit / profitRevenue * 100 : 0, ctr: result.impressions ? result.clicks / result.impressions * 100 : 0, cartCr: result.clicks ? result.carts / result.clicks * 100 : 0, orderCr: result.impressions ? result.orders / result.impressions * 100 : 0, drr: result.orderedAmount ? result.adSpend / result.orderedAmount * 100 : 0 };
+    return { ...funnel, revenue, adSpend, netProfit, profitability: profitRevenue ? netProfit / profitRevenue * 100 : 0, drr: funnel.ordered_amount ? adSpend / funnel.ordered_amount * 100 : 0 };
   }, [metrics, profitability, product]);
+  const groupTotals = useMemo(() => sumFunnel(groupMetrics), [groupMetrics]);
 
-  const trend = useMemo(() => metrics.map(row => {
-    const profitRecord = profitability.find(item => item.period_start === row.date);
-    const netProfit = profitRecord ? getReportNetProfit(profitRecord, getCabinetExtraExpense(row.date.slice(0, 7), product?.cabinet_id || '')) : 0;
-    const dayEntries = entryPoints.filter(item => item.date === row.date && (!entryPointFilter || `${item.section} · ${item.entry_point}` === entryPointFilter));
-    const entryImpressions = dayEntries.reduce((sum, item) => sum + item.impressions, 0), entryClicks = dayEntries.reduce((sum, item) => sum + item.clicks, 0), entryOrders = dayEntries.reduce((sum, item) => sum + item.orders, 0);
-    const dayGeo = geography.filter(item => item.date === row.date && (!geoRegion || item.region === geoRegion));
-    const geoOrders = dayGeo.reduce((sum, item) => sum + item.orders_total, 0), geoLocal = dayGeo.reduce((sum, item) => sum + item.product_local_orders, 0), covered = dayGeo.filter(item => item.delivery_hours !== null && item.orders_total > 0), coveredOrders = covered.reduce((sum, item) => sum + item.orders_total, 0);
-    const values: Record<ProductMetric, number> = { orderedAmount: row.ordered_amount, orders: row.orders, impressions: row.impressions, clicks: row.clicks, carts: row.carts, ctr: row.impressions ? row.clicks / row.impressions * 100 : 0, profit: netProfit, profitability: profitRecord?.profit_revenue ? netProfit / profitRecord.profit_revenue * 100 : 0, adSpend: row.ad_spend, drr: row.ordered_amount ? row.ad_spend / row.ordered_amount * 100 : 0, entryOrders, entryCtr: entryImpressions ? entryClicks / entryImpressions * 100 : 0, localShare: geoOrders ? geoLocal / geoOrders * 100 : 0, delivery: coveredOrders ? covered.reduce((sum, item) => sum + (item.delivery_hours || 0) * item.orders_total, 0) / coveredOrders : 0 };
-    return { date: row.date.slice(5), primary: values[primaryMetric], secondary: values[secondaryMetric] };
-  }), [metrics, profitability, product, entryPoints, geography, geoRegion, entryPointFilter, primaryMetric, secondaryMetric]);
-  const topPoints = useMemo(() => {
-    const map = new Map<string, typeof entryPoints>();
-    entryPoints.forEach(row => { const name = `${row.section} · ${row.entry_point}`; appendToMap(map, name, row); });
-    return [...map.entries()].map(([name, rows]) => { const impressions = rows.reduce((s,r)=>s+r.impressions,0), clicks = rows.reduce((s,r)=>s+r.clicks,0), carts = rows.reduce((s,r)=>s+r.carts,0), orders = rows.reduce((s,r)=>s+r.orders,0); return { name, impressions, clicks, carts, orders, ctr: impressions ? clicks/impressions*100 : 0, cr: impressions ? orders/impressions*100 : 0 }; }).sort((a,b)=>b.orders-a.orders);
-  }, [entryPoints]);
   const geoSummary = useMemo(() => {
     const orders = geography.reduce((sum, row) => sum + row.orders_total, 0);
     const local = geography.reduce((sum, row) => sum + row.product_local_orders, 0);
@@ -68,17 +102,72 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
     geography.forEach(row => byRegion.set(row.region, (byRegion.get(row.region) || 0) + row.orders_total));
     return { orders, localShare: orders ? local / orders * 100 : 0, delivery, regions: [...byRegion.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value) };
   }, [geography]);
-  const geoTrend = useMemo(() => [...new Set(geography.filter(row => !geoRegion || row.region === geoRegion).map(row => row.date))].sort().map(date => { const rows = geography.filter(row => row.date === date && (!geoRegion || row.region === geoRegion)); const orders = rows.reduce((s,r)=>s+r.orders_total,0), local = rows.reduce((s,r)=>s+r.product_local_orders,0), covered = rows.filter(r=>r.delivery_hours!==null&&r.orders_total>0), coveredOrders=covered.reduce((s,r)=>s+r.orders_total,0); return { date: date.slice(5), localShare: orders ? local/orders*100 : 0, delivery: coveredOrders ? covered.reduce((s,r)=>s+(r.delivery_hours||0)*r.orders_total,0)/coveredOrders : 0 }; }), [geography, geoRegion]);
+
+  const trend = useMemo(() => {
+    const metricsByDate = new Map<string, DailyMetrics[]>();
+    metrics.forEach(row => { const rows = metricsByDate.get(row.date) || []; rows.push(row); metricsByDate.set(row.date, rows); });
+    const profitsByDate = new Map<string, { profit: number; revenue: number }>();
+    profitability.forEach(row => {
+      const current = profitsByDate.get(row.period_start) || { profit: 0, revenue: 0 };
+      current.profit += getReportNetProfit(row, getCabinetExtraExpense(row.period_start.slice(0, 7), product?.cabinet_id || ''));
+      current.revenue += row.profit_revenue;
+      profitsByDate.set(row.period_start, current);
+    });
+    const entriesByDate = new Map<string, { impressions: number; clicks: number; orders: number }>();
+    entryPoints.filter(item => !entryPointFilter || `${item.section} · ${item.entry_point}` === entryPointFilter).forEach(item => {
+      const current = entriesByDate.get(item.date) || { impressions: 0, clicks: 0, orders: 0 };
+      current.impressions += item.impressions; current.clicks += item.clicks; current.orders += item.orders; entriesByDate.set(item.date, current);
+    });
+    const geoByDate = new Map<string, typeof geography>();
+    geography.filter(item => !geoRegion || item.region === geoRegion).forEach(item => { const rows = geoByDate.get(item.date) || []; rows.push(item); geoByDate.set(item.date, rows); });
+    return [...metricsByDate.keys()].sort().map(date => {
+      const day = sumFunnel(metricsByDate.get(date) || []);
+      const profit = profitsByDate.get(date) || { profit: 0, revenue: 0 };
+      const entries = entriesByDate.get(date) || { impressions: 0, clicks: 0, orders: 0 };
+      const geoRows = geoByDate.get(date) || [];
+      const geoOrders = geoRows.reduce((sum, row) => sum + row.orders_total, 0);
+      const geoLocal = geoRows.reduce((sum, row) => sum + row.product_local_orders, 0);
+      const covered = geoRows.filter(row => row.delivery_hours !== null && row.orders_total > 0);
+      const coveredOrders = covered.reduce((sum, row) => sum + row.orders_total, 0);
+      const values: Record<ProductMetric, number> = {
+        orderedAmount: day.ordered_amount, orders: day.orders, impressions: day.impressions, clicks: day.clicks, carts: day.carts,
+        ctr: day.impressions ? day.clicks / day.impressions * 100 : 0, profit: profit.profit, profitability: profit.revenue ? profit.profit / profit.revenue * 100 : 0,
+        adSpend: (metricsByDate.get(date) || []).reduce((sum, row) => sum + row.ad_spend, 0), drr: day.ordered_amount ? (metricsByDate.get(date) || []).reduce((sum, row) => sum + row.ad_spend, 0) / day.ordered_amount * 100 : 0,
+        entryOrders: entries.orders, entryCtr: entries.impressions ? entries.clicks / entries.impressions * 100 : 0,
+        localShare: geoOrders ? geoLocal / geoOrders * 100 : 0, delivery: coveredOrders ? covered.reduce((sum, row) => sum + (row.delivery_hours || 0) * row.orders_total, 0) / coveredOrders : 0,
+      };
+      return { date: date.slice(5), primary: values[primaryMetric], secondary: values[secondaryMetric] };
+    });
+  }, [metrics, profitability, product, entryPoints, geography, geoRegion, entryPointFilter, primaryMetric, secondaryMetric]);
+
+  const topPoints = useMemo(() => {
+    const map = new Map<string, { impressions: number; clicks: number; carts: number; orders: number }>();
+    entryPoints.forEach(row => {
+      const name = `${row.section} · ${row.entry_point}`;
+      const current = map.get(name) || { impressions: 0, clicks: 0, carts: 0, orders: 0 };
+      current.impressions += row.impressions; current.clicks += row.clicks; current.carts += row.carts; current.orders += row.orders; map.set(name, current);
+    });
+    return [...map.entries()].map(([name, value]) => ({ ...value, name, ctr: value.impressions ? value.clicks / value.impressions * 100 : 0, cr: value.impressions ? value.orders / value.impressions * 100 : 0 })).sort((a, b) => b.orders - a.orders);
+  }, [entryPoints]);
+  const geoTrend = useMemo(() => [...new Set(geography.filter(row => !geoRegion || row.region === geoRegion).map(row => row.date))].sort().map(date => {
+    const rows = geography.filter(row => row.date === date && (!geoRegion || row.region === geoRegion));
+    const orders = rows.reduce((sum, row) => sum + row.orders_total, 0), local = rows.reduce((sum, row) => sum + row.product_local_orders, 0);
+    const covered = rows.filter(row => row.delivery_hours !== null && row.orders_total > 0), coveredOrders = covered.reduce((sum, row) => sum + row.orders_total, 0);
+    return { date: date.slice(5), localShare: orders ? local / orders * 100 : 0, delivery: coveredOrders ? covered.reduce((sum, row) => sum + (row.delivery_hours || 0) * row.orders_total, 0) / coveredOrders : 0 };
+  }), [geography, geoRegion]);
   const imageUrl = getWbImageUrls(product?.wb_sku || '')[0];
 
-  if (!product) return <section className="product-overview-empty"><button onClick={onBack}>← На главную</button><h2>Товар не найден</h2></section>;
+  if (!product) return <section className="product-overview-empty"><h2>Товар не найден</h2></section>;
 
   return <section className="product-overview-page">
-    <header className="product-overview-header"><button type="button" onClick={onBack}>← Главная</button><div className="product-header-period"><span>Период</span><DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} /></div><div className="product-overview-identity">{imageUrl ? <img src={imageUrl} alt="" /> : <span>Т</span>}<div><small>КАРТОЧКА ТОВАРА</small><h1>{product.name || product.sku}</h1><p><b>SKU {product.sku}</b>{product.wb_sku ? ` · WB ${product.wb_sku}` : ''}</p><div className="product-identity-tags"><span>{cabinet?.name || 'Без кабинета'}</span><span>{product.category || 'Без категории'}</span>{brand && <span>{brand.name}</span>}{productGroups.slice(0, 2).map(group => <span key={group.id}>{group.name}</span>)}</div></div></div></header>
+    <header className="product-overview-header">
+      <div className="product-overview-identity">{imageUrl ? <img src={imageUrl} alt="" /> : <span>Т</span>}<div><small>КАРТОЧКА ТОВАРА</small><h1>{product.name || product.sku}</h1><p><b>SKU {product.sku}</b>{product.wb_sku ? ` · WB ${product.wb_sku}` : ''}</p><div className="product-identity-tags"><span>{cabinet?.name || 'Без кабинета'}</span><span>{product.category || 'Без категории'}</span>{brand && <span>{brand.name}</span>}{productGroups.slice(0, 2).map(group => <span key={group.id}>{group.name}</span>)}</div></div></div>
+      <div className="product-header-period"><span>Период</span><DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} /></div>
+    </header>
     <div className="product-source-status"><strong>Покрытие данных</strong><span className={metrics.length ? 'ready' : ''}>Воронка · {metrics.at(-1)?.date || 'нет данных'}</span><span className={profitability.length ? 'ready' : ''}>Финансы · {profitability.at(-1)?.period_start || 'нет данных'}</span><span className={geography.length ? 'ready' : ''}>География · {geography.at(-1)?.date || 'нет данных'}</span><span className={entryPoints.length ? 'ready' : ''}>Точки входа · {entryPoints.at(-1)?.date || 'нет данных'}</span></div>
-    <div className="product-kpis"><article><span>Сумма заказов</span><strong>{fmt(totals.orderedAmount)} ₽</strong><small>{fmt(totals.orders)} заказов</small></article><article><span>Выручка</span><strong>{fmt(totals.revenue)} ₽</strong><small>Средний чек {fmt(totals.orders ? totals.orderedAmount / totals.orders : 0)} ₽</small></article><article><span>Чистая прибыль</span><strong>{fmt(totals.netProfit)} ₽</strong><small>Рентабельность {fmt(totals.profitability, 1)}%</small></article><article><span>Реклама</span><strong>{fmt(totals.adSpend)} ₽</strong><small>ДРР {fmt(totals.drr, 1)}%</small></article></div>
-    <div className="product-overview-grid"><article className="product-panel product-trend"><div className="product-panel-head"><div><span>ДИНАМИКА</span><h2>Сравнение метрик</h2></div><div className="product-metric-controls"><select value={primaryMetric} onChange={event=>setPrimaryMetric(event.target.value as ProductMetric)}>{Object.entries(productMetricLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select value={secondaryMetric} onChange={event=>setSecondaryMetric(event.target.value as ProductMetric)}>{Object.entries(productMetricLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>{(primaryMetric==='entryOrders'||primaryMetric==='entryCtr'||secondaryMetric==='entryOrders'||secondaryMetric==='entryCtr')&&<select className="product-source-filter" value={entryPointFilter} onChange={event=>setEntryPointFilter(event.target.value)}><option value="">Все точки входа</option>{entryPointOptions.map(point=><option key={point}>{point}</option>)}</select>}{(primaryMetric==='localShare'||primaryMetric==='delivery'||secondaryMetric==='localShare'||secondaryMetric==='delivery')&&<select className="product-source-filter" value={geoRegion} onChange={event=>setGeoRegion(event.target.value)}><option value="">Все ФО</option>{geoSummary.regions.map(row=><option key={row.name}>{row.name}</option>)}</select>}</div></div><ResponsiveContainer width="100%" height={280}><LineChart data={trend}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis yAxisId="a" tick={{fontSize:9}}/><YAxis yAxisId="b" orientation="right" tick={{fontSize:9}}/><Tooltip/><Line yAxisId="a" dataKey="primary" name={productMetricLabels[primaryMetric]} stroke="#3B82F6" strokeWidth={2.5} dot={false}/><Line yAxisId="b" dataKey="secondary" name={productMetricLabels[secondaryMetric]} stroke="#10B981" strokeWidth={2.3} dot={false}/></LineChart></ResponsiveContainer></article><article className="product-panel product-funnel"><div className="product-panel-head"><div><span>КОНВЕРСИЯ</span><h2>Воронка продаж</h2></div></div><div className="product-funnel-steps"><div style={{'--step-width':'100%'} as React.CSSProperties}><span>Показы</span><strong>{fmt(totals.impressions)}</strong></div><i>CTR <b>{fmt(totals.ctr, 1)}%</b></i><div style={{'--step-width':`${Math.max(18, totals.impressions ? totals.clicks / totals.impressions * 100 : 0)}%`} as React.CSSProperties}><span>Клики</span><strong>{fmt(totals.clicks)}</strong></div><i>CR в корзину <b>{fmt(totals.cartCr, 1)}%</b></i><div style={{'--step-width':`${Math.max(18, totals.impressions ? totals.carts / totals.impressions * 100 : 0)}%`} as React.CSSProperties}><span>Корзины</span><strong>{fmt(totals.carts)}</strong></div><i>CR показ → заказ <b>{fmt(totals.orderCr, 2)}%</b></i><div style={{'--step-width':`${Math.max(18, totals.impressions ? totals.orders / totals.impressions * 100 : 0)}%`} as React.CSSProperties}><span>Заказы</span><strong>{fmt(totals.orders)}</strong></div></div></article></div>
-    <article className="product-panel product-entry-panel"><div className="product-panel-head"><div><span>ИСТОЧНИКИ ТРАФИКА</span><h2>Точки входа</h2></div></div><div className="product-entry-layout"><ResponsiveContainer width="100%" height={220}><BarChart data={topPoints.slice(0,7)} layout="vertical" margin={{left:72}}><XAxis type="number"/><YAxis type="category" dataKey="name" width={135} tick={{fontSize:8}}/><Tooltip/><Bar dataKey="orders" fill="#60A5FA" radius={[0,4,4,0]}/></BarChart></ResponsiveContainer><div className="product-entry-table"><table><thead><tr><th>Точка входа</th><th>Показы</th><th>Клики</th><th>CTR</th><th>Корз.</th><th>Заказы</th><th>CR</th></tr></thead><tbody>{topPoints.map(row=><tr key={row.name}><td>{row.name}</td><td>{fmt(row.impressions)}</td><td>{fmt(row.clicks)}</td><td>{fmt(row.ctr,1)}%</td><td>{fmt(row.carts)}</td><td>{fmt(row.orders)}</td><td>{fmt(row.cr,2)}%</td></tr>)}</tbody></table></div></div></article>
-    <article className="product-panel product-geo-summary"><div className="product-panel-head"><div><span>ГЕОГРАФИЯ</span><h2>Локальность и доставка</h2></div><select value={geoRegion} onChange={event=>setGeoRegion(event.target.value)}><option value="">Все ФО</option>{geoSummary.regions.map(row=><option key={row.name}>{row.name}</option>)}</select></div><div className="product-geo-layout"><div><div className="product-geo-kpis"><span>Локальность<strong>{fmt(geoSummary.localShare,1)}%</strong></span><span>СВД<strong>{fmt(geoSummary.delivery,1)} ч</strong></span><span>Заказы<strong>{fmt(geoSummary.orders)}</strong></span></div><div className="product-region-list">{geoSummary.regions.map(row=><div className="product-region-row" key={row.name}><span>{row.name}</span><b>{fmt(row.value)}</b></div>)}</div></div><ResponsiveContainer width="100%" height={260}><LineChart data={geoTrend}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis yAxisId="local"/><YAxis yAxisId="delivery" orientation="right"/><Tooltip/><Line yAxisId="local" dataKey="localShare" name="Локальность" stroke="#10B981" strokeWidth={2.3} dot={false}/><Line yAxisId="delivery" dataKey="delivery" name="СВД" stroke="#60A5FA" strokeWidth={2.3} dot={false}/></LineChart></ResponsiveContainer></div></article>
+    <div className="product-kpis"><article><span>Сумма заказов</span><strong>{fmt(totals.ordered_amount)} ₽</strong><small>{fmt(totals.orders)} заказов</small></article><article><span>Выручка</span><strong>{fmt(totals.revenue)} ₽</strong><small>Средний чек {fmt(totals.orders ? totals.ordered_amount / totals.orders : 0)} ₽</small></article><article><span>Чистая прибыль</span><strong>{fmt(totals.netProfit)} ₽</strong><small>Рентабельность {fmt(totals.profitability, 1)}%</small></article><article><span>Реклама</span><strong>{fmt(totals.adSpend)} ₽</strong><small>ДРР {fmt(totals.drr, 1)}%</small></article></div>
+    <div className="product-overview-grid"><article className="product-panel product-trend"><div className="product-panel-head"><div><span>ДИНАМИКА</span><h2>Сравнение метрик</h2></div><div className="product-metric-controls"><select value={primaryMetric} onChange={event => setPrimaryMetric(event.target.value as ProductMetric)}>{Object.entries(productMetricLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><select value={secondaryMetric} onChange={event => setSecondaryMetric(event.target.value as ProductMetric)}>{Object.entries(productMetricLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{(primaryMetric === 'entryOrders' || primaryMetric === 'entryCtr' || secondaryMetric === 'entryOrders' || secondaryMetric === 'entryCtr') && <select className="product-source-filter" value={entryPointFilter} onChange={event => setEntryPointFilter(event.target.value)}><option value="">Все точки входа</option>{entryPointOptions.map(point => <option key={point}>{point}</option>)}</select>}{(primaryMetric === 'localShare' || primaryMetric === 'delivery' || secondaryMetric === 'localShare' || secondaryMetric === 'delivery') && <select className="product-source-filter" value={geoRegion} onChange={event => setGeoRegion(event.target.value)}><option value="">Все ФО</option>{geoSummary.regions.map(row => <option key={row.name}>{row.name}</option>)}</select>}</div></div><ResponsiveContainer width="100%" height={280}><LineChart data={trend}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 9 }} /><YAxis yAxisId="a" tick={{ fontSize: 9 }} /><YAxis yAxisId="b" orientation="right" tick={{ fontSize: 9 }} /><Tooltip /><Line yAxisId="a" dataKey="primary" name={productMetricLabels[primaryMetric]} stroke="#3B82F6" strokeWidth={2.5} dot={false} /><Line yAxisId="b" dataKey="secondary" name={productMetricLabels[secondaryMetric]} stroke="#10B981" strokeWidth={2.3} dot={false} /></LineChart></ResponsiveContainer></article><article className="product-panel product-funnel"><div className="product-panel-head"><div><span>КОНВЕРСИЯ</span><h2>Воронка продаж</h2></div></div><section className="product-funnel-section"><h3>Товар</h3><FunnelSteps totals={totals} /></section><section className="product-funnel-section product-group-funnel"><h3>{productGroups[0]?.name || 'Склейка'} <small>и доля товара</small></h3><FunnelSteps totals={groupTotals} productTotals={totals} /><p>Товар: {fmt(totals.orders)} из {fmt(groupTotals.orders)} заказов ({fmt(groupTotals.orders ? totals.orders / groupTotals.orders * 100 : 0, 1)}%)</p></section></article></div>
+    <article className="product-panel product-entry-panel"><div className="product-panel-head"><div><span>ИСТОЧНИКИ ТРАФИКА</span><h2>Точки входа</h2></div></div>{topPoints.length ? <div className="product-entry-layout"><ResponsiveContainer width="100%" height={220}><BarChart data={topPoints.slice(0, 7)} layout="vertical" margin={{ left: 72 }}><XAxis type="number" /><YAxis type="category" dataKey="name" width={135} tick={{ fontSize: 8 }} /><Tooltip /><Bar dataKey="orders" fill="#60A5FA" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer><div className="product-entry-table"><table><thead><tr><th>Точка входа</th><th>Показы</th><th>Клики</th><th>CTR</th><th>Корз.</th><th>Заказы</th><th>CR</th></tr></thead><tbody>{topPoints.map(row => <tr key={row.name}><td>{row.name}</td><td>{fmt(row.impressions)}</td><td>{fmt(row.clicks)}</td><td>{fmt(row.ctr, 1)}%</td><td>{fmt(row.carts)}</td><td>{fmt(row.orders)}</td><td>{fmt(row.cr, 2)}%</td></tr>)}</tbody></table></div></div> : <div className="product-empty-state">Нет точек входа в выбранном периоде.</div>}</article>
+    <article className="product-panel product-geo-summary"><div className="product-panel-head"><div><span>ГЕОГРАФИЯ</span><h2>Локальность и доставка</h2></div><select value={geoRegion} onChange={event => setGeoRegion(event.target.value)}><option value="">Все ФО</option>{geoSummary.regions.map(row => <option key={row.name}>{row.name}</option>)}</select></div>{geoSummary.regions.length ? <div className="product-geo-layout"><div><div className="product-geo-kpis"><span>Локальность<strong>{fmt(geoSummary.localShare, 1)}%</strong></span><span>СВД<strong>{fmt(geoSummary.delivery, 1)} ч</strong></span><span>Заказы<strong>{fmt(geoSummary.orders)}</strong></span></div><div className="product-region-list">{geoSummary.regions.map(row => <div className="product-region-row" key={row.name}><span title={row.name}>{row.name}</span><b>{fmt(row.value)}</b></div>)}</div></div><ResponsiveContainer width="100%" height={260}><LineChart data={geoTrend}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis yAxisId="local" /><YAxis yAxisId="delivery" orientation="right" /><Tooltip /><Line yAxisId="local" dataKey="localShare" name="Локальность" stroke="#10B981" strokeWidth={2.3} dot={false} /><Line yAxisId="delivery" dataKey="delivery" name="СВД" stroke="#60A5FA" strokeWidth={2.3} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="product-empty-state">Нет географических данных в выбранном периоде.</div>}</article>
   </section>;
 }

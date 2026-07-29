@@ -132,6 +132,40 @@ export function getSearchQueries() { return cachedRows('searchQueries', _searchQ
 export function getNicheDynamics() { return cachedRows('nicheDynamics', _nicheDynamics); }
 export function getImportLog() { return [...cachedRows('importLogs', _importLog)].reverse(); }
 
+export function getRelatedProductIds(productId: string): string[] {
+  return [...(buildRelatedProductIndex().get(productId) || new Set([productId]))];
+}
+
+export type LocalDataVolume = { bytes: number; estimated: boolean };
+
+function estimateRowBytes<T>(rows: T[], predicate: (row: T) => boolean, project: (row: T) => unknown): LocalDataVolume {
+  let count = 0;
+  let sampleBytes = 0;
+  let sampleCount = 0;
+  for (const row of rows) {
+    if (!predicate(row)) continue;
+    count++;
+    if (sampleCount < 64) {
+      sampleBytes += JSON.stringify(project(row)).length * 2;
+      sampleCount++;
+    }
+  }
+  return { bytes: sampleCount ? Math.round(sampleBytes / sampleCount * count) : 0, estimated: count > sampleCount };
+}
+
+export function getLocalDataVolumes(): Record<ImportSource, LocalDataVolume> {
+  return {
+    wb_funnel: estimateRowBytes(_metrics, row => row.impressions !== 0 || row.clicks !== 0 || row.carts !== 0 || row.orders !== 0 || row.ordered_amount !== 0, row => ({ date: row.date, product_id: row.product_id, impressions: row.impressions, clicks: row.clicks, carts: row.carts, orders: row.orders, ordered_amount: row.ordered_amount, buyout_amount: row.buyout_amount, stock: row.stock })),
+    xway: estimateRowBytes(_metrics, row => row.ad_impressions !== 0 || row.ad_clicks !== 0 || row.ad_orders !== 0 || row.ad_spend !== 0, row => ({ date: row.date, product_id: row.product_id, ad_impressions: row.ad_impressions, ad_clicks: row.ad_clicks, ad_orders: row.ad_orders, ad_spend: row.ad_spend })),
+    profitability: estimateRowBytes(_profitability, () => true, row => row),
+    geography: estimateRowBytes(_geography, () => true, row => row),
+    entry_points: estimateRowBytes(_entryPoints, () => true, row => row),
+    search_queries: estimateRowBytes(_searchQueries, () => true, row => row),
+    niche_dynamics: estimateRowBytes(_nicheDynamics, () => true, row => row),
+    plan_template: estimateRowBytes(_monthlyPlans, () => true, row => row),
+  };
+}
+
 export function exportV4Backup() {
   return {
     version: 'v4.0',

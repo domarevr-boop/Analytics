@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { getImportLog, getMonthlyPlans, getVersion, subscribe } from '../data/store';
+import { getImportLog, getLocalDataVolumes, getMonthlyPlans, getVersion, subscribe } from '../data/store';
 import type { ImportFileLog, ImportSource } from '../types';
 
 function fmt(date: string) {
@@ -9,6 +9,13 @@ function fmt(date: string) {
 
 const DAY_MS = 86_400_000;
 type DayInterval = { start: number; end: number };
+
+function formatVolume(bytes: number, estimated: boolean) {
+  const prefix = estimated ? '≈ ' : '';
+  if (!bytes) return '—';
+  if (bytes < 1024 * 1024) return `${prefix}${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${prefix}${(bytes / (1024 * 1024)).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} MB`;
+}
 
 function parseIsoDay(value: string | undefined): number | null {
   const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -58,6 +65,7 @@ function coverageFromLogs(source: ImportSource, label: string, logs: ImportFileL
 
 export default function DataCoverage() {
   const version = useSyncExternalStore(subscribe, getVersion);
+  const volumes = useMemo(() => getLocalDataVolumes(), [version]);
   const rows = useMemo(() => {
     const logs = getImportLog();
     const planIntervals: DayInterval[] = [];
@@ -87,6 +95,6 @@ export default function DataCoverage() {
 
   return <div className="data-coverage">
     <div className="import-section-head"><div><h3 className="coverage-title">Покрытие данных</h3><p>Подтверждённые периоды успешных импортов без полного обхода локальной базы</p></div></div>
-    <table className="coverage-table"><thead><tr><th>Отчёт</th><th>Период данных</th><th>Дней</th><th>Покрытие</th></tr></thead><tbody>{rows.map(row => <tr key={row.key} className={!row.dayCount ? 'coverage-empty-row' : ''}><td className="coverage-source">{row.label}</td><td className="coverage-range">{row.dayCount ? row.start === row.end ? fmt(row.start) : `${fmt(row.start)} — ${fmt(row.end)}` : 'Нет данных'}</td><td className="coverage-count">{row.dayCount ? `${row.dayCount}/${row.rangeDays}` : '—'}</td><td className={`coverage-pct ${row.gaps > 0 ? 'has-gaps' : row.dayCount ? 'full' : ''}`}>{row.dayCount ? row.gaps ? `Есть пропуски: ${row.gaps} дн.` : 'Нет пропусков' : 'Отчёт ещё не загружен'}</td></tr>)}</tbody></table>
+    <table className="coverage-table"><thead><tr><th>Отчёт</th><th>Период данных</th><th>Дней</th><th>Покрытие</th></tr></thead><tbody>{rows.map(row => { const volume = volumes[row.key as ImportSource]; return <tr key={row.key} className={!row.dayCount ? 'coverage-empty-row' : ''}><td className="coverage-source"><span>{row.label}</span><small title="Оценка объёма записей отчёта">{formatVolume(volume.bytes, volume.estimated)}</small></td><td className="coverage-range">{row.dayCount ? row.start === row.end ? fmt(row.start) : `${fmt(row.start)} — ${fmt(row.end)}` : 'Нет данных'}</td><td className="coverage-count">{row.dayCount ? `${row.dayCount}/${row.rangeDays}` : '—'}</td><td className={`coverage-pct ${row.gaps > 0 ? 'has-gaps' : row.dayCount ? 'full' : ''}`}>{row.dayCount ? row.gaps ? `Есть пропуски: ${row.gaps} дн.` : 'Нет пропусков' : 'Отчёт ещё не загружен'}</td></tr>; })}</tbody></table>
   </div>;
 }

@@ -5876,6 +5876,43 @@ thead .at-metric:last-child {
 .product-overview-grid { gap: 12px; }
 .product-panel { margin: 0; }
 
+/* Product overview: one product, its conversion funnel, and linked analytical sources. */
+.product-overview-header { grid-template-columns: minmax(0, 1fr) auto; min-height: 106px; padding: 14px 16px; }
+.product-header-period { justify-self: end; width: max-content; min-width: 0; padding: 0; border: 0; background: transparent; }
+.product-header-period > span { display: none; }
+.product-header-period .date-range-filter { width: auto; }
+.product-overview-identity { justify-self: start; }
+.product-overview-identity > img,
+.product-overview-identity > span { width: 76px; height: 76px; flex-basis: 76px; }
+.product-funnel { display: grid; align-content: start; gap: 10px; }
+.product-funnel-section { padding-top: 2px; }
+.product-funnel-section + .product-funnel-section { padding-top: 10px; border-top: 1px solid #edf1f5; }
+.product-funnel-section h3 { display: flex; align-items: baseline; gap: 5px; margin: 0 0 4px; color: #52647c; font-size: 9px; }
+.product-funnel-section h3 small { color: #94a0af; font-size: 8px; font-weight: 600; text-transform: none; }
+.product-funnel-section > p { margin: 6px 0 0; color: #7b899b; font-size: 8px; text-align: center; }
+.product-funnel-steps { gap: 3px; padding: 0; }
+.product-funnel-stage { display: grid; justify-items: center; width: 100%; }
+.product-funnel-steps > .product-funnel-stage > div { position: relative; width: var(--step-width); min-width: 0; padding: 8px 10px; border-color: #f1d78a; background: linear-gradient(90deg, #fff8df, #fffcf2); }
+.product-funnel-steps > .product-funnel-stage:nth-child(2) > div { background: linear-gradient(90deg, #fff3c4, #fff9e5); }
+.product-funnel-steps > .product-funnel-stage:nth-child(3) > div { background: linear-gradient(90deg, #ffe9a1, #fff5d5); }
+.product-funnel-steps > .product-funnel-stage:nth-child(4) > div { background: linear-gradient(90deg, #ffdc66, #ffefb3); }
+.product-funnel-steps > .product-funnel-stage > div span { color: #786126; }
+.product-funnel-steps > .product-funnel-stage > div strong { color: #3f3211; font-size: 14px; }
+.product-funnel-steps > .product-funnel-stage > div small { position: absolute; right: 9px; bottom: -10px; color: #9a8140; font-size: 7px; white-space: nowrap; }
+.product-funnel-steps > .product-funnel-stage > i { margin: 2px 0; color: #0c9470; font-size: 8px; font-style: normal; }
+.product-group-funnel .product-funnel-steps > .product-funnel-stage > div { padding: 6px 9px; opacity: .84; }
+.product-group-funnel .product-funnel-steps > .product-funnel-stage > div strong { font-size: 12px; }
+.product-empty-state { display: grid; min-height: 130px; place-items: center; border: 1px dashed #dbe4ee; border-radius: 9px; color: #8190a2; font-size: 11px; }
+.product-entry-layout { min-height: 220px; }
+.product-entry-table { min-width: 0; }
+.product-geo-layout { grid-template-columns: minmax(320px, .52fr) minmax(0, 1.48fr); }
+.product-geo-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.product-geo-kpis span { min-width: 0; padding: 9px 8px; overflow: hidden; }
+.product-geo-kpis strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.product-region-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coverage-source { display: inline-flex; align-items: baseline; gap: 7px; }
+.coverage-source small { color: #8491a3; font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 .auth-page {
   display: grid;
   min-height: 100vh;
@@ -6004,8 +6041,8 @@ thead .at-metric:last-child {
   .niche-page-header,
   .registry-header { align-items: flex-start; flex-direction: column; min-height: 0; }
   :is(.entry-kpis, .geo-kpis, .search-kpis, .product-kpis, .profit-summary, .plan-summary, .registry-stats) { grid-template-columns: 1fr 1fr; }
-  .product-overview-header { grid-template-columns: auto minmax(0, 1fr); }
-  .product-header-period { grid-column: 1 / -1; }
+  .product-overview-header { grid-template-columns: 1fr; }
+  .product-header-period { grid-column: auto; justify-self: start; }
   .navbar {
     width: 100%;
     max-width: 100vw;
