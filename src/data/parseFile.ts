@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { normalizeDate } from './dateUtils';
 
 const DEV = import.meta.env.DEV;
 
@@ -90,7 +91,38 @@ function fmtCell(v: any): string {
     const d = String(v.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
-  return String(v).trim();
+  const s = String(v).trim();
+  return normalizeDate(s);
+}
+
+function sheetToArray(sheet: XLSX.WorkSheet, date1904: boolean): any[][] {
+  if (!sheet['!ref']) return [];
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const rows: any[][] = [];
+
+  for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex++) {
+    const row: any[] = [];
+    for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+      if (!cell) {
+        row.push('');
+        continue;
+      }
+
+      if (cell.t === 'n' && cell.z && XLSX.SSF.is_date(cell.z)) {
+        const parsed = XLSX.SSF.parse_date_code(cell.v, { date1904 });
+        row.push(parsed
+          ? `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`
+          : cell.v);
+        continue;
+      }
+
+      row.push(cell.v ?? '');
+    }
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 function buildRows(headers: string[], data: any[][], headerRow: number): Record<string, string>[] {
@@ -125,8 +157,9 @@ function parseCSV(text: string): { headers: string[]; rawHeaders: string[]; rows
 }
 
 function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[]; rows: Record<string, string>[] } {
-  const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+  const workbook = XLSX.read(data, { type: 'array', cellDates: false, cellNF: true });
   const sheetNames = workbook.SheetNames;
+  const date1904 = Boolean(workbook.Workbook?.WBProps?.date1904);
   if (DEV) console.debug('[parseFile] Excel sheets:', sheetNames.join(', '));
 
   // Scan all sheets for best header row
@@ -135,7 +168,7 @@ function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[
 
   for (const name of sheetNames) {
     const sheet = workbook.Sheets[name];
-    const arr: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    const arr = sheetToArray(sheet, date1904);
     scanned.push({ name, rows: arr.length });
     if (arr.length < 2) continue;
     const result = scanSheet(name, arr);
@@ -150,7 +183,7 @@ function parseExcel(data: ArrayBuffer): { headers: string[]; rawHeaders: string[
     // Fallback: first sheet, first row
     if (DEV) console.debug('[parseFile] no header row found, using first sheet first row');
     const fallback = sheetNames[0];
-    const arr: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[fallback], { header: 1, defval: '' });
+    const arr = sheetToArray(workbook.Sheets[fallback], date1904);
     if (arr.length < 2) throw new Error('Лист пуст или содержит только заголовок');
     const rawHeaders = (arr[0] as string[]).map(c => String(c).trim());
     const headers = rawHeaders.map(normHeader);

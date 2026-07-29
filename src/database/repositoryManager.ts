@@ -1,4 +1,4 @@
-import type { IDataRepository, DataSnapshot, SaveResult } from '../types';
+import type { DataChanges, IDataRepository, DataSnapshot, SaveResult } from '../types';
 
 export interface RepoStatus {
   cloudAvailable: boolean;
@@ -8,21 +8,24 @@ export interface RepoStatus {
 export class RepositoryManager implements IDataRepository {
   private readonly DEV = import.meta.env.DEV;
   readonly name = 'manager';
-  private local: IDataRepository;
-  private cloud: IDataRepository;
   private _cloudAvailable = false;
   private _lastSyncTime: Date | null = null;
+  private readonly cloudFirst: boolean;
+  private readonly local: IDataRepository;
+  private readonly cloud: IDataRepository;
 
-  constructor(local: IDataRepository, cloud: IDataRepository) {
+  constructor(
+    local: IDataRepository,
+    cloud: IDataRepository,
+    options?: { cloudFirst?: boolean },
+  ) {
     this.local = local;
     this.cloud = cloud;
+    this.cloudFirst = options?.cloudFirst ?? false;
   }
 
   getStatus(): RepoStatus {
-    return {
-      cloudAvailable: this._cloudAvailable,
-      lastSyncTime: this._lastSyncTime,
-    };
+    return { cloudAvailable: this._cloudAvailable, lastSyncTime: this._lastSyncTime };
   }
 
   async initialize(): Promise<void> {
@@ -31,7 +34,7 @@ export class RepositoryManager implements IDataRepository {
       await this.cloud.initialize();
       this._cloudAvailable = true;
       if (this.DEV) console.log('[repo] cloud available');
-    } catch (err) {
+    } catch {
       this._cloudAvailable = false;
       if (this.DEV) console.log('[repo] cloud unavailable, offline mode');
     }
@@ -39,9 +42,23 @@ export class RepositoryManager implements IDataRepository {
 
   async loadAll(): Promise<DataSnapshot> {
     const localSnapshot = await this.local.loadAll();
-    if (localSnapshot.cabinets.length > 0) {
-      return localSnapshot;
+
+    if (this.cloudFirst && this._cloudAvailable) {
+      try {
+        const cloudSnapshot = await this.cloud.loadAll();
+        if (cloudSnapshot.cabinets.length > 0) {
+          await this.local.saveAll(cloudSnapshot);
+          this._lastSyncTime = new Date();
+          return cloudSnapshot;
+        }
+      } catch (error) {
+        console.warn('[repo] cloud load failed:', error);
+        if (localSnapshot.cabinets.length === 0) throw error;
+      }
     }
+
+    if (localSnapshot.cabinets.length > 0) return localSnapshot;
+
     if (this._cloudAvailable) {
       try {
         const cloudSnapshot = await this.cloud.loadAll();
@@ -50,29 +67,65 @@ export class RepositoryManager implements IDataRepository {
           this._lastSyncTime = new Date();
           return cloudSnapshot;
         }
-      } catch (err) {
-        console.warn('[repo] cloud load failed:', err);
+      } catch (error) {
+        console.warn('[repo] cloud load failed:', error);
+        if (this.cloudFirst) throw error;
       }
     }
+
     return localSnapshot;
   }
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
-    const localResult = await this.local.saveAll(data);
-    if (!localResult.ok) {
-      return localResult;
-    }
-    if (this._cloudAvailable) {
+    if (this.cloudFirst && this._cloudAvailable) {
       const cloudResult = await this.cloud.saveAll(data);
-      if (cloudResult.ok) {
-        this._lastSyncTime = new Date();
-      } else {
+      if (!cloudResult.ok) {
         this._cloudAvailable = false;
         console.warn('[repo] cloud sync failed:', cloudResult.errors.join('; '));
+        return cloudResult;
       }
-      return cloudResult;
+      const localResult = await this.local.saveAll(data);
+      if (localResult.ok) this._lastSyncTime = new Date();
+      return localResult;
     }
-    return { ok: true, errors: [] };
+
+    const localResult = await this.local.saveAll(data);
+    if (!localResult.ok) return localResult;
+    if (!this._cloudAvailable) return { ok: true, errors: [] };
+
+    const cloudResult = await this.cloud.saveAll(data);
+    if (cloudResult.ok) {
+      this._lastSyncTime = new Date();
+    } else {
+      this._cloudAvailable = false;
+      console.warn('[repo] cloud sync failed:', cloudResult.errors.join('; '));
+    }
+    return cloudResult;
   }
 
+  async saveChanges(data: DataChanges): Promise<SaveResult> {
+    if (this.cloudFirst && this._cloudAvailable) {
+      const cloudResult = await this.cloud.saveChanges(data);
+      if (!cloudResult.ok) {
+        this._cloudAvailable = false;
+        console.warn('[repo] cloud sync failed:', cloudResult.errors.join('; '));
+        return cloudResult;
+      }
+      const localResult = await this.local.saveChanges(data);
+      if (localResult.ok) this._lastSyncTime = new Date();
+      return localResult;
+    }
+
+    const localResult = await this.local.saveChanges(data);
+    if (!localResult.ok) return localResult;
+    if (!this._cloudAvailable) return { ok: true, errors: [] };
+
+    const cloudResult = await this.cloud.saveChanges(data);
+    if (cloudResult.ok) this._lastSyncTime = new Date();
+    else {
+      this._cloudAvailable = false;
+      console.warn('[repo] cloud sync failed:', cloudResult.errors.join('; '));
+    }
+    return cloudResult;
+  }
 }

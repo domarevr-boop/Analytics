@@ -1,5 +1,7 @@
-import type { DataSnapshot, IDataRepository, SaveResult } from '../types';
+import type { DataChanges, DataSnapshot, IDataRepository, SaveResult } from '../types';
 import { LocalRepository as LocalRepo } from './localRepository';
+import { CloudRepository } from './cloudRepository';
+import { RepositoryManager } from './repositoryManager';
 
 class LocalRepository implements IDataRepository {
   readonly name = 'local';
@@ -15,6 +17,10 @@ class LocalRepository implements IDataRepository {
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
     return this.inner.saveAll(data);
+  }
+
+  async saveChanges(data: DataChanges): Promise<SaveResult> {
+    return this.inner.saveChanges(data);
   }
 
   async clearAll(): Promise<void> {
@@ -34,7 +40,12 @@ class LocalRepository implements IDataRepository {
   }
 }
 
-export const repository: IDataRepository = new LocalRepository();
+const storageMode = import.meta.env.VITE_DATA_MODE ?? 'local';
+export const isCloudStorage = storageMode === 'cloud';
+
+export const repository: IDataRepository = isCloudStorage
+  ? new RepositoryManager(new LocalRepo(), new CloudRepository(), { cloudFirst: true })
+  : new LocalRepository();
 
 export async function loadAllData(): Promise<DataSnapshot> {
   return repository.loadAll();

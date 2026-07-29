@@ -1,15 +1,21 @@
-import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord } from '../types';
+import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord } from '../types';
 import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
 import { repository } from '../database/db';
+import { isCloudStorage } from '../database/db';
+import { createDataChanges, hasDataChanges } from '../database/snapshotDelta';
 import type { DataSnapshot } from '../types';
-import { normalizeDate, addDays } from './dateUtils';
+import { normalizeImportDate, addDays } from './dateUtils';
+import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
+import { getReportNetProfit } from './profitabilityCalculations';
 
 let _version = 0;
 const _listeners = new Set<() => void>();
 let _initCalled = false;
 let _suppressPersist = false;
+let _persistQueue: Promise<void> = Promise.resolve();
 const DEV = import.meta.env.DEV;
+const MONTHLY_PLANS_BACKUP_KEY = 'analytics_monthly_plans_v1';
 
 function notify() {
   _version++;
@@ -35,8 +41,36 @@ let _importLog: ImportFileLog[] = [];
 let _plans: PlanRecord[] = [];
 let _monthlyPlans: MonthlyPlanRecord[] = [];
 let _profitability: ProfitabilityRecord[] = [];
+let _geography: GeographyOrderRecord[] = [];
+let _geographyPlans: GeographyPlanRecord[] = [];
+let _entryPoints: EntryPointRecord[] = [];
+let _searchQueries: SearchQueryRecord[] = [];
+let _nicheDynamics: NicheDynamicsRecord[] = [];
 let _skuAliases = new Map<string, string>();
+let _lastPersistedSnapshot: DataSnapshot | null = null;
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
+
+function saveMonthlyPlansBackup() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(MONTHLY_PLANS_BACKUP_KEY, JSON.stringify(_monthlyPlans));
+  } catch (error) {
+    console.error('[monthly-plans] backup failed', error);
+  }
+}
+
+function loadMonthlyPlansBackup(): MonthlyPlanRecord[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(MONTHLY_PLANS_BACKUP_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('[monthly-plans] backup restore failed', error);
+    return [];
+  }
+}
 
 function seed() {
   const seed = loadSeed();
@@ -74,7 +108,88 @@ export function getGroups() { return [..._groups]; }
 export function getProducts() { return [..._products]; }
 export function getMemberships() { return [..._memberships]; }
 export function getMetrics() { return [..._metrics]; }
+export function getGeographyOrders() { return _geography.map(record => ({ ...record })); }
+export function getGeographyPlans() { return _geographyPlans.map(record => ({ ...record })); }
+export function getEntryPoints() { return _entryPoints.map(record => ({ ...record })); }
+export function getSearchQueries() { return _searchQueries.map(record => ({ ...record })); }
+export function getNicheDynamics() { return _nicheDynamics.map(record => ({ ...record })); }
 export function getImportLog() { return [..._importLog].reverse(); }
+
+export function exportV4Backup() {
+  return {
+    version: 'v4.0',
+    exportedAt: new Date().toISOString(),
+    fixedExpenses: getAllExtraExpenses(),
+    data: {
+      cabinets: _cabinets.map(item => ({ ...item })),
+      brands: _brands.map(item => ({ ...item })),
+      groups: _groups.map(item => ({ ...item })),
+      products: _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] })),
+      memberships: _memberships.map(item => ({ ...item })),
+      metrics: _metrics.map(item => ({ ...item })),
+      plans: _plans.map(item => ({ ...item })),
+      monthlyPlans: _monthlyPlans.map(item => ({ ...item })),
+      profitability: _profitability.map(item => ({ ...item })),
+      geography: _geography.map(item => ({ ...item })),
+      geographyPlans: _geographyPlans.map(item => ({ ...item })),
+      entryPoints: _entryPoints.map(item => ({ ...item })),
+      searchQueries: _searchQueries.map(item => ({ ...item })),
+      nicheDynamics: _nicheDynamics.map(item => ({ ...item })),
+      importLogs: _importLog.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined })),
+    },
+  };
+}
+
+export async function importV4Backup(backup: unknown): Promise<{ metrics: number; products: number }> {
+  const parsed = backup as { version?: string; data?: Partial<DataSnapshot>; fixedExpenses?: Record<string, Record<string, number>> };
+  const data = parsed.data;
+  if (!data || !Array.isArray(data.cabinets) || !Array.isArray(data.products) || !Array.isArray(data.metrics)) {
+    throw new Error('Файл не похож на резервную копию Analytics V4.');
+  }
+
+  const snapshot: DataSnapshot = {
+    cabinets: data.cabinets,
+    brands: data.brands || [],
+    groups: data.groups || [],
+    products: data.products,
+    memberships: data.memberships || [],
+    metrics: data.metrics,
+    plans: data.plans || [],
+    monthlyPlans: data.monthlyPlans || [],
+    profitability: data.profitability || [],
+    geography: data.geography || [],
+    geographyPlans: data.geographyPlans || [],
+    entryPoints: data.entryPoints || [],
+    searchQueries: data.searchQueries || [],
+    nicheDynamics: data.nicheDynamics || [],
+    importLogs: data.importLogs || [],
+  };
+
+  const result = await repository.saveAll(snapshot);
+  if (!result.ok) throw new Error(result.errors.join('; '));
+  await replaceExtraExpenses(parsed.fixedExpenses || {});
+
+  _cabinets = snapshot.cabinets;
+  _brands = snapshot.brands;
+  _groups = snapshot.groups;
+  _products = snapshot.products;
+  _memberships = snapshot.memberships;
+  _metrics = snapshot.metrics;
+  _plans = snapshot.plans;
+  _monthlyPlans = snapshot.monthlyPlans;
+  _profitability = snapshot.profitability;
+  _geography = snapshot.geography;
+  _geographyPlans = snapshot.geographyPlans;
+  _entryPoints = snapshot.entryPoints;
+  _searchQueries = snapshot.searchQueries;
+  _nicheDynamics = snapshot.nicheDynamics;
+  _importLog = snapshot.importLogs;
+  _lastPersistedSnapshot = snapshot;
+  buildAliasMap();
+  notify();
+
+  return { metrics: snapshot.metrics.length, products: snapshot.products.length };
+}
 
 export async function deleteImportLogEntry(logId: string) {
   const log = _importLog.find(l => l.id === logId);
@@ -82,7 +197,18 @@ export async function deleteImportLogEntry(logId: string) {
 
   if (DEV) console.log('[store] deleteImportLogEntry:', log.id, log.fileName, log.source);
 
-  if (log.source === 'profitability') {
+  if (log.source === 'entry_points') {
+    const idSet = new Set(log.productIds || []);
+    _entryPoints = _entryPoints.filter(record => !idSet.has(record.product_id) || (log.dataStart && record.date < log.dataStart) || (log.dataEnd && record.date > log.dataEnd));
+  } else if (log.source === 'geography') {
+    const idSet = new Set(log.productIds || []);
+    _geography = _geography.filter(record => {
+      if (!idSet.has(record.product_id)) return true;
+      if (log.dataStart && record.date < log.dataStart) return true;
+      if (log.dataEnd && record.date > log.dataEnd) return true;
+      return false;
+    });
+  } else if (log.source === 'profitability') {
     // Profitability records aren't in _metrics — remove from _profitability by product list
     if (log.productIds) {
       const idSet = new Set(log.productIds);
@@ -122,7 +248,7 @@ export async function deleteImportLogEntry(logId: string) {
         }
       }
     }
-  } else if (log.productIds && log.productIds.length > 0) {
+  } else if (log.source !== 'geography' && log.source !== 'entry_points' && log.productIds && log.productIds.length > 0) {
     // Удаляем метрики из Supabase
     try {
       await repository.deleteMetrics?.({
@@ -185,12 +311,23 @@ export function removeGroup(id: string) {
 }
 
 export function addProduct(sku: string, name: string, brand_id: string, category = ''): Product {
-  const p: Product = { id: genId('pr'), sku, wb_sku: sku, name, category, brand_id, cabinet_id: '' };
+  const p: Product = {
+    id: genId('pr'), sku, wb_sku: '', name, category, brand_id, cabinet_id: '',
+    aliases: [], status: 'active', data_source: 'manual', updated_at: new Date().toISOString(),
+  };
   _products.push(p); notify(); return p;
 }
-export function updateProduct(id: string, data: { name?: string; category?: string; sku?: string }) {
+export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>> & { group_id?: string }) {
   const p = _products.find(x => x.id === id);
-  if (p) { Object.assign(p, data); notify(); }
+  if (!p) return;
+  const { group_id, ...productData } = data;
+  Object.assign(p, productData, { updated_at: new Date().toISOString() });
+  if (group_id !== undefined) {
+    _memberships = _memberships.filter(m => m.product_id !== id);
+    if (group_id) _memberships.push({ product_id: id, group_id });
+  }
+  buildAliasMap();
+  notify();
 }
 export function removeProduct(id: string) {
   _products = _products.filter(x => x.id !== id);
@@ -216,7 +353,10 @@ export function findOrCreateProduct(sku: string, name?: string): Product {
   let p = _products.find(x => x.sku === sku);
   if (!p) {
     const { brandId, cabinetId, groupIds } = classifySku(sku);
-    p = { id: genId('pr'), sku, wb_sku: sku, name: name || sku, category: '', brand_id: brandId, cabinet_id: cabinetId };
+    p = {
+      id: genId('pr'), sku, wb_sku: '', name: name || sku, category: '', brand_id: brandId, cabinet_id: cabinetId,
+      aliases: [], status: 'active', data_source: 'import', updated_at: new Date().toISOString(),
+    };
     _products.push(p);
     if (groupIds.length > 0) {
       for (const gid of groupIds) {
@@ -236,19 +376,206 @@ function buildAliasMap() {
   for (const p of _products) {
     _skuAliases.set(p.sku, p.id);
     if (p.wb_sku && p.wb_sku !== p.sku) _skuAliases.set(p.wb_sku, p.id);
+    for (const alias of p.aliases || []) _skuAliases.set(alias, p.id);
   }
 }
 
+function canonicalSellerSku(sku: string) {
+  return sku
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .replace(/\.0+$/, '')
+    .replace(/\s*\(\d+\)\s*$/, '');
+}
+
+function productIdentityValues(product: Product): string[] {
+  return [...new Set([
+    product.sku,
+    product.wb_sku,
+    ...(product.aliases || []),
+    canonicalSellerSku(product.sku),
+  ].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function getRelatedProductIds(seedProductIds: Iterable<string>): Set<string> {
+  const productsById = new Map(_products.map(product => [product.id, product]));
+  const productIdsByIdentity = new Map<string, Set<string>>();
+  for (const product of _products) {
+    for (const identity of productIdentityValues(product)) {
+      const ids = productIdsByIdentity.get(identity) || new Set<string>();
+      ids.add(product.id);
+      productIdsByIdentity.set(identity, ids);
+    }
+  }
+
+  const related = new Set(seedProductIds);
+  const queue = [...related];
+  while (queue.length) {
+    const product = productsById.get(queue.pop()!);
+    if (!product) continue;
+    for (const identity of productIdentityValues(product)) {
+      for (const productId of productIdsByIdentity.get(identity) || []) {
+        if (related.has(productId)) continue;
+        related.add(productId);
+        queue.push(productId);
+      }
+    }
+  }
+  return related;
+}
+
+function refreshEntryPointFinancialFields(): boolean {
+  if (!_entryPoints.length) return false;
+  const productsById = new Map(_products.map(product => [product.id, product]));
+  const rootByProductId = new Map<string, string>();
+  const visited = new Set<string>();
+  for (const product of _products) {
+    if (visited.has(product.id)) continue;
+    const related = getRelatedProductIds([product.id]);
+    const root = [...related].sort()[0] || product.id;
+    for (const productId of related) {
+      rootByProductId.set(productId, root);
+      visited.add(productId);
+    }
+  }
+  const keyOf = (date: string, productId: string) => `${date}|${rootByProductId.get(productId) || productId}`;
+  const metricTotals = new Map<string, { orders: number; orderedAmount: number; adSpend: number; profit: number; revenue: number }>();
+  for (const metric of _metrics) {
+    const key = keyOf(metric.date, metric.product_id);
+    const current = metricTotals.get(key) || { orders: 0, orderedAmount: 0, adSpend: 0, profit: 0, revenue: 0 };
+    current.orders += metric.orders;
+    current.orderedAmount += metric.ordered_amount;
+    current.adSpend += metric.ad_spend;
+    current.profit += metric.actual_profit;
+    current.revenue += metric.profit_revenue;
+    metricTotals.set(key, current);
+  }
+  const reportTotals = new Map<string, { profit: number; revenue: number }>();
+  for (const record of _profitability) {
+    const key = keyOf(record.period_start, record.product_id);
+    const cabinetId = productsById.get(record.product_id)?.cabinet_id || '';
+    const extraExpense = getCabinetExtraExpense(record.period_start.slice(0, 7), cabinetId);
+    const current = reportTotals.get(key) || { profit: 0, revenue: 0 };
+    current.profit += getReportNetProfit(record, extraExpense);
+    current.revenue += record.profit_revenue;
+    reportTotals.set(key, current);
+  }
+  let changed = false;
+  for (const record of _entryPoints) {
+    const key = keyOf(record.date, record.product_id);
+    const metric = metricTotals.get(key);
+    const report = reportTotals.get(key);
+    const next = {
+      product_orders_total: metric?.orders || 0,
+      product_ordered_amount: metric?.orderedAmount || 0,
+      product_ad_spend: metric?.adSpend || 0,
+      product_net_profit: report?.profit ?? metric?.profit ?? 0,
+      product_profit_revenue: report?.revenue ?? metric?.revenue ?? 0,
+    };
+    const profitability = next.product_profit_revenue ? next.product_net_profit / next.product_profit_revenue * 100 : 0;
+    if (record.product_orders_total !== next.product_orders_total
+      || record.product_ordered_amount !== next.product_ordered_amount
+      || record.product_ad_spend !== next.product_ad_spend
+      || record.product_net_profit !== next.product_net_profit
+      || record.product_profit_revenue !== next.product_profit_revenue
+      || record.product_profitability !== profitability) {
+      Object.assign(record, next, { product_profitability: profitability });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function propagateWbSkuToCanonicalProducts() {
+  let changed = false;
+  const canonicalProducts = new Map<string, Product>();
+
+  for (const product of _products) {
+    if (product.sku === canonicalSellerSku(product.sku)) {
+      canonicalProducts.set(product.sku, product);
+    }
+  }
+
+  for (const product of _products) {
+    const canonicalSku = canonicalSellerSku(product.sku);
+    if (canonicalSku === product.sku || !product.wb_sku || product.wb_sku === product.sku) continue;
+    const canonicalProduct = canonicalProducts.get(canonicalSku);
+    if (!canonicalProduct || canonicalProduct.wb_sku === product.wb_sku) continue;
+    canonicalProduct.wb_sku = product.wb_sku;
+    changed = true;
+  }
+
+  return changed;
+}
+
 function registerAlias(sku: string, productId: string) {
+  if (!sku) return;
   if (!_skuAliases.has(sku)) _skuAliases.set(sku, productId);
+  const product = _products.find(item => item.id === productId);
+  if (!product || sku === product.sku || sku === product.wb_sku) return;
+  product.aliases ||= [];
+  if (!product.aliases.includes(sku)) product.aliases.push(sku);
+}
+
+function enrichProductFromImport(product: Product, row: Record<string, string>, source: ImportSource) {
+  if (row.name && (!product.name || product.name === product.sku)) product.name = row.name;
+  if (row.category && !product.category) product.category = row.category;
+  if (row.brand && !product.brand_id) {
+    let brand = _brands.find(item => item.name.toLowerCase() === row.brand.trim().toLowerCase());
+    if (!brand) {
+      brand = { id: genId('br'), name: row.brand.trim() };
+      _brands.push(brand);
+    }
+    product.brand_id = brand.id;
+  }
+  if (row.cabinet && !product.cabinet_id) {
+    let cabinet = _cabinets.find(item => item.name.toLowerCase() === row.cabinet.trim().toLowerCase());
+    if (!cabinet) {
+      cabinet = { id: genId('cab'), name: row.cabinet.trim() };
+      _cabinets.push(cabinet);
+    }
+    product.cabinet_id = cabinet.id;
+  }
+  product.status ||= 'active';
+  product.data_source = 'import';
+  product.updated_at = new Date().toISOString();
+  if (row.sku) registerAlias(row.sku, product.id);
+  if (row.wb_sku) registerAlias(row.wb_sku, product.id);
+  void source;
 }
 
 function resolveProduct(sku: string, wbSku?: string): Product {
   let p = _products.find(x => x.sku === sku);
-  if (p) return p;
+  if (p) {
+    if (wbSku && wbSku !== sku && p.wb_sku !== wbSku) {
+      p.wb_sku = wbSku;
+      registerAlias(wbSku, p.id);
+    }
+    return p;
+  }
+
+  const canonicalSku = canonicalSellerSku(sku);
+  p = _products.find(x => canonicalSellerSku(x.sku) === canonicalSku);
+  if (p) {
+    registerAlias(sku, p.id);
+    if (wbSku && wbSku !== p.sku && p.wb_sku !== wbSku) {
+      p.wb_sku = wbSku;
+      registerAlias(wbSku, p.id);
+    }
+    return p;
+  }
 
   let pid = _skuAliases.get(sku);
-  if (pid) { p = _products.find(x => x.id === pid); if (p) return p; }
+  if (pid) {
+    p = _products.find(x => x.id === pid);
+    if (p) {
+      if (wbSku && wbSku !== sku && p.wb_sku !== wbSku) {
+        p.wb_sku = wbSku;
+        registerAlias(wbSku, p.id);
+      }
+      return p;
+    }
+  }
 
   if (wbSku) {
     p = _products.find(x => x.wb_sku === wbSku || x.sku === wbSku);
@@ -281,6 +608,7 @@ export function upsertMetrics(date: string, productId: string, patch: Partial<Da
       ordered_amount: 0, buyout_amount: 0, cancellation_amount: 0,
       ad_impressions: 0, ad_clicks: 0, ad_orders: 0, ad_spend: 0,
       stock: 0, plan_orders: 0, forecast_profit_per_order: 0, actual_profit: 0, actual_margin: 0, profit_revenue: 0,
+      cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0,
     };
     _metrics.push({ ...empty, ...patch, date, product_id: productId });
   }
@@ -292,6 +620,16 @@ function toNumber(v: string): number {
   const cleaned = v.replace(/[^0-9.,-]/g, '').replace(',', '.');
   const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
+}
+
+function parseDeliveryHours(value: string): number | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized || normalized === '-' || normalized === '—') return null;
+  const days = Number(normalized.match(/(\d+)\s*[дd]/)?.[1] || 0);
+  const hours = Number(normalized.match(/(\d+)\s*[чh]/)?.[1] || 0);
+  if (days || hours) return days * 24 + hours;
+  const numeric = toNumber(normalized);
+  return numeric > 0 ? numeric : null;
 }
 
 
@@ -306,10 +644,14 @@ const METRIC_FIELD_MAP: Record<string, keyof DailyMetrics> = {
   ad_orders: 'ad_orders', ad_spend: 'ad_spend',
   stock: 'stock', plan_orders: 'plan_orders',
   forecast_profit_per_order: 'forecast_profit_per_order',
-   actual_profit: 'actual_profit', actual_margin: 'actual_margin', profit_revenue: 'profit_revenue',
+  actual_profit: 'actual_profit', actual_margin: 'actual_margin', profit_revenue: 'profit_revenue',
+  cost: 'cost', agent_fee: 'agent_fee', logistics_cost: 'logistics_cost', marketing_cost: 'marketing_cost', storage_cost: 'storage_cost',
 };
 
 export function detectSourceFromFilename(fileName: string): ImportSource {
+  const normalizedName = fileName.toLocaleLowerCase('ru-RU');
+  if (normalizedName.includes('поисков') || normalizedName.includes('search quer')) return 'search_queries';
+  if (normalizedName.includes('динамик') && normalizedName.includes('ниш')) return 'niche_dynamics';
   const n = fileName.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
   if (n.includes('wb') || n.includes('funnel') || n.includes('воронк')) return 'wb_funnel';
   if (n.includes('xway') || n.includes('реклам') || n.includes('ad') || n.includes('adv')) return 'xway';
@@ -325,7 +667,7 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   wb_funnel: new Set([
     'impressions', 'clicks', 'carts', 'orders', 'buyouts', 'cancellations',
     'ordered_amount', 'buyout_amount', 'cancellation_amount',
-    'stock',
+    'stock', 'agent_fee', 'logistics_cost', 'marketing_cost', 'storage_cost', 'cost',
   ]),
   xway: new Set([
     'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend',
@@ -333,6 +675,10 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   profitability: new Set([
     'actual_profit', 'actual_margin', 'profit_revenue',
   ]),
+  geography: new Set([]),
+  entry_points: new Set([]),
+  search_queries: new Set([]),
+  niche_dynamics: new Set([]),
   plan_template: new Set([]),
 };
 
@@ -346,6 +692,7 @@ export function clearMetricsRange(source: ImportSource, dateFrom: string, dateTo
     'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend',
     'stock', 'plan_orders', 'forecast_profit_per_order',
     'actual_profit', 'actual_margin', 'profit_revenue',
+    'cost', 'agent_fee', 'logistics_cost', 'marketing_cost', 'storage_cost',
   ];
 
   let count = 0;
@@ -372,8 +719,129 @@ export function clearMetricsRange(source: ImportSource, dateFrom: string, dateTo
       }
     }
   }
+  if (source === 'profitability') {
+    const before = _profitability.length;
+    _profitability = _profitability.filter(record =>
+      record.period_end < dateFrom || record.period_start > dateTo
+    );
+    count += before - _profitability.length;
+  }
   if (count > 0) notify();
   return count;
+}
+
+export interface DateMigrationResult {
+  metrics: number;
+  profitability: number;
+  importLogs: number;
+  conflicts: number;
+  partialRecords: number;
+  applied: boolean;
+}
+
+function isWithinDateRange(date: string | undefined, dateStart: string, dateEnd: string): boolean {
+  return Boolean(date && date >= dateStart && date <= dateEnd);
+}
+
+export function previewDateMigration(dateStart: string, dateEnd: string, days: number): DateMigrationResult {
+  if (!dateStart || !dateEnd || dateStart > dateEnd || !Number.isInteger(days) || days === 0) {
+    return {
+      metrics: 0,
+      profitability: 0,
+      importLogs: 0,
+      conflicts: 1,
+      partialRecords: 0,
+      applied: false,
+    };
+  }
+
+  const selectedMetricKeys = new Set(
+    _metrics
+      .filter(metric => isWithinDateRange(metric.date, dateStart, dateEnd))
+      .map(metric => `${metric.date}|${metric.product_id}`),
+  );
+  const existingMetricKeys = new Set(
+    _metrics.map(metric => `${metric.date}|${metric.product_id}`),
+  );
+
+  let conflicts = 0;
+  for (const metric of _metrics) {
+    if (!isWithinDateRange(metric.date, dateStart, dateEnd)) continue;
+    const destinationKey = `${addDays(metric.date, days)}|${metric.product_id}`;
+    if (existingMetricKeys.has(destinationKey) && !selectedMetricKeys.has(destinationKey)) {
+      conflicts++;
+    }
+  }
+
+  let partialRecords = 0;
+  const profitability = _profitability.filter(record => {
+    const startSelected = isWithinDateRange(record.period_start, dateStart, dateEnd);
+    const endSelected = isWithinDateRange(record.period_end, dateStart, dateEnd);
+    if (startSelected !== endSelected) partialRecords++;
+    return startSelected && endSelected;
+  }).length;
+
+  const importLogs = _importLog.filter(log => {
+    if (!log.dataStart) return false;
+    const startSelected = isWithinDateRange(log.dataStart, dateStart, dateEnd);
+    const endSelected = !log.dataEnd || isWithinDateRange(log.dataEnd, dateStart, dateEnd);
+    if (startSelected !== endSelected) partialRecords++;
+    return startSelected && endSelected;
+  }).length;
+
+  return {
+    metrics: selectedMetricKeys.size,
+    profitability,
+    importLogs,
+    conflicts,
+    partialRecords,
+    applied: false,
+  };
+}
+
+export function migrateDateRange(dateStart: string, dateEnd: string, days: number): DateMigrationResult {
+  const preview = previewDateMigration(dateStart, dateEnd, days);
+  if (preview.conflicts > 0 || preview.partialRecords > 0) return preview;
+
+  for (const metric of _metrics) {
+    if (isWithinDateRange(metric.date, dateStart, dateEnd)) {
+      metric.date = addDays(metric.date, days);
+    }
+  }
+  for (const record of _profitability) {
+    if (
+      isWithinDateRange(record.period_start, dateStart, dateEnd)
+      && isWithinDateRange(record.period_end, dateStart, dateEnd)
+    ) {
+      record.period_start = addDays(record.period_start, days);
+      record.period_end = addDays(record.period_end, days);
+    }
+  }
+  for (const log of _importLog) {
+    const startSelected = isWithinDateRange(log.dataStart, dateStart, dateEnd);
+    const endSelected = !log.dataEnd || isWithinDateRange(log.dataEnd, dateStart, dateEnd);
+    if (!startSelected || !endSelected) continue;
+    if (log.dataStart) log.dataStart = addDays(log.dataStart, days);
+    if (log.dataEnd) log.dataEnd = addDays(log.dataEnd, days);
+  }
+
+  notify();
+  return { ...preview, applied: true };
+}
+
+export function clearMetricsAndImports(): void {
+  _metrics = [];
+  _importLog = [];
+  _profitability = [];
+  _geography = [];
+  _geographyPlans = [];
+  _entryPoints = [];
+  _searchQueries = [];
+  _nicheDynamics = [];
+  _monthlyPlans = [];
+  saveMonthlyPlansBackup();
+  persistAll();
+  notify();
 }
 
 export function resetAllData(): void {
@@ -386,7 +854,11 @@ export function resetAllData(): void {
   _importLog = [];
   _plans = [];
   _monthlyPlans = [];
+  saveMonthlyPlansBackup();
   _profitability = [];
+  _geography = [];
+  _geographyPlans = [];
+  _entryPoints = [];
   _skuAliases.clear();
   _nextLogId = 1;
   seed();
@@ -394,7 +866,14 @@ export function resetAllData(): void {
   notify();
 }
 
-export async function importMappedData(fileName: string, source: ImportSource, rows: Record<string, string>[], dateOverride?: string): Promise<ImportFileLog> {
+export async function importMappedData(
+  fileName: string,
+  source: ImportSource,
+  rows: Record<string, string>[],
+  dateOverride?: string,
+  dateEndOverride?: string,
+  dateYearOverride?: number,
+): Promise<ImportFileLog> {
   const log: ImportFileLog = {
     id: `log-${_nextLogId++}`, fileName, source, rowCount: 0,
     uploadedAt: new Date().toISOString(), status: 'processing',
@@ -408,6 +887,20 @@ export async function importMappedData(fileName: string, source: ImportSource, r
 
   try {
     if (!rows.length) throw new Error('Нет данных для импорта');
+
+    const invalidDateRows = rows.filter(row => {
+      if (!(row.sku || row.wb_sku)) return false;
+      if (source === 'profitability') {
+        const start = normalizeImportDate(dateOverride || row.date || row.period_start || '', dateYearOverride);
+        const end = normalizeImportDate(dateEndOverride || row.period_end || '', dateYearOverride) || start;
+        return !start || !end || end < start;
+      }
+      return !normalizeImportDate(dateOverride || row.date || '', dateYearOverride);
+    }).length;
+    if (invalidDateRows > 0) {
+      throw new Error(`Импорт остановлен: некорректная дата или период в ${invalidDateRows} строках`);
+    }
+
     _suppressPersist = true;
 
     let parsed = 0;
@@ -417,6 +910,7 @@ export async function importMappedData(fileName: string, source: ImportSource, r
 
     if (source === 'profitability') {
       // Profitability import → write to _profitability, not _metrics
+      const profitabilityMetricPatches: Array<{ date: string; product_id: string; patch: Partial<DailyMetrics> }> = [];
       for (const row of rows) {
         const rawSku = row.sku;
         const rawWbSku = row.wb_sku;
@@ -427,30 +921,179 @@ export async function importMappedData(fileName: string, source: ImportSource, r
         }
 
         const product = resolveProduct(sku, rawWbSku);
+        enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
 
-        const period_start = normalizeDate(dateOverride || row.date || row.period_start || '');
+        const period_start = normalizeImportDate(dateOverride || row.date || row.period_start || '', dateYearOverride);
         if (!period_start) {
           if (DEV) console.log('[import] skip row — missing date/period');
           continue;
         }
-        const period_end = normalizeDate(row.period_end || '') || period_start;
+        const period_end = normalizeImportDate(dateEndOverride || row.period_end || '', dateYearOverride) || period_start;
+
+        const revenue = toNumber(row.profit_revenue || '0');
+        const reportProfit = toNumber(row.actual_profit || '0');
+        const reportMargin = toNumber(row.actual_margin || '0');
+        const expenseFields = ['cost', 'agent_fee', 'logistics_cost', 'marketing_cost', 'storage_cost'] as const;
+        const hasExpenseBreakdown = expenseFields.some(field => row[field] !== undefined && row[field] !== '');
+        const calculatedProfit = revenue - expenseFields.reduce((sum, field) => sum + toNumber(row[field] || '0'), 0);
+        const actualProfit = hasExpenseBreakdown ? calculatedProfit : reportProfit;
+        const actualMargin = revenue
+          ? actualProfit / revenue * 100
+          : reportMargin;
 
         const rec: ProfitabilityRecord = {
           id: genId('prf'),
           product_id: product.id,
           period_start,
           period_end,
-          actual_profit: toNumber(row.actual_profit || row.actual_profit),
-          actual_margin: toNumber(row.actual_margin || row.actual_margin),
-          profit_revenue: toNumber(row.profit_revenue || row.profit_revenue || '0'),
+          actual_profit: actualProfit,
+          actual_margin: actualMargin,
+          profit_revenue: revenue,
         };
         upsertProfitabilityRecord(rec);
+        profitabilityMetricPatches.push({
+          date: period_start,
+          product_id: product.id,
+          patch: {
+            actual_profit: actualProfit,
+            actual_margin: actualMargin,
+            profit_revenue: revenue,
+            cost: toNumber(row.cost || '0'),
+            agent_fee: toNumber(row.agent_fee || '0'),
+            logistics_cost: toNumber(row.logistics_cost || '0'),
+            marketing_cost: toNumber(row.marketing_cost || '0'),
+            storage_cost: toNumber(row.storage_cost || '0'),
+          },
+        });
         parsed++;
 
         if (!minDate || period_start < minDate) minDate = period_start;
         if (!maxDate || period_end > maxDate) maxDate = period_end;
+        productIds.add(product.id);
+      }
+      const metricsByKey = new Map(_metrics.map(metric => [`${metric.date}|${metric.product_id}`, metric]));
+      for (const item of profitabilityMetricPatches) {
+        const key = `${item.date}|${item.product_id}`;
+        const existing = metricsByKey.get(key);
+        if (existing) {
+          Object.assign(existing, item.patch);
+        } else {
+          const metric: DailyMetrics = {
+            date: item.date, product_id: item.product_id,
+            impressions: 0, clicks: 0, carts: 0, orders: 0, buyouts: 0, cancellations: 0,
+            ordered_amount: 0, buyout_amount: 0, cancellation_amount: 0,
+            ad_impressions: 0, ad_clicks: 0, ad_orders: 0, ad_spend: 0,
+            stock: 0, plan_orders: 0, forecast_profit_per_order: 0,
+            actual_profit: 0, actual_margin: 0, profit_revenue: 0,
+            cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0,
+            ...item.patch,
+          };
+          _metrics.push(metric);
+          metricsByKey.set(key, metric);
+        }
+      }
+    } else if (source === 'geography') {
+      const recordsByKey = new Map(_geography.map(record => [`${record.date}|${record.product_id}|${record.region}|${record.area || ''}|${record.city || ''}`, record]));
+      for (const row of rows) {
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
+        const rawSku = row.sku;
+        const rawWbSku = row.wb_sku;
+        const sku = rawSku || rawWbSku;
+        const region = String(row.region || '').trim();
+        if (!date || !sku || !region) continue;
+        const product = resolveProduct(sku, rawWbSku);
+        enrichProductFromImport(product, row, source);
+        if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
+        if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
+        const area = String(row.area || '').trim() || 'Без региона';
+        const city = String(row.city || '').trim() || 'Без населённого пункта';
+        const record: GeographyOrderRecord = {
+          date, product_id: product.id, region, area, city, delivery_hours: parseDeliveryHours(row.delivery_time),
+          orders_total: toNumber(row.geo_orders_total), product_local_orders: toNumber(row.geo_product_local_orders),
+          product_nonlocal_orders: toNumber(row.geo_product_nonlocal_orders), wb_local_orders: toNumber(row.geo_wb_local_orders),
+          wb_nonlocal_orders: toNumber(row.geo_wb_nonlocal_orders), marketplace_local_orders: toNumber(row.geo_mp_local_orders),
+          marketplace_nonlocal_orders: toNumber(row.geo_mp_nonlocal_orders), stock_wb: toNumber(row.geo_stock_wb), stock_marketplace: toNumber(row.geo_stock_mp),
+        };
+        const key = `${date}|${product.id}|${region}|${area}|${city}`;
+        const existing = recordsByKey.get(key);
+        if (existing) Object.assign(existing, record); else { _geography.push(record); recordsByKey.set(key, record); }
+        parsed++;
+        if (!minDate || date < minDate) minDate = date;
+        if (!maxDate || date > maxDate) maxDate = date;
+        productIds.add(product.id);
+      }
+    } else if (source === 'niche_dynamics') {
+      const recordsByKey = new Map(_nicheDynamics.map(record => [`${record.date}|${record.category}|${record.subject}`, record]));
+      for (const row of rows) {
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
+        const category = String(row.niche_category || '').trim();
+        const subject = String(row.niche_subject || '').trim();
+        if (!date || !category || !subject) continue;
+        const record: NicheDynamicsRecord = {
+          date, category, subject,
+          sellers: toNumber(row.niche_sellers), active_sellers: toNumber(row.niche_active_sellers), active_sellers_previous: toNumber(row.niche_active_sellers_previous),
+          monopolization: toNumber(row.niche_monopolization), monopolization_previous: toNumber(row.niche_monopolization_previous),
+          revenue: toNumber(row.niche_revenue), revenue_previous: toNumber(row.niche_revenue_previous),
+          avg_check: toNumber(row.niche_avg_check), avg_check_previous: toNumber(row.niche_avg_check_previous),
+          product_cards: toNumber(row.niche_product_cards), active_product_cards: toNumber(row.niche_active_product_cards), active_product_cards_previous: toNumber(row.niche_active_product_cards_previous),
+          active_product_cards_share: toNumber(row.niche_active_product_cards_share), weekly_turnover_days: toNumber(row.niche_weekly_turnover_days),
+          availability: String(row.niche_availability || '').trim(), avg_stock: toNumber(row.niche_avg_stock),
+          buyout_rate: toNumber(row.niche_buyout_rate), buyout_rate_previous: toNumber(row.niche_buyout_rate_previous), avg_rating: toNumber(row.niche_avg_rating),
+        };
+        const key = `${date}|${category}|${subject}`;
+        const existing = recordsByKey.get(key);
+        if (existing) Object.assign(existing, record); else { _nicheDynamics.push(record); recordsByKey.set(key, record); }
+        parsed++;
+        if (!minDate || date < minDate) minDate = date;
+        if (!maxDate || date > maxDate) maxDate = date;
+      }
+    } else if (source === 'search_queries') {
+      const recordsByKey = new Map(_searchQueries.map(record => [`${record.date}|${record.query}|${record.category}`, record]));
+      for (const row of rows) {
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
+        const query = String(row.search_query || '').trim().toLocaleLowerCase('ru-RU');
+        const category = String(row.search_category || '').trim() || 'Без предмета';
+        if (!date || !query) continue;
+        const record: SearchQueryRecord = {
+          date, query, category,
+          requests: toNumber(row.search_requests), requests_previous: toNumber(row.search_requests_previous),
+          avg_daily_requests: toNumber(row.search_avg_daily), avg_daily_requests_previous: toNumber(row.search_avg_daily_previous),
+          card_clicks: toNumber(row.search_card_clicks), card_clicks_previous: toNumber(row.search_card_clicks_previous),
+          carts: toNumber(row.search_carts), carts_previous: toNumber(row.search_carts_previous),
+          cart_conversion: toNumber(row.search_cart_conversion), cart_conversion_previous: toNumber(row.search_cart_conversion_previous),
+          orders: toNumber(row.search_orders), orders_previous: toNumber(row.search_orders_previous),
+          order_conversion: toNumber(row.search_order_conversion), order_conversion_previous: toNumber(row.search_order_conversion_previous),
+          ordered_subjects: toNumber(row.search_ordered_subjects), ordered_subjects_previous: toNumber(row.search_ordered_subjects_previous),
+          products: toNumber(row.search_products), products_previous: toNumber(row.search_products_previous),
+        };
+        const key = `${date}|${query}|${category}`;
+        const existing = recordsByKey.get(key);
+        if (existing) Object.assign(existing, record); else { _searchQueries.push(record); recordsByKey.set(key, record); }
+        parsed++;
+        if (!minDate || date < minDate) minDate = date;
+        if (!maxDate || date > maxDate) maxDate = date;
+      }
+    } else if (source === 'entry_points') {
+      const recordsByKey = new Map(_entryPoints.map(record => [`${record.date}|${record.product_id}|${record.section}|${record.entry_point}`, record]));
+      for (const row of rows) {
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
+        const rawSku = row.sku;
+        const rawWbSku = row.wb_sku;
+        const sku = rawSku || rawWbSku;
+        const section = String(row.entry_section || '').trim();
+        const entryPoint = String(row.entry_point || '').trim() || 'Без уточнения';
+        if (!date || !sku || !section) continue;
+        const product = resolveProduct(sku, rawWbSku);
+        enrichProductFromImport(product, row, source);
+        const record: EntryPointRecord = { date, product_id: product.id, section, entry_point: entryPoint, impressions: toNumber(row.entry_impressions), clicks: toNumber(row.entry_clicks), carts: toNumber(row.entry_carts), orders: toNumber(row.entry_orders) };
+        const key = `${date}|${product.id}|${section}|${entryPoint}`;
+        const existing = recordsByKey.get(key);
+        if (existing) Object.assign(existing, record); else { _entryPoints.push(record); recordsByKey.set(key, record); }
+        parsed++;
+        if (!minDate || date < minDate) minDate = date;
+        if (!maxDate || date > maxDate) maxDate = date;
         productIds.add(product.id);
       }
     } else {
@@ -461,11 +1104,12 @@ export async function importMappedData(fileName: string, source: ImportSource, r
         ordered_amount: 0, buyout_amount: 0, cancellation_amount: 0,
         ad_impressions: 0, ad_clicks: 0, ad_orders: 0, ad_spend: 0,
         stock: 0, plan_orders: 0, forecast_profit_per_order: 0, actual_profit: 0, actual_margin: 0, profit_revenue: 0,
+        cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0,
       };
-      const newPatches: Partial<DailyMetrics>[] = [];
+      const newPatchesByKey = new Map<string, Partial<DailyMetrics>>();
 
       for (const row of rows) {
-        const date = normalizeDate(dateOverride || row.date);
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
         const rawSku = row.sku;
         const rawWbSku = row.wb_sku;
         const sku = rawSku || rawWbSku;
@@ -475,18 +1119,25 @@ export async function importMappedData(fileName: string, source: ImportSource, r
         }
 
         const product = resolveProduct(sku, rawWbSku);
+        enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
 
         const patch: Partial<DailyMetrics> = {};
         const allowed = SOURCE_FIELDS[source];
         for (const [field, metricKey] of Object.entries(METRIC_FIELD_MAP)) {
-          if (allowed?.has(metricKey) && row[field]) {
+          if (allowed?.has(metricKey) && row[field] !== undefined && row[field] !== '') {
             (patch as Record<string, number | undefined>)[metricKey] = toNumber(row[field]);
           }
         }
 
-        newPatches.push({ ...patch, date, product_id: product.id });
+        const patchKey = `${date}|${product.id}`;
+        const combinedPatch = newPatchesByKey.get(patchKey) || { date, product_id: product.id };
+        for (const [field, value] of Object.entries(patch)) {
+          const combined = combinedPatch as Record<string, string | number | undefined>;
+          combined[field] = Number(combined[field] || 0) + Number(value || 0);
+        }
+        newPatchesByKey.set(patchKey, combinedPatch);
         parsed++;
 
         if (!minDate || date < minDate) minDate = date;
@@ -495,12 +1146,24 @@ export async function importMappedData(fileName: string, source: ImportSource, r
       }
 
       if (parsed > 0) {
-        for (const np of newPatches) {
-          const existing = _metrics.find(m => m.date === np.date && m.product_id === np.product_id);
+        const relatedProductIds = getRelatedProductIds(productIds);
+        const sourceFields = SOURCE_FIELDS[source];
+        for (const metric of _metrics) {
+          if (metric.date < minDate || metric.date > maxDate || !relatedProductIds.has(metric.product_id)) continue;
+          for (const field of sourceFields) {
+            (metric as unknown as Record<string, number | string>)[field] = 0;
+          }
+        }
+
+        const metricsByKey = new Map(_metrics.map(metric => [`${metric.date}|${metric.product_id}`, metric]));
+        for (const np of newPatchesByKey.values()) {
+          const existing = metricsByKey.get(`${np.date}|${np.product_id}`);
           if (existing) {
             Object.assign(existing, np);
           } else {
-            _metrics.push({ ...emptyMetric, ...np });
+            const metric = { ...emptyMetric, ...np };
+            _metrics.push(metric);
+            metricsByKey.set(`${metric.date}|${metric.product_id}`, metric);
           }
         }
       }
@@ -515,13 +1178,10 @@ export async function importMappedData(fileName: string, source: ImportSource, r
     if (DEV) console.log('[import] completed:', parsed, 'rows, status:', log.status, 'period:', log.dataStart, '-', log.dataEnd, 'products:', productIds.size);
 
     if (parsed > 0) {
-      await repository.saveAll({
-        cabinets: _cabinets, brands: _brands, groups: _groups,
-        products: _products, memberships: _memberships,
-        metrics: _metrics, plans: _plans, monthlyPlans: _monthlyPlans,
-        profitability: _profitability,
-        importLogs: _importLog,
-      });
+      propagateWbSkuToCanonicalProducts();
+      buildAliasMap();
+      refreshEntryPointFinancialFields();
+      await persistAll();
 
       _suppressPersist = false;
       notify();
@@ -700,11 +1360,27 @@ export function upsertMonthlyPlan(rec: MonthlyPlanRecord) {
   } else {
     _monthlyPlans.push(rec);
   }
+  saveMonthlyPlansBackup();
   notify();
+}
+
+export async function upsertMonthlyPlans(records: MonthlyPlanRecord[]) {
+  for (const rec of records) {
+    const idx = _monthlyPlans.findIndex(p => p.sku === rec.sku && p.month === rec.month);
+    if (idx >= 0) {
+      _monthlyPlans[idx] = rec;
+    } else {
+      _monthlyPlans.push(rec);
+    }
+  }
+  saveMonthlyPlansBackup();
+  notify();
+  await persistAll();
 }
 
 export function deleteMonthlyPlan(sku: string, month: string) {
   _monthlyPlans = _monthlyPlans.filter(p => !(p.sku === sku && p.month === month));
+  saveMonthlyPlansBackup();
   notify();
 }
 
@@ -712,30 +1388,58 @@ export function getMonthlyPlansForMonth(month: string): MonthlyPlanRecord[] {
   return _monthlyPlans.filter(p => p.month === month).map(p => ({ ...p }));
 }
 
+export function upsertGeographyPlan(month: string, localShareTarget: number | null, deliveryHoursTarget: number | null) {
+  const record: GeographyPlanRecord = { month, local_share_target: localShareTarget, delivery_hours_target: deliveryHoursTarget };
+  const index = _geographyPlans.findIndex(plan => plan.month === month);
+  if (index >= 0) _geographyPlans[index] = record;
+  else _geographyPlans.push(record);
+  notify();
+}
+
 export function updateMonthlyPlanField(sku: string, month: string, field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>, value: number) {
   const rec = _monthlyPlans.find(p => p.sku === sku && p.month === month);
   if (!rec) return;
   (rec as any)[field] = value;
+  saveMonthlyPlansBackup();
   notify();
 }
 
-function persistAll() {
-  repository.saveAll({
-    cabinets: _cabinets,
-    brands: _brands,
-    groups: _groups,
-    products: _products,
-    memberships: _memberships,
-    metrics: _metrics,
-    plans: _plans,
-    monthlyPlans: _monthlyPlans,
-    profitability: _profitability,
-    importLogs: _importLog,
-  }).then(r => {
-    if (!r.ok && DEV) console.warn('[persist] some tables failed:', r.errors);
-  }, e => {
-    console.error('[persist] saveAll failed', e);
-  });
+function persistAll(): Promise<void> {
+  const snapshot: DataSnapshot = {
+    cabinets: _cabinets.map(item => ({ ...item })),
+    brands: _brands.map(item => ({ ...item })),
+    groups: _groups.map(item => ({ ...item })),
+    products: _products.map(item => ({ ...item })),
+    memberships: _memberships.map(item => ({ ...item })),
+    metrics: _metrics.map(item => ({ ...item })),
+    plans: _plans.map(item => ({ ...item })),
+    monthlyPlans: _monthlyPlans.map(item => ({ ...item })),
+    profitability: _profitability.map(item => ({ ...item })),
+    geography: _geography.map(item => ({ ...item })),
+    geographyPlans: _geographyPlans.map(item => ({ ...item })),
+    entryPoints: _entryPoints.map(item => ({ ...item })),
+    searchQueries: _searchQueries.map(item => ({ ...item })),
+    nicheDynamics: _nicheDynamics.map(item => ({ ...item })),
+    importLogs: _importLog.map(item => ({
+      ...item,
+      productIds: item.productIds ? [...item.productIds] : undefined,
+    })),
+  };
+
+  _persistQueue = _persistQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const changes = _lastPersistedSnapshot ? createDataChanges(_lastPersistedSnapshot, snapshot) : null;
+      if (changes && !hasDataChanges(changes)) return;
+      const result = changes ? await repository.saveChanges(changes) : await repository.saveAll(snapshot);
+      if (!result.ok) {
+        console.error('[persist] save failed:', result.errors);
+        throw new Error(result.errors.join('; '));
+      }
+      _lastPersistedSnapshot = snapshot;
+    });
+
+  return _persistQueue;
 }
 
 export async function initStore() {
@@ -745,6 +1449,26 @@ export async function initStore() {
   let needsPersistence = false;
 
   const snapshot: DataSnapshot = await repository.loadAll();
+  if (isCloudStorage && snapshot.cabinets.length === 0) {
+    throw new Error('Supabase returned an empty dataset. Local seed data was not created.');
+  }
+  _lastPersistedSnapshot = {
+    cabinets: snapshot.cabinets.map(item => ({ ...item })),
+    brands: snapshot.brands.map(item => ({ ...item })),
+    groups: snapshot.groups.map(item => ({ ...item })),
+    products: snapshot.products.map(item => ({ ...item })),
+    memberships: snapshot.memberships.map(item => ({ ...item })),
+    metrics: snapshot.metrics.map(item => ({ ...item })),
+    plans: snapshot.plans.map(item => ({ ...item })),
+    monthlyPlans: snapshot.monthlyPlans.map(item => ({ ...item })),
+    profitability: snapshot.profitability.map(item => ({ ...item })),
+    geography: snapshot.geography.map(item => ({ ...item })),
+    geographyPlans: snapshot.geographyPlans.map(item => ({ ...item })),
+    entryPoints: snapshot.entryPoints.map(item => ({ ...item })),
+    searchQueries: snapshot.searchQueries.map(item => ({ ...item })),
+    nicheDynamics: snapshot.nicheDynamics.map(item => ({ ...item })),
+    importLogs: snapshot.importLogs.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined })),
+  };
   if (snapshot.cabinets.length === 0) {
     seed();
   } else {
@@ -752,6 +1476,15 @@ export async function initStore() {
     _brands = snapshot.brands;
     _groups = snapshot.groups;
     _products = snapshot.products;
+    for (const product of _products) {
+      if (!product.aliases) { product.aliases = []; needsPersistence = true; }
+      if (!product.status) { product.status = 'active'; needsPersistence = true; }
+      if (!product.data_source) { product.data_source = 'seed'; needsPersistence = true; }
+      if (product.wb_sku === product.sku && product.wb_sku.replace(/\D/g, '').length < 7) {
+        product.wb_sku = '';
+        needsPersistence = true;
+      }
+    }
     _memberships = snapshot.memberships;
     _metrics = snapshot.metrics;
     if (DEV) {
@@ -759,8 +1492,14 @@ export async function initStore() {
       console.log('[initStore] _metrics assigned: rows=' + _metrics.length + ' dateRange=' + (dates.length ? dates[0] + '..' + dates[dates.length-1] : 'empty'));
     }
     _plans = snapshot.plans;
-    _monthlyPlans = snapshot.monthlyPlans;
+    const monthlyPlansBackup = isCloudStorage ? [] : loadMonthlyPlansBackup();
+    _monthlyPlans = monthlyPlansBackup.length > 0 ? monthlyPlansBackup : snapshot.monthlyPlans;
     _profitability = snapshot.profitability;
+    _geography = snapshot.geography;
+    _geographyPlans = snapshot.geographyPlans;
+    _entryPoints = snapshot.entryPoints;
+    _searchQueries = snapshot.searchQueries;
+    _nicheDynamics = snapshot.nicheDynamics;
     _importLog = snapshot.importLogs;
     restoreNextId();
 
@@ -793,9 +1532,17 @@ export async function initStore() {
     }
     if (DEV) console.log('[diag] after SQLite load — cabinets:', _cabinets.length, 'brands:', _brands.length, 'groups:', _groups.length, 'products:', _products.length, 'memberships:', _memberships.length, 'plans:', _plans.length, 'metrics:', _metrics.length);
     seedDerivedData();
+    if (propagateWbSkuToCanonicalProducts()) needsPersistence = true;
     buildAliasMap();
     if (DEV) console.log('[diag] after seedDerivedData — products:', _products.length, 'memberships:', _memberships.length, 'plans:', _plans.length);
   }
+
+  if (!isCloudStorage && _monthlyPlans.length === 0) {
+    _monthlyPlans = loadMonthlyPlansBackup();
+  }
+
+  await initializeExtraExpenses();
+  if (refreshEntryPointFinancialFields()) needsPersistence = true;
 
   _suppressPersist = false;
   _initCalled = true;

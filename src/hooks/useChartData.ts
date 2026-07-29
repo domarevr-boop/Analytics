@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { useSyncExternalStore } from 'react';
 import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getProducts, getMemberships } from '../data/store';
 import type { DailyMetrics } from '../types';
+import { getFilteredProductIds } from '../data/productFilters';
+import { subscribeExtraExpenses, getExtraExpensesVersion, getCabinetExtraExpense } from '../data/profitStore';
+import { getReportNetProfit } from '../data/profitabilityCalculations';
 
 export interface ChartDataPoint {
   date: string;
@@ -14,6 +17,7 @@ function sumDaily(rows: DailyMetrics[]): Record<string, number> {
     s.orders = (s.orders || 0) + r.orders;
     s.buyout_amount = (s.buyout_amount || 0) + r.buyout_amount;
     s.actual_profit = (s.actual_profit || 0) + r.actual_profit;
+    s.profit_revenue = (s.profit_revenue || 0) + r.profit_revenue;
     s.ad_spend = (s.ad_spend || 0) + r.ad_spend;
     s.impressions = (s.impressions || 0) + r.impressions;
     s.clicks = (s.clicks || 0) + r.clicks;
@@ -28,12 +32,14 @@ function computeDerived(sum: Record<string, number>): Record<string, number> {
   const impressions = sum.impressions || 0;
   const orderedAmt = sum.ordered_amount || 0;
   const buyoutAmt = sum.buyout_amount || 0;
+  const profitRevenue = sum.profit_revenue || 0;
   const adSpend = sum.ad_spend || 0;
   return {
+    fact_orders: orderedAmt,
     orders,
-    revenue: buyoutAmt,
+    revenue: profitRevenue || buyoutAmt,
     profit: sum.actual_profit || 0,
-    margin: buyoutAmt ? ((sum.actual_profit || 0) / buyoutAmt) * 100 : 0,
+    margin: profitRevenue ? ((sum.actual_profit || 0) / profitRevenue) * 100 : 0,
     ad_spend: adSpend,
     impressions,
     clicks: sum.clicks || 0,
@@ -49,51 +55,48 @@ export function useChartData(
   periodStart: string,
   periodEnd: string,
   cabinetFilter?: string,
+  categoryFilter?: string,
   brandFilter?: string,
   groupFilter?: string,
   skuFilter?: string,
 ) {
   useSyncExternalStore(subscribe, getVersion);
+  const extraExpensesVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
 
   return useMemo(() => {
     const allMetrics = getMetrics();
-    if (!allMetrics.length) return [];
+    const allProfitability = getProfitabilityRecords();
+    const productsById = new Map(getProducts().map(product => [product.id, product]));
+    if (!allMetrics.length && !allProfitability.length) return [];
 
-    const products = getProducts();
-    let productIds = new Set(products.map(p => p.id));
+    const productIds = getFilteredProductIds(getProducts(), getMemberships(), {
+      cabinetFilter,
+      categoryFilter,
+      brandFilter,
+      groupFilter,
+      skuFilter,
+    });
 
-    if (cabinetFilter) {
-      productIds = new Set(products.filter(p => p.cabinet_id === cabinetFilter).map(p => p.id));
-    }
-    if (brandFilter) {
-      const brandIds = new Set(products.filter(p => p.brand_id === brandFilter).map(p => p.id));
-      productIds = new Set([...productIds].filter(id => brandIds.has(id)));
-    }
-    if (groupFilter) {
-      const memberships = getMemberships();
-      const groupIds = new Set(memberships.filter(m => m.group_id === groupFilter).map(m => m.product_id));
-      productIds = new Set([...productIds].filter(id => groupIds.has(id)));
-    }
-    // SKU filter — lowest level, overrides all other filters
-    if (skuFilter) {
-      const skuProductIds = new Set(products.filter(p => p.sku === skuFilter).map(p => p.id));
-      productIds = new Set([...productIds].filter(id => skuProductIds.has(id)));
-    }
-
+    const reportRows = allProfitability.filter(record =>
+      productIds.has(record.product_id)
+      && record.period_start >= periodStart
+      && record.period_start <= periodEnd
+    );
+    const reportKeys = new Set(reportRows.map(record => `${record.period_start}|${record.product_id}`));
     const dateMap = new Map<string, DailyMetrics[]>();
     for (const m of allMetrics) {
       if (!productIds.has(m.product_id)) continue;
       if (m.date < periodStart || m.date > periodEnd) continue;
+      const row = reportKeys.has(`${m.date}|${m.product_id}`)
+        ? { ...m, actual_profit: 0, actual_margin: 0, profit_revenue: 0, cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0 }
+        : m;
       const arr = dateMap.get(m.date);
-      if (arr) arr.push(m);
-      else dateMap.set(m.date, [m]);
+      if (arr) arr.push(row);
+      else dateMap.set(m.date, [row]);
     }
 
     // Merge profitability records by date
-    const allProfitability = getProfitabilityRecords();
-    for (const r of allProfitability) {
-      if (!productIds.has(r.product_id)) continue;
-      if (r.period_start < periodStart || r.period_start > periodEnd) continue;
+    for (const r of reportRows) {
       let arr = dateMap.get(r.period_start);
       if (!arr) {
         arr = [];
@@ -106,16 +109,27 @@ export function useChartData(
         ordered_amount: 0, buyout_amount: 0, cancellation_amount: 0,
         ad_impressions: 0, ad_clicks: 0, ad_orders: 0, ad_spend: 0,
         stock: 0, plan_orders: 0, forecast_profit_per_order: 0,
-        actual_profit: r.actual_profit,
+        actual_profit: getReportNetProfit(r, getCabinetExtraExpense(r.period_start.slice(0, 7), productsById.get(r.product_id)?.cabinet_id || '')),
         actual_margin: r.actual_margin,
         profit_revenue: r.profit_revenue,
+        cost: 0,
+        agent_fee: 0,
+        logistics_cost: 0,
+        marketing_cost: 0,
+        storage_cost: 0,
       });
     }
 
     const sorted = [...dateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    return sorted.map(([date, rows]): ChartDataPoint => ({
-      date,
-      values: computeDerived(sumDaily(rows)),
-    }));
-  }, [periodStart, periodEnd, cabinetFilter, brandFilter, groupFilter, skuFilter]);
+    return sorted.map(([date, rows]): ChartDataPoint => {
+      const values = computeDerived(sumDaily(rows));
+      for (const row of rows) {
+        const cabinetId = productsById.get(row.product_id)?.cabinet_id;
+        if (!cabinetId) continue;
+        const key = `cabinet_orders_${cabinetId}`;
+        values[key] = (values[key] || 0) + row.ordered_amount;
+      }
+      return { date, values };
+    });
+  }, [periodStart, periodEnd, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter, extraExpensesVersion]);
 }

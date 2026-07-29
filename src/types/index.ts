@@ -22,6 +22,10 @@ export interface Product {
   category: string;
   brand_id: string;
   cabinet_id: string;
+  aliases?: string[];
+  status?: 'active' | 'archived';
+  data_source?: 'import' | 'manual' | 'seed';
+  updated_at?: string;
 }
 
 export interface GroupMembership {
@@ -51,6 +55,11 @@ export interface DailyMetrics {
   actual_profit: number;
   actual_margin: number;
   profit_revenue: number;
+  cost: number;
+  agent_fee: number;
+  logistics_cost: number;
+  marketing_cost: number;
+  storage_cost: number;
 }
 
 export interface MetricValues {
@@ -87,7 +96,7 @@ export interface MetricValues {
   stock: number;
 }
 
-export type RowType = 'cabinet' | 'group' | 'product';
+export type RowType = 'cabinet' | 'category' | 'group' | 'product';
 
 export interface TableRow {
   id: string;
@@ -102,8 +111,8 @@ export interface TableRow {
 
 export type EntityType = 'cabinet' | 'group' | 'product';
 
-export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'profitability' | 'admin'
-  | 'funnel' | 'entry-points' | 'search-phrases';
+export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'profitability' | 'admin' | 'dev'
+  | 'funnel' | 'entry-points' | 'search-phrases' | 'niche' | 'geography' | 'product';
 
 export interface PlanRecord {
   entityId: string;
@@ -141,7 +150,97 @@ export interface MonthlyPlanRecord {
   buyoutRate: number;
 }
 
-export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'plan_template';
+export interface GeographyOrderRecord {
+  date: string;
+  product_id: string;
+  region: string;
+  area: string;
+  city: string;
+  delivery_hours: number | null;
+  orders_total: number;
+  product_local_orders: number;
+  product_nonlocal_orders: number;
+  wb_local_orders: number;
+  wb_nonlocal_orders: number;
+  marketplace_local_orders: number;
+  marketplace_nonlocal_orders: number;
+  stock_wb: number;
+  stock_marketplace: number;
+}
+
+export interface GeographyPlanRecord {
+  month: string;
+  local_share_target: number | null;
+  delivery_hours_target: number | null;
+}
+
+export interface EntryPointRecord {
+  date: string;
+  product_id: string;
+  section: string;
+  entry_point: string;
+  impressions: number;
+  clicks: number;
+  carts: number;
+  orders: number;
+  product_orders_total?: number;
+  product_ordered_amount?: number;
+  product_net_profit?: number;
+  product_profit_revenue?: number;
+  product_profitability?: number;
+  product_ad_spend?: number;
+}
+
+export interface SearchQueryRecord {
+  date: string;
+  query: string;
+  category: string;
+  requests: number;
+  requests_previous: number;
+  avg_daily_requests: number;
+  avg_daily_requests_previous: number;
+  card_clicks: number;
+  card_clicks_previous: number;
+  carts: number;
+  carts_previous: number;
+  cart_conversion: number;
+  cart_conversion_previous: number;
+  orders: number;
+  orders_previous: number;
+  order_conversion: number;
+  order_conversion_previous: number;
+  ordered_subjects: number;
+  ordered_subjects_previous: number;
+  products: number;
+  products_previous: number;
+}
+
+export interface NicheDynamicsRecord {
+  date: string;
+  category: string;
+  subject: string;
+  sellers: number;
+  active_sellers: number;
+  active_sellers_previous: number;
+  monopolization: number;
+  monopolization_previous: number;
+  revenue: number;
+  revenue_previous: number;
+  avg_check: number;
+  avg_check_previous: number;
+  product_cards: number;
+  active_product_cards: number;
+  active_product_cards_previous: number;
+  active_product_cards_share: number;
+  weekly_turnover_days: number;
+  availability: string;
+  avg_stock: number;
+  buyout_rate: number;
+  buyout_rate_previous: number;
+  avg_rating: number;
+}
+
+export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'plan_template';
 
 export interface ImportFileLog {
   id: string;
@@ -168,7 +267,35 @@ export interface DataSnapshot {
   plans: PlanRecord[];
   monthlyPlans: MonthlyPlanRecord[];
   profitability: ProfitabilityRecord[];
+  geography: GeographyOrderRecord[];
+  geographyPlans: GeographyPlanRecord[];
+  entryPoints: EntryPointRecord[];
+  searchQueries: SearchQueryRecord[];
+  nicheDynamics: NicheDynamicsRecord[];
   importLogs: ImportFileLog[];
+}
+
+export interface DataChanges {
+  cabinets: ChangeSet<Cabinet>;
+  brands: ChangeSet<Brand>;
+  groups: ChangeSet<ProductGroup>;
+  products: ChangeSet<Product>;
+  memberships: ChangeSet<GroupMembership>;
+  metrics: ChangeSet<DailyMetrics>;
+  plans: ChangeSet<PlanRecord>;
+  monthlyPlans: ChangeSet<MonthlyPlanRecord>;
+  profitability: ChangeSet<ProfitabilityRecord>;
+  geography: ChangeSet<GeographyOrderRecord>;
+  geographyPlans: ChangeSet<GeographyPlanRecord>;
+  entryPoints: ChangeSet<EntryPointRecord>;
+  searchQueries: ChangeSet<SearchQueryRecord>;
+  nicheDynamics: ChangeSet<NicheDynamicsRecord>;
+  importLogs: ChangeSet<ImportFileLog>;
+}
+
+export interface ChangeSet<T> {
+  upserts: T[];
+  deletes: IDBValidKey[];
 }
 
 export interface SaveResult {
@@ -181,6 +308,7 @@ export interface IDataRepository {
   initialize(): Promise<void>;
   loadAll(): Promise<DataSnapshot>;
   saveAll(data: DataSnapshot): Promise<SaveResult>;
+  saveChanges(data: DataChanges): Promise<SaveResult>;
   deleteMetrics?(opts: { productIds: string[]; dateStart?: string; dateEnd?: string }): Promise<void>;
   deleteImportLog?(logId: string): Promise<void>;
   deleteProfitability?(productId: string): Promise<void>;

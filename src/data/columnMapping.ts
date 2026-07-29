@@ -4,13 +4,23 @@ import type { ImportSource } from '../types';
 const COLUMN_DICT: Record<string, string> = {
   'артикул': 'sku',
   'артикул продавца': 'sku',
-  'nm_id': 'sku',
+  'nm_id': 'wb_sku',
   'nm': 'wb_sku',
+  'name': 'name',
+  'product name': 'name',
+  'brand': 'brand',
+  'cabinet': 'cabinet',
   'артикул wb': 'wb_sku',
   'артикул (wb)': 'wb_sku',
   'предмет': 'category',
   'категория': 'category',
   'дата': 'date',
+  'начало периода': 'period_start',
+  'дата начала': 'period_start',
+  'период с': 'period_start',
+  'конец периода': 'period_end',
+  'дата окончания': 'period_end',
+  'период по': 'period_end',
   'показы': 'impressions',
   'переходы в карточку': 'clicks',
   'клики': 'clicks',
@@ -48,6 +58,11 @@ const COLUMN_DICT: Record<string, string> = {
   'cpc, руб.': 'cpc',
   'cpo, руб.': 'cpo',
   'дрр, %': 'drr',
+  'себестоимость': 'cost',
+  'агентское вознаграждение': 'agent_fee',
+  'стоимость логистики': 'logistics_cost',
+  'сумма рекламы': 'marketing_cost',
+  'сумма хранения': 'storage_cost',
   // Рентабельность / План
   'остаток': 'stock',
   'сток': 'stock',
@@ -64,6 +79,12 @@ const COLUMN_DICT: Record<string, string> = {
   'article': 'sku',
   'date': 'date',
   'day': 'date',
+  'period start': 'period_start',
+  'period_start': 'period_start',
+  'start date': 'period_start',
+  'period end': 'period_end',
+  'period_end': 'period_end',
+  'end date': 'period_end',
   'impressions': 'impressions',
   'views': 'impressions',
   'clicks': 'clicks',
@@ -101,6 +122,97 @@ const DICT: Record<string, string> = {};
 for (const [key, val] of Object.entries(COLUMN_DICT)) {
   DICT[normHeader(key)] = val;
 }
+DICT['\u043d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435'] = 'name';
+DICT['\u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0442\u043e\u0432\u0430\u0440\u0430'] = 'name';
+DICT['\u0431\u0440\u0435\u043d\u0434'] = 'brand';
+DICT['\u043a\u0430\u0431\u0438\u043d\u0435\u0442'] = 'cabinet';
+DICT['\u0440\u0435\u0433\u0438\u043e\u043d'] = 'region';
+DICT['\u043e\u0431\u043b\u0430\u0441\u0442\u044c'] = 'area';
+DICT['\u0433\u043e\u0440\u043e\u0434'] = 'city';
+DICT['\u0432\u0440\u0435\u043c\u044f \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438'] = 'delivery_time';
+DICT['\u0438\u0442\u043e\u0433\u043e \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u0448\u0442'] = 'geo_orders_total';
+DICT['\u0438\u0442\u043e\u0433\u043e \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u043f\u043e \u0442\u043e\u0432\u0430\u0440\u0430\u043c \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_product_local_orders';
+DICT['\u0438\u0442\u043e\u0433\u043e \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u043f\u043e \u0442\u043e\u0432\u0430\u0440\u0430\u043c \u043d\u0435 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_product_nonlocal_orders';
+DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u0441\u043e \u0441\u043a\u043b\u0430\u0434\u0430 wb \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_wb_local_orders';
+DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u0441\u043e \u0441\u043a\u043b\u0430\u0434\u0430 wb \u043d\u0435 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_wb_nonlocal_orders';
+DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u043c\u0430\u0440\u043a\u0435\u0442\u043f\u043b\u0435\u0439\u0441 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_mp_local_orders';
+DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u043c\u0430\u0440\u043a\u0435\u0442\u043f\u043b\u0435\u0439\u0441 \u043d\u0435 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_mp_nonlocal_orders';
+DICT['\u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u0441\u043a\u043b\u0430\u0434 wb \u0448\u0442'] = 'geo_stock_wb';
+DICT['\u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u043c\u043f \u0448\u0442'] = 'geo_stock_mp';
+DICT['\u0440\u0430\u0437\u0434\u0435\u043b'] = 'entry_section';
+DICT['\u0442\u043e\u0447\u043a\u0430 \u0432\u0445\u043e\u0434\u0430'] = 'entry_point';
+DICT['\u043f\u0435\u0440\u0435\u0445\u043e\u0434\u044b \u0432 \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0443'] = 'entry_clicks';
+DICT['\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 \u043a\u043e\u0440\u0437\u0438\u043d\u0443'] = 'entry_carts';
+DICT['\u0437\u0430\u043a\u0430\u0437\u044b'] = 'entry_orders';
+DICT['\u043f\u043e\u043a\u0430\u0437\u044b'] = 'entry_impressions';
+
+Object.assign(DICT, {
+  'продавцы': 'niche_sellers',
+  'продавцы с заказами': 'niche_active_sellers',
+  'продавцы с заказами предыдущий период': 'niche_active_sellers_previous',
+  'монополизация %': 'niche_monopolization',
+  'монополизация % предыдущий период': 'niche_monopolization_previous',
+  'выручка ₽': 'niche_revenue',
+  'выручка предыдущий период ₽': 'niche_revenue_previous',
+  'средний чек ₽': 'niche_avg_check',
+  'средний чек предыдущий период ₽': 'niche_avg_check_previous',
+  'карточек товара': 'niche_product_cards',
+  'карточек товара с заказами': 'niche_active_product_cards',
+  'карточек с заказами предыдущий период': 'niche_active_product_cards_previous',
+  'карточек товара с заказами %': 'niche_active_product_cards_share',
+  'оборачиваемость за неделю дни': 'niche_weekly_turnover_days',
+  'доступность': 'niche_availability',
+  'среднее количество остатков шт': 'niche_avg_stock',
+  'процент выкупа': 'niche_buyout_rate',
+  'процент выкупа предыдущий период': 'niche_buyout_rate_previous',
+  'средний рейтинг': 'niche_avg_rating',
+  'поисковый запрос': 'search_query',
+  'количество запросов': 'search_requests',
+  'количество запросов предыдущий период': 'search_requests_previous',
+  'запросов в среднем за день': 'search_avg_daily',
+  'запросов в среднем за день предыдущий период': 'search_avg_daily_previous',
+  'больше всего заказов в предмете': 'search_category',
+  'перешли в карточку товара': 'search_card_clicks',
+  'перешли в карточку товара предыдущий период': 'search_card_clicks_previous',
+  'добавили в корзину': 'search_carts',
+  'добавили в корзину предыдущий период': 'search_carts_previous',
+  'конверсия в корзину': 'search_cart_conversion',
+  'конверсия в корзину предыдущий период': 'search_cart_conversion_previous',
+  'заказали товаров': 'search_orders',
+  'заказали товаров предыдущий период': 'search_orders_previous',
+  'конверсия в заказ': 'search_order_conversion',
+  'конверсия в заказ предыдущий период': 'search_order_conversion_previous',
+  'предметов с заказами по запросу': 'search_ordered_subjects',
+  'предметов с заказами по запросу предыдущий период': 'search_ordered_subjects_previous',
+  'количество товаров': 'search_products',
+  'количество товаров предыдущий период': 'search_products_previous',
+});
+
+function compactHeader(value: string) {
+  return normHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+const PROFITABILITY_HEADERS: Array<[string, string]> = [
+  ['\u0432\u0430\u043b\u043e\u0432\u0430\u044f\u043f\u0440\u0438\u0431\u044b\u043b\u044c\u0441\u0443\u0447\u0435\u0442\u043e\u043c\u0440\u0430\u0441\u0445\u043e\u0434\u043e\u0432\u043c\u0430\u0440\u043a\u0435\u0442\u043f\u043b\u0435\u0439\u0441\u0430', 'actual_profit'],
+  ['\u0438\u0442\u043e\u0433\u043e\u0432\u0430\u044f\u043c\u0430\u0440\u0436\u0438\u043d\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c', 'actual_margin'],
+  ['\u0432\u044b\u0440\u0443\u0447\u043a\u0430', 'profit_revenue'],
+  ['\u0441\u0435\u0431\u0435\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c', 'cost'],
+  ['\u0430\u0433\u0435\u043d\u0442\u0441\u043a\u043e\u0435\u0432\u043e\u0437\u043d\u0430\u0433\u0440\u0430\u0436\u0434\u0435\u043d\u0438\u0435', 'agent_fee'],
+  ['\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c\u043b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0438', 'logistics_cost'],
+  ['\u0441\u0443\u043c\u043c\u0430\u0440\u0435\u043a\u043b\u0430\u043c\u044b', 'marketing_cost'],
+  ['\u0441\u0443\u043c\u043c\u0430\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f', 'storage_cost'],
+];
+
+function lookupProfitabilityField(header: string): string | null {
+  const compact = compactHeader(header);
+  for (const [pattern, field] of PROFITABILITY_HEADERS) {
+    if (compact === pattern || compact.includes(pattern)) return field;
+  }
+  return null;
+}
+
+const COMPACT_DICT: Record<string, string> = {};
+for (const [header, field] of Object.entries(DICT)) COMPACT_DICT[compactHeader(header)] = field;
 
 // XWay-specific overrides (key = normalized header, value = field)
 const XWAY_OVERRIDES: Record<string, string> = {
@@ -113,6 +225,8 @@ const XWAY_OVERRIDES: Record<string, string> = {
 export const FIELD_LABELS: Record<string, string> = {
   sku: 'Артикул (SKU)',
   date: 'Дата',
+  period_start: 'Начало периода',
+  period_end: 'Конец периода',
   wb_sku: 'Артикул WB',
   category: 'Категория',
   impressions: 'Показы',
@@ -134,13 +248,55 @@ export const FIELD_LABELS: Record<string, string> = {
   actual_profit: 'Факт. прибыль',
   actual_margin: 'Факт. маржа',
   profit_revenue: 'Выручка (Сойка)',
+  agent_fee: 'Агентское вознаграждение',
+  logistics_cost: 'Стоимость логистики',
+  marketing_cost: 'Рекламные расходы',
+  storage_cost: 'Стоимость хранения',
+  cost: 'Себестоимость',
   cpc: 'CPC, руб.',
   cpo: 'CPO, руб.',
   drr: 'ДРР, %',
+  region: 'Федеральный округ', area: 'Регион / область', city: 'Населённый пункт', delivery_time: 'Время доставки', geo_orders_total: 'Заказы, шт',
+  geo_product_local_orders: 'Локальные заказы, шт', geo_product_nonlocal_orders: 'Не локальные заказы, шт',
+  geo_wb_local_orders: 'WB локально, шт', geo_wb_nonlocal_orders: 'WB не локально, шт',
+  geo_mp_local_orders: 'МП локально, шт', geo_mp_nonlocal_orders: 'МП не локально, шт',
+  geo_stock_wb: 'Остатки WB, шт', geo_stock_mp: 'Остатки МП, шт',
+  search_query: 'Поисковый запрос', search_category: 'Предмет', search_requests: 'Количество запросов', search_requests_previous: 'Запросы — предыдущий период',
+  search_avg_daily: 'Запросов в среднем за день', search_avg_daily_previous: 'Среднее — предыдущий период',
+  search_card_clicks: 'Переходы в карточку', search_card_clicks_previous: 'Переходы — предыдущий период',
+  search_carts: 'Добавления в корзину', search_carts_previous: 'Корзины — предыдущий период',
+  search_cart_conversion: 'Конверсия в корзину', search_cart_conversion_previous: 'CR корзины — предыдущий период',
+  search_orders: 'Заказали товаров', search_orders_previous: 'Заказы — предыдущий период',
+  search_order_conversion: 'Конверсия в заказ', search_order_conversion_previous: 'CR заказа — предыдущий период',
+  search_ordered_subjects: 'Предметов с заказами', search_ordered_subjects_previous: 'Предметов — предыдущий период',
+  search_products: 'Количество товаров', search_products_previous: 'Товаров — предыдущий период',
+  niche_category: 'Категория', niche_subject: 'Предмет', niche_sellers: 'Продавцы', niche_active_sellers: 'Продавцы с заказами', niche_active_sellers_previous: 'Продавцы с заказами — предыдущий период',
+  niche_monopolization: 'Монополизация, %', niche_monopolization_previous: 'Монополизация — предыдущий период', niche_revenue: 'Выручка, ₽', niche_revenue_previous: 'Выручка — предыдущий период',
+  niche_avg_check: 'Средний чек, ₽', niche_avg_check_previous: 'Средний чек — предыдущий период', niche_product_cards: 'Карточек товара', niche_active_product_cards: 'Карточек с заказами',
+  niche_active_product_cards_previous: 'Карточек с заказами — предыдущий период', niche_active_product_cards_share: 'Доля карточек с заказами', niche_weekly_turnover_days: 'Оборачиваемость, дни',
+  niche_availability: 'Доступность', niche_avg_stock: 'Средние остатки', niche_buyout_rate: 'Процент выкупа', niche_buyout_rate_previous: 'Выкуп — предыдущий период', niche_avg_rating: 'Средний рейтинг',
+};
+
+const WB_FUNNEL_OVERRIDES: Record<string, string> = {
+  '\u043f\u043e\u043a\u0430\u0437\u044b': 'impressions',
+  '\u043f\u0435\u0440\u0435\u0445\u043e\u0434\u044b \u0432 \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0443': 'clicks',
+  '\u043f\u0435\u0440\u0435\u0445\u043e\u0434\u044b': 'clicks',
+  '\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 \u043a\u043e\u0440\u0437\u0438\u043d\u0443': 'carts',
+  '\u0437\u0430\u043a\u0430\u0437\u044b': 'orders',
+};
+
+const NICHE_OVERRIDES: Record<string, string> = {
+  'категория': 'niche_category',
+  'предмет': 'niche_subject',
 };
 
 export function getRequiredFields(source?: ImportSource): string[] {
-  if (source === 'xway' || source === 'profitability') return ['sku'];
+  if (source === 'niche_dynamics') return ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_revenue'];
+  if (source === 'search_queries') return ['date', 'search_query', 'search_requests', 'search_category', 'search_card_clicks', 'search_carts', 'search_orders'];
+  if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total', 'geo_product_local_orders', 'geo_product_nonlocal_orders'];
+  if (source === 'entry_points') return ['sku', 'date', 'entry_section', 'entry_point', 'entry_impressions', 'entry_clicks', 'entry_carts', 'entry_orders'];
+  if (source === 'profitability') return ['sku', 'profit_revenue', 'actual_profit', 'actual_margin'];
+  if (source === 'xway') return ['sku'];
   return ['sku', 'date'];
 }
 
@@ -152,6 +308,14 @@ export interface ColumnMapping {
 
 export function detectSourceFromHeaders(headers: string[]): ImportSource | null {
   const nhs = headers.map(h => normHeader(h));
+
+  if (nhs.includes('поисковый запрос') && nhs.includes('количество запросов')) return 'search_queries';
+  if (nhs.includes('продавцы') && nhs.some(header => header.includes('монополизация')) && nhs.some(header => header.includes('карточек товара'))) return 'niche_dynamics';
+
+  const geoRegion = '\u0440\u0435\u0433\u0438\u043e\u043d';
+  const geoOrders = '\u0438\u0442\u043e\u0433\u043e\u0437\u0430\u043a\u0430\u0437\u043e\u0432';
+  if (nhs.some(header => compactHeader(header) === geoRegion) && nhs.some(header => compactHeader(header).includes(geoOrders))) return 'geography';
+  if (nhs.some(header => compactHeader(header) === 'точкавхода') && nhs.some(header => compactHeader(header) === 'раздел')) return 'entry_points';
 
   // Profitability: себестоимость, валовая прибыль, рентабельность
   const profitKeys = ['себестоимость', 'валоваяприбыль', 'валоваярентабельность', 'ценапродажи', 'ценозакупки'];
@@ -174,7 +338,7 @@ export function detectSourceFromHeaders(headers: string[]): ImportSource | null 
 
 export function lookupField(header: string): string | null {
   const nh = normHeader(header);
-  return DICT[nh] || null;
+  return DICT[nh] || COMPACT_DICT[compactHeader(header)] || null;
 }
 
 export function autoDetectMapping(headers: string[], source?: ImportSource): ColumnMapping {
@@ -186,8 +350,16 @@ export function autoDetectMapping(headers: string[], source?: ImportSource): Col
 
   for (const h of headers) {
     const nh = normHeader(h);
-    const dictField = DICT[nh];
-    const override = source === 'xway' ? XWAY_OVERRIDES[nh] : undefined;
+    const dictField = source === 'profitability'
+      ? lookupProfitabilityField(h) || DICT[nh] || COMPACT_DICT[compactHeader(h)]
+      : DICT[nh] || COMPACT_DICT[compactHeader(h)];
+    const override = source === 'niche_dynamics'
+      ? NICHE_OVERRIDES[nh]
+      : source === 'xway'
+      ? XWAY_OVERRIDES[nh]
+      : source === 'wb_funnel'
+        ? WB_FUNNEL_OVERRIDES[nh]
+        : undefined;
     const field = override || dictField;
     if (field) {
       map[h] = field;

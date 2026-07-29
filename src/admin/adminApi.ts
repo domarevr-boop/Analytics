@@ -27,7 +27,21 @@ export interface AdminSessionLogRow {
 }
 
 export async function adminMe() {
-  return invokeAdmin<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null }>('me');
+  try {
+    return await invokeAdmin<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null }>('me');
+  } catch {
+    const [{ data: isAdmin, error }, { data: sessionData }] = await Promise.all([
+      supabase.rpc('is_admin'),
+      supabase.auth.getSession(),
+    ]);
+    if (error) throw error;
+    return {
+      isAdmin: !!isAdmin,
+      adminCount: isAdmin ? 1 : 0,
+      bootstrapAllowed: false,
+      email: sessionData.session?.user.email ?? null,
+    };
+  }
 }
 
 export async function adminBootstrap() {

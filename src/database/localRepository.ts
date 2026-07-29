@@ -1,8 +1,8 @@
-import type { DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, ImportFileLog, SaveResult } from '../types';
+import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, ImportFileLog, SaveResult } from '../types';
 
 const DB_NAME = 'analytics-db';
-const DB_VERSION = 1;
-const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'import_logs'] as const;
+const DB_VERSION = 5;
+const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'import_logs'] as const;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -13,6 +13,10 @@ function openDB(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(s)) {
           const store = db.createObjectStore(s);
           if (s === 'daily_metrics') store.createIndex('date', 'date', { unique: false });
+          if (s === 'geography_orders') store.createIndex('date', 'date', { unique: false });
+          if (s === 'entry_points') store.createIndex('date', 'date', { unique: false });
+          if (s === 'search_queries') store.createIndex('date', 'date', { unique: false });
+          if (s === 'niche_dynamics') store.createIndex('date', 'date', { unique: false });
           if (s === 'products') store.createIndex('sku', 'sku', { unique: false });
         }
       }
@@ -54,8 +58,13 @@ function getKey(store: string, obj: Record<string, unknown>): IDBValidKey {
   switch (store) {
     case 'daily_metrics': return [obj.date, obj.product_id] as IDBValidKey;
     case 'group_memberships': return [obj.product_id, obj.group_id] as IDBValidKey;
-    case 'plans': return [obj.entity_id, obj.entity_type] as IDBValidKey;
+    case 'plans': return [obj.entityId, obj.entityType] as IDBValidKey;
     case 'monthly_plans': return [obj.sku, obj.month] as IDBValidKey;
+    case 'geography_orders': return [obj.date, obj.product_id, obj.region, obj.area || '', obj.city || ''] as IDBValidKey;
+    case 'geography_plans': return obj.month as string;
+    case 'entry_points': return [obj.date, obj.product_id, obj.section, obj.entry_point] as IDBValidKey;
+    case 'search_queries': return [obj.date, obj.query, obj.category] as IDBValidKey;
+    case 'niche_dynamics': return [obj.date, obj.category, obj.subject] as IDBValidKey;
     default: return obj.id as string;
   }
 }
@@ -81,7 +90,7 @@ export class LocalRepository implements IDataRepository {
     const tx = getTX(db, [...STORES], 'readonly');
     const [
       cabinets, brands, groups, products, memberships, metrics,
-      plans, monthlyPlans, profitability, importLogs,
+      plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, importLogs,
     ] = await Promise.all([
       getAll<Cabinet>(tx.objectStore('cabinets')),
       getAll<Brand>(tx.objectStore('brands')),
@@ -92,10 +101,15 @@ export class LocalRepository implements IDataRepository {
       getAll<PlanRecord>(tx.objectStore('plans')),
       getAll<MonthlyPlanRecord>(tx.objectStore('monthly_plans')),
       getAll<ProfitabilityRecord>(tx.objectStore('profitability_reports')),
+      getAll<GeographyOrderRecord>(tx.objectStore('geography_orders')),
+      getAll<GeographyPlanRecord>(tx.objectStore('geography_plans')),
+      getAll<EntryPointRecord>(tx.objectStore('entry_points')),
+      getAll<SearchQueryRecord>(tx.objectStore('search_queries')),
+      getAll<NicheDynamicsRecord>(tx.objectStore('niche_dynamics')),
       getAll<ImportFileLog>(tx.objectStore('import_logs')),
     ]);
 
-    return { cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, importLogs };
+    return { cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, importLogs };
   }
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
@@ -110,6 +124,11 @@ export class LocalRepository implements IDataRepository {
       { store: 'plans', rows: data.plans as unknown as DBRecord[] },
       { store: 'monthly_plans', rows: data.monthlyPlans as unknown as DBRecord[] },
       { store: 'profitability_reports', rows: data.profitability as unknown as DBRecord[] },
+      { store: 'geography_orders', rows: data.geography as unknown as DBRecord[] },
+      { store: 'geography_plans', rows: data.geographyPlans as unknown as DBRecord[] },
+      { store: 'entry_points', rows: data.entryPoints as unknown as DBRecord[] },
+      { store: 'search_queries', rows: data.searchQueries as unknown as DBRecord[] },
+      { store: 'niche_dynamics', rows: data.nicheDynamics as unknown as DBRecord[] },
       { store: 'import_logs', rows: data.importLogs as unknown as DBRecord[] },
     ];
 
@@ -136,6 +155,41 @@ export class LocalRepository implements IDataRepository {
     }
 
     return { ok: errors.length === 0, errors };
+  }
+
+  async saveChanges(data: DataChanges): Promise<SaveResult> {
+    const db = this.db;
+    if (!db) return { ok: false, errors: ['LocalRepository not initialized'] };
+
+    const tx = getTX(db, [...STORES], 'readwrite');
+    try {
+      for (const storeName of STORES) {
+        const store = tx.objectStore(storeName);
+        const changeName = storeName === 'product_groups' ? 'groups'
+          : storeName === 'daily_metrics' ? 'metrics'
+          : storeName === 'group_memberships' ? 'memberships'
+          : storeName === 'monthly_plans' ? 'monthlyPlans'
+          : storeName === 'profitability_reports' ? 'profitability'
+          : storeName === 'geography_orders' ? 'geography'
+          : storeName === 'geography_plans' ? 'geographyPlans'
+          : storeName === 'entry_points' ? 'entryPoints'
+          : storeName === 'search_queries' ? 'searchQueries'
+          : storeName === 'niche_dynamics' ? 'nicheDynamics'
+          : storeName === 'import_logs' ? 'importLogs'
+          : storeName;
+        const changes = data[changeName] as unknown as { upserts: DBRecord[]; deletes: IDBValidKey[] };
+        for (const key of changes.deletes) await del(store, key);
+        for (const row of changes.upserts) await put(store, getKey(storeName, row), row);
+      }
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.commit?.();
+      });
+      return { ok: true, errors: [] };
+    } catch (error: unknown) {
+      return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
+    }
   }
 
   async clearAll(): Promise<void> {

@@ -1,7 +1,9 @@
-import type { MetricValues, TableRow } from '../types';
-import type { ProductGroup } from '../types';
-import { getProducts, getMetrics, getProfitabilityRecords, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, UNGROUPED_GROUP_ID } from './store';
+import type { MetricValues, TableRow, Product } from '../types';
+import { getProducts, getMetrics, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, getProfitabilityRecords, UNGROUPED_GROUP_ID } from './store';
+import { getCabinetExtraExpense } from './profitStore';
+import { getReportGrossProfit } from './profitabilityCalculations';
 import { addDays, formatDate } from './dateUtils';
+import { getFilteredProductIds } from './productFilters';
 const DEV = import.meta.env.DEV;
 const _zeroLogged = new Set<string>();
 
@@ -44,6 +46,23 @@ export interface PlanData {
   totalNetProfit: number; profitability: number; buyoutRate: number;
 }
 
+function canonicalSku(value: string | undefined) {
+  return String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .replace(/\.0+$/, '')
+    .replace(/\s*\(\d+\)\s*$/, '');
+}
+
+function productIdentityValues(product: Product) {
+  return [...new Set([
+    product.sku,
+    product.wb_sku,
+    ...(product.aliases || []),
+    canonicalSku(product.sku),
+  ].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
 export function getPlanMap(periodStart: string): Map<string, PlanData> {
   const month = periodStart.slice(0, 7);
   const plans = getMonthlyPlansForMonth(month);
@@ -58,9 +77,23 @@ export function getPlanMap(periodStart: string): Map<string, PlanData> {
   return map;
 }
 
-export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string) {
+export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string, relatedProductIds?: Iterable<string>) {
   const allMetrics = getMetrics();
-  const rows = allMetrics.filter(m => m.product_id === productId && m.date >= start && m.date <= end);
+  const products = getProducts();
+  const product = products.find(p => p.id === productId);
+  const cabinetId = product?.cabinet_id || '';
+  const month = start.slice(0, 7);
+  const extraExpensePct = getCabinetExtraExpense(month, cabinetId);
+
+  const productIds = new Set(relatedProductIds || [productId]);
+  productIds.add(productId);
+  const rows = allMetrics.filter(m => productIds.has(m.product_id) && m.date >= start && m.date <= end);
+  const profitabilityRows = getProfitabilityRecords().filter(record =>
+    productIds.has(record.product_id)
+    && record.period_end >= start
+    && record.period_start <= end
+  );
+  
   if (rows.length === 0) {
     const key = start + '|' + end;
     if (!_zeroLogged.has(key)) {
@@ -74,33 +107,37 @@ export function sumForProduct(productId: string, start: string, end: string, pla
   const total = (fn: (m: typeof rows[0]) => number) => rows.reduce((s, m) => s + fn(m), 0);
   const avg = (fn: (m: typeof rows[0]) => number) => rows.length ? total(fn) / rows.length : 0;
 
-  // Aggregate from _profitability
-  const allProfitability = getProfitabilityRecords();
-  const profitRows = allProfitability.filter(r =>
-    r.product_id === productId && r.period_start >= start && r.period_start <= end
-  );
-  const profitFromRecords = profitRows.reduce((s, r) => s + r.actual_profit, 0);
-  const revenueFromRecords = profitRows.reduce((s, r) => s + r.profit_revenue, 0);
-  const marginFromRecords = profitRows.reduce((s, r) => s + r.actual_margin, 0);
-  const profitCount = profitRows.length;
-
   const planData = productSku ? planMap?.get(productSku) : undefined;
   const planRubles = planData?.totalRubles || 0;
   const planBuyoutRate = planData?.buyoutRate || 85;
   const ordAmt = total(m => m.ordered_amount);
   const buyoutAmt = total(m => m.buyout_amount);
   const adSpend = total(m => m.ad_spend);
+  
+  const agentFee = total(m => m.agent_fee || 0);
+  const logisticsCost = total(m => m.logistics_cost || 0);
+  const marketingCost = total(m => m.marketing_cost || 0);
+  const storageCost = total(m => m.storage_cost || 0);
+  
+  const reportRevenue = profitabilityRows.reduce((sum, record) => sum + record.profit_revenue, 0);
+  const reportGrossProfit = profitabilityRows.reduce((sum, record) => sum + getReportGrossProfit(record), 0);
+  const hasProfitabilityReport = profitabilityRows.length > 0;
+  const revenue = reportRevenue || total(m => m.profit_revenue || 0);
+  const cost = total(m => m.cost || 0);
+  const fallbackGrossProfit = revenue - cost - agentFee - logisticsCost - marketingCost - storageCost;
+  const grossProfit = hasProfitabilityReport ? reportGrossProfit : fallbackGrossProfit;
+  const extraExpenseAmount = revenue * (extraExpensePct / 100);
+  const profit = hasProfitabilityReport ? grossProfit - extraExpenseAmount : 0;
+  
+  const margin = hasProfitabilityReport && revenue ? (profit / revenue) * 100 : 0;
   const effectiveRevenue = ordAmt * (planBuyoutRate / 100);
-  const dailyProfit = total(m => m.actual_profit);
-  const dailyMarginSum = rows.reduce((s, m) => s + m.actual_margin, 0);
-  const marginTotal = dailyMarginSum + marginFromRecords;
-  const marginCount = rows.length + profitCount;
+
   return {
     imp: total(m => m.impressions), cl: total(m => m.clicks),
     cart: total(m => m.carts), ord: total(m => m.orders),
-    ordAmt, profit: dailyProfit + profitFromRecords,
-    margin: marginCount > 0 ? marginTotal / marginCount : 0,
-    profit_revenue: total(m => m.profit_revenue || 0) + revenueFromRecords,
+    ordAmt, profit,
+    margin,
+    profit_revenue: revenue,
     adImp: total(m => m.ad_impressions), adCl: total(m => m.ad_clicks),
     adOrd: total(m => m.ad_orders), adSpend,
     buyoutAmt,
@@ -134,7 +171,7 @@ export function toMetrics(s: ReturnType<typeof sumForProduct>): MetricValues {
     plan_profitability: s.planProfitability, plan_revenue: s.planRevenue,
     fact_orders: s.ordAmt,
     plan_pct: s.plan ? (s.ordAmt / s.plan) * 100 : 0,
-    revenue: s.buyoutAmt, effectiveRevenue: s.effectiveRevenue, buyout_amount: s.buyoutAmt, profit: s.profit,
+    revenue: s.profit_revenue, effectiveRevenue: s.effectiveRevenue, buyout_amount: s.buyoutAmt, profit: s.profit,
     margin: s.margin, stock: s.stock,
   };
 }
@@ -152,7 +189,6 @@ function addTo(a: MetricValues, b: MetricValues) {
   a.revenue += b.revenue; a.effectiveRevenue += b.effectiveRevenue; a.buyout_amount += b.buyout_amount; a.profit += b.profit; a.stock += b.stock;
 }
 
-/** Recompute derived metrics from summed raw values */
 function recalcDerived(m: MetricValues) {
   m.ctr = m.impressions ? (m.clicks / m.impressions) * 100 : 0;
   m.cr_cart = m.impressions ? (m.carts / m.impressions) * 100 : 0;
@@ -171,111 +207,104 @@ function recalcDerived(m: MetricValues) {
 
 export interface FilterOptions {
   cabinetId?: string;
+  category?: string;
   brandId?: string;
   groupId?: string;
+  sku?: string;
 }
 
-/**
- * Build tree rows for the given periods and optional filters.
- */
 export function getTableData(periodA: DatePeriod, periodB: DatePeriod, filters?: FilterOptions): TableRow[] {
-  const products = getProducts();
-  const groups = getGroups();
-  const cabinets = getCabinets();
-  const memberships = getMemberships();
-  const planMapA = getPlanMap(periodA.start);
-  const planMapB = getPlanMap(periodB.start);
+  return getCategoryTableData(periodA, periodB, filters);
+}
 
-  if (!products.length) return [];
-
-  const brandProductIds = filters?.brandId
-    ? new Set(products.filter(p => p.brand_id === filters.brandId).map(p => p.id))
-    : null;
-
-  const restrictGroupId = filters?.groupId;
-
-  const ungroupedIds = new Set(memberships.filter(m => m.group_id === UNGROUPED_GROUP_ID).map(m => m.product_id));
-
-  const matchProduct = (pid: string) => {
-    if (brandProductIds && !brandProductIds.has(pid)) return false;
-    return true;
-  };
-
-  const rows: TableRow[] = [];
-  const visited = new Set<string>();
-
-  const addProducts = (parentId: string, productList: typeof products, depth: number, accCurr: MetricValues, accPrev: MetricValues) => {
-    for (const pr of productList) {
-      visited.add(pr.id);
-      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
-      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);
-      const curr = c ? toMetrics(c) : emptyMetrics();
-      const prev = p ? toMetrics(p) : emptyMetrics();
-      rows.push({ id: pr.id, type: 'product', name: pr.name, sku: pr.sku, parent: parentId, depth, current: curr, previous: prev });
-      addTo(accCurr, curr); addTo(accPrev, prev);
+function getCategoryTableData(periodA: DatePeriod, periodB: DatePeriod, filters?: FilterOptions): TableRow[] {
+  const products = getProducts(); const groups = getGroups(); const cabinets = getCabinets(); const memberships = getMemberships();
+  const planA = getPlanMap(periodA.start); const planB = getPlanMap(periodB.start);
+  const productById = new Map(products.map(product => [product.id, product]));
+  
+  const productIdsByExternalId = new Map<string, Set<string>>();
+  for (const product of products) {
+    for (const value of productIdentityValues(product)) {
+      const key = String(value || '').trim();
+      if (!key) continue;
+      const productIds = productIdsByExternalId.get(key) || new Set<string>();
+      productIds.add(product.id);
+      productIdsByExternalId.set(key, productIds);
     }
-  };
+  }
 
-  for (const cab of cabinets) {
-    if (filters?.cabinetId && cab.id !== filters.cabinetId) continue;
-
-    const cabCurr = emptyMetrics(); const cabPrev = emptyMetrics();
-    const cabGroups = groups.filter(g => g.cabinet_id === cab.id);
-
-    const groupRows: { grp: ProductGroup; curr: MetricValues; prev: MetricValues }[] = [];
-    for (const grp of cabGroups) {
-      if (restrictGroupId && grp.id !== restrictGroupId) continue;
-
-      const grpCurr = emptyMetrics(); const grpPrev = emptyMetrics();
-      const grpProducts = products.filter(p =>
-        memberships.some(m => m.product_id === p.id && m.group_id === grp.id) && matchProduct(p.id)
-      );
-      addProducts(grp.id, grpProducts, 2, grpCurr, grpPrev);
-      recalcDerived(grpCurr); recalcDerived(grpPrev);
-
-      groupRows.push({ grp, curr: grpCurr, prev: grpPrev });
+  const linkedProductIds = new Map<string, Set<string>>();
+  
+  const canonicalProduct = (product: Product) => {
+    const known = linkedProductIds.get(product.id);
+    if (known) {
+      return [...known]
+        .map(productId => productById.get(productId)!)
+        .sort((left, right) => {
+          const score = (item: Product) => Number(Boolean(item.cabinet_id)) * 4 + Number(Boolean(item.category)) * 2 + Number(Boolean(item.brand_id));
+          return score(right) - score(left) || left.id.localeCompare(right.id);
+        })[0] || product;
     }
-
-    groupRows.sort((a, b) => b.curr.revenue - a.curr.revenue);
-
-    for (const { grp, curr, prev } of groupRows) {
-      rows.push({ id: grp.id, type: 'group', name: grp.name, parent: cab.id, depth: 1, current: curr, previous: prev });
-      addTo(cabCurr, curr); addTo(cabPrev, prev);
-    }
-
-    if (!restrictGroupId || restrictGroupId === UNGROUPED_GROUP_ID) {
-      const ungroupedProducts = products.filter(p =>
-        ungroupedIds.has(p.id) && p.cabinet_id === cab.id && !visited.has(p.id) && matchProduct(p.id)
-      );
-      if (ungroupedProducts.length > 0) {
-        const grpCurr = emptyMetrics(); const grpPrev = emptyMetrics();
-        const rowGrpId = cab.id + '-' + UNGROUPED_GROUP_ID;
-        addProducts(rowGrpId, ungroupedProducts, 2, grpCurr, grpPrev);
-        recalcDerived(grpCurr); recalcDerived(grpPrev);
-        rows.push({ id: rowGrpId, type: 'group', name: 'Без склейки', parent: cab.id, depth: 1, current: grpCurr, previous: grpPrev });
-        addTo(cabCurr, grpCurr); addTo(cabPrev, grpPrev);
+    const connected = new Set<string>([product.id]);
+    const queue = [product.id];
+    while (queue.length) {
+      const current = productById.get(queue.pop()!);
+      if (!current) continue;
+      for (const value of productIdentityValues(current)) {
+        const matches = productIdsByExternalId.get(String(value || '').trim());
+        if (!matches) continue;
+        for (const productId of matches) {
+          if (connected.has(productId)) continue;
+          connected.add(productId);
+          queue.push(productId);
+        }
       }
     }
-
-    recalcDerived(cabCurr); recalcDerived(cabPrev);
-    rows.push({ id: cab.id, type: 'cabinet', name: cab.name, parent: null, depth: 0, current: cabCurr, previous: cabPrev });
-  }
-
-  const orphanProducts = products.filter(p => !visited.has(p.id) && matchProduct(p.id));
-  if (orphanProducts.length) {
-    const orphanCurr = emptyMetrics(); const orphanPrev = emptyMetrics();
-    for (const pr of orphanProducts) {
-      visited.add(pr.id);
-      const c = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
-      const p = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);
-      const curr = c ? toMetrics(c) : emptyMetrics();
-      const prev = p ? toMetrics(p) : emptyMetrics();
-      rows.push({ id: pr.id, type: 'product', name: pr.name, sku: pr.sku, parent: null, depth: 0, current: curr, previous: prev });
-      addTo(orphanCurr, curr); addTo(orphanPrev, prev);
+    for (const productId of connected) linkedProductIds.set(productId, connected);
+    return [...connected]
+      .map(productId => productById.get(productId)!)
+      .sort((left, right) => {
+        const score = (item: Product) => Number(Boolean(item.cabinet_id)) * 4 + Number(Boolean(item.category)) * 2 + Number(Boolean(item.brand_id));
+        return score(right) - score(left) || left.id.localeCompare(right.id);
+      })[0] || product;
+  };
+  for (const product of products) canonicalProduct(product);
+  const canonicalProducts = products.filter(product => canonicalProduct(product).id === product.id && product.cabinet_id);
+  const canonicalMemberships = memberships.reduce<typeof memberships>((result, membership) => {
+    const product = productById.get(membership.product_id);
+    if (!product) return result;
+    const canonical = canonicalProduct(product);
+    if (!result.some(item => item.product_id === canonical.id && item.group_id === membership.group_id)) result.push({ product_id: canonical.id, group_id: membership.group_id });
+    return result;
+  }, []);
+  const allowed = getFilteredProductIds(canonicalProducts, canonicalMemberships, { cabinetFilter: filters?.cabinetId, categoryFilter: filters?.category, brandFilter: filters?.brandId, groupFilter: filters?.groupId, skuFilter: filters?.sku });
+  const groupForProduct = new Map<string, string>(); canonicalMemberships.forEach(membership => { if (!groupForProduct.has(membership.product_id)) groupForProduct.set(membership.product_id, membership.group_id); });
+  const cabinetForProduct = (product: Product) => canonicalProduct(product).cabinet_id;
+  const categoryForProduct = (product: Product) => canonicalProduct(product).category || 'Без категории';
+  const groupFor = (product: Product) => groupForProduct.get(canonicalProduct(product).id) || UNGROUPED_GROUP_ID;
+  const rows: TableRow[] = [];
+  const productMetrics = (product: Product) => {
+    const relatedProductIds = linkedProductIds.get(product.id) || new Set([product.id]);
+    return {
+      current: (() => { const value = sumForProduct(product.id, periodA.start, periodA.end, planA, product.sku, relatedProductIds); return value ? toMetrics(value) : emptyMetrics(); })(),
+      previous: (() => { const value = sumForProduct(product.id, periodB.start, periodB.end, planB, product.sku, relatedProductIds); return value ? toMetrics(value) : emptyMetrics(); })(),
+    };
+  };
+  for (const cabinet of cabinets) {
+    const cabinetProducts = canonicalProducts.filter(product => cabinetForProduct(product) === cabinet.id && allowed.has(product.id)); if (!cabinetProducts.length) continue;
+    const cabinetCurrent = emptyMetrics(), cabinetPrevious = emptyMetrics();
+    for (const category of [...new Set(cabinetProducts.map(categoryForProduct))].sort()) {
+      const categoryId = `${cabinet.id}:category:${category}`; const categoryCurrent = emptyMetrics(), categoryPrevious = emptyMetrics(); const categoryProducts = cabinetProducts.filter(product => categoryForProduct(product) === category);
+      for (const groupId of [...new Set(categoryProducts.map(groupFor))]) {
+        if (filters?.groupId && filters?.groupId !== groupId) continue;
+        const groupCurrent = emptyMetrics(), groupPrevious = emptyMetrics(); const groupRowId = `${categoryId}:group:${groupId}`; const groupName = groupId === UNGROUPED_GROUP_ID ? 'Без склейки' : groups.find(group => group.id === groupId)?.name || 'Без склейки';
+        for (const product of categoryProducts.filter(item => groupFor(item) === groupId)) { const metrics = productMetrics(product); rows.push({ id: product.id, type: 'product', name: product.name, sku: product.sku, parent: groupRowId, depth: 3, ...metrics }); addTo(groupCurrent, metrics.current); addTo(groupPrevious, metrics.previous); }
+        recalcDerived(groupCurrent); recalcDerived(groupPrevious); rows.push({ id: groupRowId, type: 'group', name: groupName, parent: categoryId, depth: 2, current: groupCurrent, previous: groupPrevious }); addTo(categoryCurrent, groupCurrent); addTo(categoryPrevious, groupPrevious);
+      }
+      recalcDerived(categoryCurrent); recalcDerived(categoryPrevious); rows.push({ id: categoryId, type: 'category', name: category, parent: cabinet.id, depth: 1, current: categoryCurrent, previous: categoryPrevious }); addTo(cabinetCurrent, categoryCurrent); addTo(cabinetPrevious, categoryPrevious);
     }
+    recalcDerived(cabinetCurrent); recalcDerived(cabinetPrevious); rows.push({ id: cabinet.id, type: 'cabinet', name: cabinet.name, parent: null, depth: 0, current: cabinetCurrent, previous: cabinetPrevious });
   }
-
-  if (DEV) console.log('[getTableData] periodA=' + JSON.stringify(periodA) + ' periodB=' + JSON.stringify(periodB) + ' filters=' + JSON.stringify(filters) + ' totalRows=' + rows.length);
   return rows;
 }
 
@@ -285,25 +314,19 @@ export function getFilteredKpi(periodA: DatePeriod, periodB: DatePeriod, filters
   const planMapA = getPlanMap(periodA.start);
   const planMapB = getPlanMap(periodB.start);
 
-  const brandProductIds = filters.brandId
-    ? new Set(products.filter(p => p.brand_id === filters.brandId).map(p => p.id))
-    : null;
-
-  const groupProductIds = filters.groupId
-    ? new Set(memberships.filter(m => m.group_id === filters.groupId).map(m => m.product_id))
-    : null;
-
-  const cabProductIds = filters.cabinetId
-    ? new Set(products.filter(p => p.cabinet_id === filters.cabinetId).map(p => p.id))
-    : null;
+  const allowed = getFilteredProductIds(products, memberships, {
+    cabinetFilter: filters.cabinetId,
+    categoryFilter: filters.category,
+    brandFilter: filters.brandId,
+    groupFilter: filters.groupId,
+    skuFilter: filters.sku,
+  });
 
   const a = emptyMetrics();
   const b = emptyMetrics();
 
   for (const pr of products) {
-    if (brandProductIds && !brandProductIds.has(pr.id)) continue;
-    if (groupProductIds && !groupProductIds.has(pr.id)) continue;
-    if (cabProductIds && !cabProductIds.has(pr.id)) continue;
+    if (!allowed.has(pr.id)) continue;
 
     const ca = sumForProduct(pr.id, periodA.start, periodA.end, planMapA, pr.sku);
     const cb = sumForProduct(pr.id, periodB.start, periodB.end, planMapB, pr.sku);

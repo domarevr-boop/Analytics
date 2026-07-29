@@ -66,11 +66,11 @@ export function normalizeDate(s: string): string {
     const month = Number(parts[1]);
     if (month >= 1 && month <= 12) return s;
   }
-  const m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/);
+  const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
   if (m && Number(m[1]) <= 31 && Number(m[2]) <= 12) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  const m2 = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2})$/);
+  const m2 = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2})$/);
   if (m2) return `20${m2[3]}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`;
-  const m3 = s.match(/^(\d{1,2})[.\/](\d{1,2})\s*-\s*(\d{1,2})[.\/](\d{1,2})$/);
+  const m3 = s.match(/^(\d{1,2})[./](\d{1,2})\s*-\s*(\d{1,2})[./](\d{1,2})$/);
   if (m3) {
     let y = new Date().getFullYear();
     const result = `${y}-${m3[2].padStart(2, '0')}-${m3[1].padStart(2, '0')}`;
@@ -80,6 +80,23 @@ export function normalizeDate(s: string): string {
   }
   if (DEV) console.warn('[dateUtils] normalizeDate: unrecognized format, returning as-is:', JSON.stringify(s));
   return s;
+}
+
+export function isValidDateString(date: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const parsed = toDate(date);
+  return !Number.isNaN(parsed.getTime()) && toStr(parsed) === date;
+}
+
+export function normalizeImportDate(value: string, fallbackYear?: number): string {
+  const trimmed = String(value || '').trim();
+  const yearless = trimmed.match(/^(\d{1,2})[./](\d{1,2})$/);
+  if (yearless && fallbackYear) {
+    const normalized = `${fallbackYear}-${yearless[2].padStart(2, '0')}-${yearless[1].padStart(2, '0')}`;
+    return isValidDateString(normalized) ? normalized : '';
+  }
+  const normalized = normalizeDate(trimmed);
+  return isValidDateString(normalized) ? normalized : '';
 }
 
 
