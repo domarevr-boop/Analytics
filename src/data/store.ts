@@ -409,8 +409,7 @@ function canonicalSellerSku(sku: string) {
   return sku
     .replace(/\u00a0/g, ' ')
     .trim()
-    .replace(/\.0+$/, '')
-    .replace(/\s*\(\d+\)\s*$/, '');
+    .replace(/\.0+$/, '');
 }
 
 function productIdentityValues(product: Product): string[] {
@@ -460,17 +459,6 @@ function buildRelatedProductIndex(): Map<string, Set<string>> {
     for (const productId of related) relatedByProductId.set(productId, related);
   }
   return relatedByProductId;
-}
-
-function getRelatedProductIds(
-  seedProductIds: Iterable<string>,
-  relatedByProductId = buildRelatedProductIndex(),
-): Set<string> {
-  const related = new Set(seedProductIds);
-  for (const productId of [...related]) {
-    for (const relatedProductId of relatedByProductId.get(productId) || []) related.add(relatedProductId);
-  }
-  return related;
 }
 
 function refreshEntryPointFinancialFields(): boolean {
@@ -1220,6 +1208,7 @@ export async function importMappedData(
         cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0,
       };
       const newPatchesByKey = new Map<string, Partial<DailyMetrics>>();
+      const importedSourceFields = new Set<keyof DailyMetrics>();
 
       for (const row of rows) {
         const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
@@ -1241,8 +1230,10 @@ export async function importMappedData(
         for (const [field, metricKey] of Object.entries(METRIC_FIELD_MAP)) {
           if (allowed?.has(metricKey) && row[field] !== undefined && row[field] !== '') {
             (patch as Record<string, number | undefined>)[metricKey] = toNumber(row[field]);
+            importedSourceFields.add(metricKey);
           }
         }
+        if (Object.keys(patch).length === 0) continue;
 
         const patchKey = `${date}|${product.id}`;
         const combinedPatch = newPatchesByKey.get(patchKey) || { date, product_id: product.id };
@@ -1259,18 +1250,14 @@ export async function importMappedData(
       }
 
       if (parsed > 0) {
-        const sourceFields = SOURCE_FIELDS[source];
-        const relatedByProductId = buildRelatedProductIndex();
         const replacementKeys = new Set<string>();
         for (const patch of newPatchesByKey.values()) {
           if (!patch.date || !patch.product_id) continue;
-          for (const relatedProductId of getRelatedProductIds([String(patch.product_id)], relatedByProductId)) {
-            replacementKeys.add(`${patch.date}|${relatedProductId}`);
-          }
+          replacementKeys.add(`${patch.date}|${patch.product_id}`);
         }
         for (const metric of _metrics) {
           if (!replacementKeys.has(`${metric.date}|${metric.product_id}`)) continue;
-          for (const field of sourceFields) {
+          for (const field of importedSourceFields) {
             (metric as unknown as Record<string, number | string>)[field] = 0;
           }
         }
