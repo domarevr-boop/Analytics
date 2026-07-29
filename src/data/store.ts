@@ -17,11 +17,11 @@ let _persistQueue: Promise<void> = Promise.resolve();
 const DEV = import.meta.env.DEV;
 const MONTHLY_PLANS_BACKUP_KEY = 'analytics_monthly_plans_v1';
 
-function notify() {
+function notify(persist = true) {
   _version++;
   if (DEV) console.log('[notify] _version=' + _version + ' _metrics.length=' + _metrics.length);
   _listeners.forEach(fn => fn());
-  if (_initCalled && !_suppressPersist) persistAll();
+  if (persist && _initCalled && !_suppressPersist) persistAll();
 }
 
 export function subscribe(fn: () => void) {
@@ -349,12 +349,13 @@ export function removeMembership(product_id: string, group_id?: string) {
 
 let _nextLogId = 1;
 
-export function findOrCreateProduct(sku: string, name?: string): Product {
-  let p = _products.find(x => x.sku === sku);
+export function findOrCreateProduct(sku: string, name?: string, cabinetIdOverride?: string): Product {
+  let p = _products.find(x => x.sku === sku && (!cabinetIdOverride || !x.cabinet_id || x.cabinet_id === cabinetIdOverride));
+  if (p && cabinetIdOverride && !p.cabinet_id) p.cabinet_id = cabinetIdOverride;
   if (!p) {
     const { brandId, cabinetId, groupIds } = classifySku(sku);
     p = {
-      id: genId('pr'), sku, wb_sku: '', name: name || sku, category: '', brand_id: brandId, cabinet_id: cabinetId,
+      id: genId('pr'), sku, wb_sku: '', name: name || sku, category: '', brand_id: brandId, cabinet_id: cabinetIdOverride || cabinetId,
       aliases: [], status: 'active', data_source: 'import', updated_at: new Date().toISOString(),
     };
     _products.push(p);
@@ -374,9 +375,11 @@ export function findOrCreateProduct(sku: string, name?: string): Product {
 function buildAliasMap() {
   _skuAliases.clear();
   for (const p of _products) {
-    _skuAliases.set(p.sku, p.id);
-    if (p.wb_sku && p.wb_sku !== p.sku) _skuAliases.set(p.wb_sku, p.id);
-    for (const alias of p.aliases || []) _skuAliases.set(alias, p.id);
+    const values = [p.sku, p.wb_sku, ...(p.aliases || [])].filter(Boolean);
+    for (const value of values) {
+      _skuAliases.set(`${p.cabinet_id}|${value}`, p.id);
+      if (!_skuAliases.has(value)) _skuAliases.set(value, p.id);
+    }
   }
 }
 
@@ -402,9 +405,10 @@ function getRelatedProductIds(seedProductIds: Iterable<string>): Set<string> {
   const productIdsByIdentity = new Map<string, Set<string>>();
   for (const product of _products) {
     for (const identity of productIdentityValues(product)) {
-      const ids = productIdsByIdentity.get(identity) || new Set<string>();
+      const identityKey = `${product.cabinet_id}|${identity}`;
+      const ids = productIdsByIdentity.get(identityKey) || new Set<string>();
       ids.add(product.id);
-      productIdsByIdentity.set(identity, ids);
+      productIdsByIdentity.set(identityKey, ids);
     }
   }
 
@@ -414,7 +418,8 @@ function getRelatedProductIds(seedProductIds: Iterable<string>): Set<string> {
     const product = productsById.get(queue.pop()!);
     if (!product) continue;
     for (const identity of productIdentityValues(product)) {
-      for (const productId of productIdsByIdentity.get(identity) || []) {
+      const identityKey = `${product.cabinet_id}|${identity}`;
+      for (const productId of productIdsByIdentity.get(identityKey) || []) {
         if (related.has(productId)) continue;
         related.add(productId);
         queue.push(productId);
@@ -492,14 +497,14 @@ function propagateWbSkuToCanonicalProducts() {
 
   for (const product of _products) {
     if (product.sku === canonicalSellerSku(product.sku)) {
-      canonicalProducts.set(product.sku, product);
+      canonicalProducts.set(`${product.cabinet_id}|${product.sku}`, product);
     }
   }
 
   for (const product of _products) {
     const canonicalSku = canonicalSellerSku(product.sku);
     if (canonicalSku === product.sku || !product.wb_sku || product.wb_sku === product.sku) continue;
-    const canonicalProduct = canonicalProducts.get(canonicalSku);
+    const canonicalProduct = canonicalProducts.get(`${product.cabinet_id}|${canonicalSku}`);
     if (!canonicalProduct || canonicalProduct.wb_sku === product.wb_sku) continue;
     canonicalProduct.wb_sku = product.wb_sku;
     changed = true;
@@ -510,8 +515,9 @@ function propagateWbSkuToCanonicalProducts() {
 
 function registerAlias(sku: string, productId: string) {
   if (!sku) return;
-  if (!_skuAliases.has(sku)) _skuAliases.set(sku, productId);
   const product = _products.find(item => item.id === productId);
+  if (product) _skuAliases.set(`${product.cabinet_id}|${sku}`, productId);
+  if (!_skuAliases.has(sku)) _skuAliases.set(sku, productId);
   if (!product || sku === product.sku || sku === product.wb_sku) return;
   product.aliases ||= [];
   if (!product.aliases.includes(sku)) product.aliases.push(sku);
@@ -544,9 +550,29 @@ function enrichProductFromImport(product: Product, row: Record<string, string>, 
   void source;
 }
 
-function resolveProduct(sku: string, wbSku?: string): Product {
-  let p = _products.find(x => x.sku === sku);
+function resolveImportCabinetId(sku: string, cabinetName?: string) {
+  const normalizedName = String(cabinetName || '').trim().toLocaleLowerCase('ru-RU');
+  if (normalizedName) {
+    const existing = _cabinets.find(item => item.name.trim().toLocaleLowerCase('ru-RU') === normalizedName);
+    if (existing) return existing.id;
+    const cabinet = { id: genId('cab'), name: String(cabinetName).trim() };
+    _cabinets.push(cabinet);
+    return cabinet.id;
+  }
+  return classifySku(sku).cabinetId;
+}
+
+function resolveProduct(sku: string, wbSku?: string, cabinetName?: string): Product {
+  const cabinetId = resolveImportCabinetId(sku, cabinetName);
+  const matchesCabinet = (product: Product) => !cabinetId || !product.cabinet_id || product.cabinet_id === cabinetId;
+  const adoptCabinet = (product: Product) => {
+    if (cabinetId && !product.cabinet_id) product.cabinet_id = cabinetId;
+    return product;
+  };
+
+  let p = _products.find(x => x.sku === sku && matchesCabinet(x));
   if (p) {
+    adoptCabinet(p);
     if (wbSku && wbSku !== sku && p.wb_sku !== wbSku) {
       p.wb_sku = wbSku;
       registerAlias(wbSku, p.id);
@@ -555,8 +581,9 @@ function resolveProduct(sku: string, wbSku?: string): Product {
   }
 
   const canonicalSku = canonicalSellerSku(sku);
-  p = _products.find(x => canonicalSellerSku(x.sku) === canonicalSku);
+  p = _products.find(x => canonicalSellerSku(x.sku) === canonicalSku && matchesCabinet(x));
   if (p) {
+    adoptCabinet(p);
     registerAlias(sku, p.id);
     if (wbSku && wbSku !== p.sku && p.wb_sku !== wbSku) {
       p.wb_sku = wbSku;
@@ -565,10 +592,11 @@ function resolveProduct(sku: string, wbSku?: string): Product {
     return p;
   }
 
-  let pid = _skuAliases.get(sku);
+  let pid = _skuAliases.get(`${cabinetId}|${sku}`) || (!cabinetId ? _skuAliases.get(sku) : undefined);
   if (pid) {
     p = _products.find(x => x.id === pid);
-    if (p) {
+    if (p && matchesCabinet(p)) {
+      adoptCabinet(p);
       if (wbSku && wbSku !== sku && p.wb_sku !== wbSku) {
         p.wb_sku = wbSku;
         registerAlias(wbSku, p.id);
@@ -578,16 +606,16 @@ function resolveProduct(sku: string, wbSku?: string): Product {
   }
 
   if (wbSku) {
-    p = _products.find(x => x.wb_sku === wbSku || x.sku === wbSku);
-    if (p) return p;
-    pid = _skuAliases.get(wbSku);
-    if (pid) { p = _products.find(x => x.id === pid); if (p) return p; }
+    p = _products.find(x => (x.wb_sku === wbSku || x.sku === wbSku) && matchesCabinet(x));
+    if (p) return adoptCabinet(p);
+    pid = _skuAliases.get(`${cabinetId}|${wbSku}`) || (!cabinetId ? _skuAliases.get(wbSku) : undefined);
+    if (pid) { p = _products.find(x => x.id === pid); if (p && matchesCabinet(p)) return adoptCabinet(p); }
   }
 
-  p = _products.find(x => x.wb_sku === sku);
-  if (p) return p;
+  p = _products.find(x => x.wb_sku === sku && matchesCabinet(x));
+  if (p) return adoptCabinet(p);
 
-  p = findOrCreateProduct(sku);
+  p = findOrCreateProduct(sku, undefined, cabinetId);
   if (wbSku && wbSku !== sku) {
     p.wb_sku = wbSku;
     registerAlias(wbSku, p.id);
@@ -920,7 +948,7 @@ export async function importMappedData(
           continue;
         }
 
-        const product = resolveProduct(sku, rawWbSku);
+        const product = resolveProduct(sku, rawWbSku, row.cabinet);
         enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
@@ -1003,7 +1031,7 @@ export async function importMappedData(
         const sku = rawSku || rawWbSku;
         const region = String(row.region || '').trim();
         if (!date || !sku || !region) continue;
-        const product = resolveProduct(sku, rawWbSku);
+        const product = resolveProduct(sku, rawWbSku, row.cabinet);
         enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
@@ -1085,7 +1113,7 @@ export async function importMappedData(
         const section = String(row.entry_section || '').trim();
         const entryPoint = String(row.entry_point || '').trim() || 'Без уточнения';
         if (!date || !sku || !section) continue;
-        const product = resolveProduct(sku, rawWbSku);
+        const product = resolveProduct(sku, rawWbSku, row.cabinet);
         enrichProductFromImport(product, row, source);
         const record: EntryPointRecord = { date, product_id: product.id, section, entry_point: entryPoint, impressions: toNumber(row.entry_impressions), clicks: toNumber(row.entry_clicks), carts: toNumber(row.entry_carts), orders: toNumber(row.entry_orders) };
         const key = `${date}|${product.id}|${section}|${entryPoint}`;
@@ -1118,7 +1146,7 @@ export async function importMappedData(
           continue;
         }
 
-        const product = resolveProduct(sku, rawWbSku);
+        const product = resolveProduct(sku, rawWbSku, row.cabinet);
         enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
@@ -1146,10 +1174,16 @@ export async function importMappedData(
       }
 
       if (parsed > 0) {
-        const relatedProductIds = getRelatedProductIds(productIds);
         const sourceFields = SOURCE_FIELDS[source];
+        const replacementKeys = new Set<string>();
+        for (const patch of newPatchesByKey.values()) {
+          if (!patch.date || !patch.product_id) continue;
+          for (const relatedProductId of getRelatedProductIds([String(patch.product_id)])) {
+            replacementKeys.add(`${patch.date}|${relatedProductId}`);
+          }
+        }
         for (const metric of _metrics) {
-          if (metric.date < minDate || metric.date > maxDate || !relatedProductIds.has(metric.product_id)) continue;
+          if (!replacementKeys.has(`${metric.date}|${metric.product_id}`)) continue;
           for (const field of sourceFields) {
             (metric as unknown as Record<string, number | string>)[field] = 0;
           }
@@ -1184,7 +1218,7 @@ export async function importMappedData(
       await persistAll();
 
       _suppressPersist = false;
-      notify();
+      notify(false);
     } else {
       _suppressPersist = false;
     }

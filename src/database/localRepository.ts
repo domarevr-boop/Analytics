@@ -161,10 +161,12 @@ export class LocalRepository implements IDataRepository {
     const db = this.db;
     if (!db) return { ok: false, errors: ['LocalRepository not initialized'] };
 
-    const tx = getTX(db, [...STORES], 'readwrite');
     try {
+      const pendingStores: Array<{
+        storeName: typeof STORES[number];
+        changes: { upserts: DBRecord[]; deletes: IDBValidKey[] };
+      }> = [];
       for (const storeName of STORES) {
-        const store = tx.objectStore(storeName);
         const changeName = storeName === 'product_groups' ? 'groups'
           : storeName === 'daily_metrics' ? 'metrics'
           : storeName === 'group_memberships' ? 'memberships'
@@ -178,13 +180,28 @@ export class LocalRepository implements IDataRepository {
           : storeName === 'import_logs' ? 'importLogs'
           : storeName;
         const changes = data[changeName] as unknown as { upserts: DBRecord[]; deletes: IDBValidKey[] };
-        for (const key of changes.deletes) await del(store, key);
-        for (const row of changes.upserts) await put(store, getKey(storeName, row), row);
+        if (changes.upserts.length > 0 || changes.deletes.length > 0) {
+          pendingStores.push({ storeName, changes });
+        }
       }
+      if (pendingStores.length === 0) return { ok: true, errors: [] };
+
       await new Promise<void>((resolve, reject) => {
+        const tx = getTX(db, pendingStores.map(item => item.storeName), 'readwrite');
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.commit?.();
+        tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+        tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+        try {
+          for (const { storeName, changes } of pendingStores) {
+            const store = tx.objectStore(storeName);
+            for (const key of changes.deletes) store.delete(key);
+            for (const row of changes.upserts) store.put(row, getKey(storeName, row));
+          }
+          tx.commit?.();
+        } catch (error) {
+          tx.abort();
+          reject(error);
+        }
       });
       return { ok: true, errors: [] };
     } catch (error: unknown) {
