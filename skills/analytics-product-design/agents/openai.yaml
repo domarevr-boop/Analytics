@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analytics Product Design"
+  short_description: "Modernizes dense analytics interfaces"
+  default_prompt: "Use $analytics-product-design to audit and improve this analytics interface consistently."
