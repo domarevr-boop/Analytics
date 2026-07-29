@@ -17,6 +17,7 @@ Use this pattern for repeated analysis of many metrics over one shared time axis
 4. Exact values by date.
 
 Keep the first three columns sticky. A working row is normally 20–24px high.
+Keep each time column at a fixed width immediately after this sticky context. A short period must not stretch across the available page width; leave neutral space on the right instead.
 
 ## Heatmap modes
 

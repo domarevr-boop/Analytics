@@ -60,6 +60,8 @@ Design a modern, dense, decision-oriented analytics interface without copying a 
 - Make heatmap direction semantic: lower expenses, DRR, delivery time, cancellations, and similar cost/risk metrics may be positive.
 - Preserve exact values inside heatmap cells; color is a reading aid, not the only encoding.
 - Keep inline sparklines axis-free, locally scaled, and tied to the same visible period as the row cells.
+- Keep time-axis columns at a fixed width after the sticky context columns; do not stretch a short period across unused table space.
+- Use separate KPI tiles with a consistent gap when the metrics are independently actionable; do not visually merge them into one segmented card.
 - Use compact analytical radii: 10px KPI, 12px section, 6–8px control, 2–4px heatmap cell.
 - Use the spacing scale 4/6/8/12/16/20/24 and tabular numerals for dense analytical values.
 - Distinguish selection, weekends, incomplete dates, and performance through separate visual channels.
