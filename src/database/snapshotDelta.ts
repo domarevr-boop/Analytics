@@ -2,7 +2,7 @@ import type { DataChanges, DataSnapshot, ChangeSet } from '../types';
 
 type StoreName = keyof DataSnapshot;
 
-const STORE_NAMES: StoreName[] = [
+export const DATA_STORE_NAMES: StoreName[] = [
   'cabinets', 'brands', 'groups', 'products', 'memberships',
   'metrics', 'plans', 'monthlyPlans', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics', 'importLogs',
 ];
@@ -53,18 +53,25 @@ function compareStore<T extends Record<string, unknown>>(
   return { upserts, deletes };
 }
 
-export function createDataChanges(previous: DataSnapshot, current: DataSnapshot): DataChanges {
+export function createDataChanges(
+  previous: DataSnapshot,
+  current: DataSnapshot,
+  selectedStores: Iterable<StoreName> = DATA_STORE_NAMES,
+): DataChanges {
   const changes = {} as DataChanges;
-  for (const store of STORE_NAMES) {
-    (changes as unknown as Record<StoreName, ChangeSet<Record<string, unknown>>>)[store] = compareStore(
-      store,
-      previous[store] as unknown as Record<string, unknown>[],
-      current[store] as unknown as Record<string, unknown>[],
-    );
+  const selected = new Set(selectedStores);
+  for (const store of DATA_STORE_NAMES) {
+    (changes as unknown as Record<StoreName, ChangeSet<Record<string, unknown>>>)[store] = selected.has(store)
+      ? compareStore(
+        store,
+        previous[store] as unknown as Record<string, unknown>[],
+        current[store] as unknown as Record<string, unknown>[],
+      )
+      : { upserts: [], deletes: [] };
   }
   return changes;
 }
 
 export function hasDataChanges(changes: DataChanges) {
-  return STORE_NAMES.some(store => changes[store].upserts.length > 0 || changes[store].deletes.length > 0);
+  return DATA_STORE_NAMES.some(store => changes[store].upserts.length > 0 || changes[store].deletes.length > 0);
 }

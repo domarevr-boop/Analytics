@@ -3,7 +3,7 @@ import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
 import { repository } from '../database/db';
 import { isCloudStorage } from '../database/db';
-import { createDataChanges, hasDataChanges } from '../database/snapshotDelta';
+import { createDataChanges, DATA_STORE_NAMES, hasDataChanges } from '../database/snapshotDelta';
 import type { DataSnapshot } from '../types';
 import { normalizeImportDate, addDays } from './dateUtils';
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
@@ -16,12 +16,21 @@ let _suppressPersist = false;
 let _persistQueue: Promise<void> = Promise.resolve();
 const DEV = import.meta.env.DEV;
 const MONTHLY_PLANS_BACKUP_KEY = 'analytics_monthly_plans_v1';
+type DataStoreName = keyof DataSnapshot;
+const _readCache = new Map<DataStoreName, unknown[]>();
 
-function notify(persist = true) {
+function invalidateReadCache(stores: Iterable<DataStoreName>) {
+  for (const store of stores) _readCache.delete(store);
+}
+
+function notify(persist = true, stores: Iterable<DataStoreName> = DATA_STORE_NAMES) {
+  if (_suppressPersist && persist) return;
+  const changedStores = [...stores];
+  invalidateReadCache(changedStores);
   _version++;
   if (DEV) console.log('[notify] _version=' + _version + ' _metrics.length=' + _metrics.length);
   _listeners.forEach(fn => fn());
-  if (persist && _initCalled && !_suppressPersist) persistAll();
+  if (persist && _initCalled) persistStores(changedStores);
 }
 
 export function subscribe(fn: () => void) {
@@ -49,6 +58,14 @@ let _nicheDynamics: NicheDynamicsRecord[] = [];
 let _skuAliases = new Map<string, string>();
 let _lastPersistedSnapshot: DataSnapshot | null = null;
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
+
+function cachedRows<T>(store: DataStoreName, rows: T[], clone: (row: T) => T = row => ({ ...row })) {
+  const cached = _readCache.get(store) as T[] | undefined;
+  if (cached) return cached;
+  const snapshot = rows.map(clone);
+  _readCache.set(store, snapshot as unknown[]);
+  return snapshot;
+}
 
 function saveMonthlyPlansBackup() {
   if (typeof localStorage === 'undefined') return;
@@ -102,18 +119,18 @@ function seed() {
   }
 }
 
-export function getCabinets() { return [..._cabinets]; }
-export function getBrands() { return [..._brands]; }
-export function getGroups() { return [..._groups]; }
-export function getProducts() { return [..._products]; }
-export function getMemberships() { return [..._memberships]; }
-export function getMetrics() { return [..._metrics]; }
-export function getGeographyOrders() { return _geography.map(record => ({ ...record })); }
-export function getGeographyPlans() { return _geographyPlans.map(record => ({ ...record })); }
-export function getEntryPoints() { return _entryPoints.map(record => ({ ...record })); }
-export function getSearchQueries() { return _searchQueries.map(record => ({ ...record })); }
-export function getNicheDynamics() { return _nicheDynamics.map(record => ({ ...record })); }
-export function getImportLog() { return [..._importLog].reverse(); }
+export function getCabinets() { return cachedRows('cabinets', _cabinets); }
+export function getBrands() { return cachedRows('brands', _brands); }
+export function getGroups() { return cachedRows('groups', _groups); }
+export function getProducts() { return cachedRows('products', _products, product => ({ ...product, aliases: product.aliases ? [...product.aliases] : [] })); }
+export function getMemberships() { return cachedRows('memberships', _memberships); }
+export function getMetrics() { return cachedRows('metrics', _metrics); }
+export function getGeographyOrders() { return cachedRows('geography', _geography); }
+export function getGeographyPlans() { return cachedRows('geographyPlans', _geographyPlans); }
+export function getEntryPoints() { return cachedRows('entryPoints', _entryPoints); }
+export function getSearchQueries() { return cachedRows('searchQueries', _searchQueries); }
+export function getNicheDynamics() { return cachedRows('nicheDynamics', _nicheDynamics); }
+export function getImportLog() { return [...cachedRows('importLogs', _importLog)].reverse(); }
 
 export function exportV4Backup() {
   return {
@@ -186,7 +203,7 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
   _importLog = snapshot.importLogs;
   _lastPersistedSnapshot = snapshot;
   buildAliasMap();
-  notify();
+  notify(false);
 
   return { metrics: snapshot.metrics.length, products: snapshot.products.length };
 }
@@ -235,7 +252,12 @@ export async function deleteImportLogEntry(logId: string) {
   }
 
   _importLog = _importLog.filter(l => l.id !== logId);
-  notify();
+  const deletedStores: DataStoreName[] = ['importLogs'];
+  if (log.source === 'entry_points') deletedStores.push('entryPoints');
+  else if (log.source === 'geography') deletedStores.push('geography');
+  else if (log.source === 'profitability') deletedStores.push('profitability');
+  else deletedStores.push('metrics');
+  notify(true, deletedStores);
 
   if (log.source === 'profitability') {
     // Delete profitability data from Supabase
@@ -271,43 +293,43 @@ export async function deleteImportLogEntry(logId: string) {
 
 export function addCabinet(name: string): Cabinet {
   const c: Cabinet = { id: genId('cab'), name };
-  _cabinets.push(c); notify(); return c;
+  _cabinets.push(c); notify(true, ['cabinets']); return c;
 }
 export function updateCabinet(id: string, name: string) {
   const c = _cabinets.find(x => x.id === id);
-  if (c) { c.name = name; notify(); }
+  if (c) { c.name = name; notify(true, ['cabinets']); }
 }
 export function removeCabinet(id: string) {
   _cabinets = _cabinets.filter(x => x.id !== id);
-  notify();
+  notify(true, ['cabinets']);
 }
 
 export function addBrand(name: string): Brand {
   const b: Brand = { id: genId('br'), name };
-  _brands.push(b); notify(); return b;
+  _brands.push(b); notify(true, ['brands']); return b;
 }
 export function updateBrand(id: string, name: string) {
   const b = _brands.find(x => x.id === id);
-  if (b) { b.name = name; notify(); }
+  if (b) { b.name = name; notify(true, ['brands']); }
 }
 export function removeBrand(id: string) {
   _brands = _brands.filter(x => x.id !== id);
   _products.forEach(p => { if (p.brand_id === id) p.brand_id = ''; });
-  notify();
+  notify(true, ['brands', 'products']);
 }
 
 export function addGroup(name: string, cabinet_id: string): ProductGroup {
   const g: ProductGroup = { id: genId('grp'), name, cabinet_id };
-  _groups.push(g); notify(); return g;
+  _groups.push(g); notify(true, ['groups']); return g;
 }
 export function updateGroup(id: string, name: string) {
   const g = _groups.find(x => x.id === id);
-  if (g) { g.name = name; notify(); }
+  if (g) { g.name = name; notify(true, ['groups']); }
 }
 export function removeGroup(id: string) {
   _groups = _groups.filter(x => x.id !== id);
   _memberships = _memberships.filter(m => m.group_id !== id);
-  notify();
+  notify(true, ['groups', 'memberships']);
 }
 
 export function addProduct(sku: string, name: string, brand_id: string, category = ''): Product {
@@ -315,7 +337,7 @@ export function addProduct(sku: string, name: string, brand_id: string, category
     id: genId('pr'), sku, wb_sku: '', name, category, brand_id, cabinet_id: '',
     aliases: [], status: 'active', data_source: 'manual', updated_at: new Date().toISOString(),
   };
-  _products.push(p); notify(); return p;
+  _products.push(p); notify(true, ['products']); return p;
 }
 export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>> & { group_id?: string }) {
   const p = _products.find(x => x.id === id);
@@ -327,13 +349,13 @@ export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>> & {
     if (group_id) _memberships.push({ product_id: id, group_id });
   }
   buildAliasMap();
-  notify();
+  notify(true, ['products', 'memberships']);
 }
 export function removeProduct(id: string) {
   _products = _products.filter(x => x.id !== id);
   _memberships = _memberships.filter(m => m.product_id !== id);
   _metrics = _metrics.filter(m => m.product_id !== id);
-  notify();
+  notify(true, ['products', 'memberships', 'metrics']);
 }
 
 export const UNGROUPED_GROUP_ID = 'grp-ungrouped';
@@ -344,7 +366,7 @@ export function removeMembership(product_id: string, group_id?: string) {
   } else {
     _memberships = _memberships.filter(m => m.product_id !== product_id);
   }
-  notify();
+  notify(true, ['memberships']);
 }
 
 let _nextLogId = 1;
@@ -367,7 +389,7 @@ export function findOrCreateProduct(sku: string, name?: string, cabinetIdOverrid
       // Auto-assign to "Без склейки" if no group matched
       _memberships.push({ product_id: p.id, group_id: UNGROUPED_GROUP_ID });
     }
-    notify();
+    notify(true, ['products', 'memberships']);
   }
   return p;
 }
@@ -400,31 +422,53 @@ function productIdentityValues(product: Product): string[] {
   ].map(value => String(value || '').trim()).filter(Boolean))];
 }
 
-function getRelatedProductIds(seedProductIds: Iterable<string>): Set<string> {
-  const productsById = new Map(_products.map(product => [product.id, product]));
-  const productIdsByIdentity = new Map<string, Set<string>>();
+function buildRelatedProductIndex(): Map<string, Set<string>> {
+  const parent = new Map(_products.map(product => [product.id, product.id]));
+  const find = (productId: string): string => {
+    const parentId = parent.get(productId) || productId;
+    if (parentId === productId) return productId;
+    const rootId = find(parentId);
+    parent.set(productId, rootId);
+    return rootId;
+  };
+  const union = (leftId: string, rightId: string) => {
+    const leftRoot = find(leftId);
+    const rightRoot = find(rightId);
+    if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
+  };
+  const firstProductByIdentity = new Map<string, string>();
+
   for (const product of _products) {
     for (const identity of productIdentityValues(product)) {
       const identityKey = `${product.cabinet_id}|${identity}`;
-      const ids = productIdsByIdentity.get(identityKey) || new Set<string>();
-      ids.add(product.id);
-      productIdsByIdentity.set(identityKey, ids);
+      const firstProductId = firstProductByIdentity.get(identityKey);
+      if (firstProductId) union(firstProductId, product.id);
+      else firstProductByIdentity.set(identityKey, product.id);
     }
   }
 
+  const productsByRoot = new Map<string, Set<string>>();
+  for (const product of _products) {
+    const rootId = find(product.id);
+    const related = productsByRoot.get(rootId) || new Set<string>();
+    related.add(product.id);
+    productsByRoot.set(rootId, related);
+  }
+
+  const relatedByProductId = new Map<string, Set<string>>();
+  for (const related of productsByRoot.values()) {
+    for (const productId of related) relatedByProductId.set(productId, related);
+  }
+  return relatedByProductId;
+}
+
+function getRelatedProductIds(
+  seedProductIds: Iterable<string>,
+  relatedByProductId = buildRelatedProductIndex(),
+): Set<string> {
   const related = new Set(seedProductIds);
-  const queue = [...related];
-  while (queue.length) {
-    const product = productsById.get(queue.pop()!);
-    if (!product) continue;
-    for (const identity of productIdentityValues(product)) {
-      const identityKey = `${product.cabinet_id}|${identity}`;
-      for (const productId of productIdsByIdentity.get(identityKey) || []) {
-        if (related.has(productId)) continue;
-        related.add(productId);
-        queue.push(productId);
-      }
-    }
+  for (const productId of [...related]) {
+    for (const relatedProductId of relatedByProductId.get(productId) || []) related.add(relatedProductId);
   }
   return related;
 }
@@ -432,11 +476,12 @@ function getRelatedProductIds(seedProductIds: Iterable<string>): Set<string> {
 function refreshEntryPointFinancialFields(): boolean {
   if (!_entryPoints.length) return false;
   const productsById = new Map(_products.map(product => [product.id, product]));
+  const relatedByProductId = buildRelatedProductIndex();
   const rootByProductId = new Map<string, string>();
   const visited = new Set<string>();
   for (const product of _products) {
     if (visited.has(product.id)) continue;
-    const related = getRelatedProductIds([product.id]);
+    const related = relatedByProductId.get(product.id) || new Set([product.id]);
     const root = [...related].sort()[0] || product.id;
     for (const productId of related) {
       rootByProductId.set(productId, root);
@@ -640,7 +685,7 @@ export function upsertMetrics(date: string, productId: string, patch: Partial<Da
     };
     _metrics.push({ ...empty, ...patch, date, product_id: productId });
   }
-  notify();
+  notify(true, ['metrics']);
 }
 
 function toNumber(v: string): number {
@@ -710,6 +755,32 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   plan_template: new Set([]),
 };
 
+function getImportStoreNames(source: ImportSource, entryPointsChanged: boolean): DataStoreName[] {
+  const stores = new Set<DataStoreName>(['importLogs']);
+  if (source !== 'niche_dynamics' && source !== 'search_queries') {
+    stores.add('cabinets');
+    stores.add('brands');
+    stores.add('products');
+    stores.add('memberships');
+  }
+  if (source === 'profitability') {
+    stores.add('profitability');
+    stores.add('metrics');
+  } else if (source === 'geography') {
+    stores.add('geography');
+  } else if (source === 'entry_points') {
+    stores.add('entryPoints');
+  } else if (source === 'search_queries') {
+    stores.add('searchQueries');
+  } else if (source === 'niche_dynamics') {
+    stores.add('nicheDynamics');
+  } else {
+    stores.add('metrics');
+  }
+  if (entryPointsChanged) stores.add('entryPoints');
+  return [...stores];
+}
+
 export function clearMetricsRange(source: ImportSource, dateFrom: string, dateTo: string): number {
   const fields = SOURCE_FIELDS[source];
   if (!fields || fields.size === 0) return 0;
@@ -754,7 +825,7 @@ export function clearMetricsRange(source: ImportSource, dateFrom: string, dateTo
     );
     count += before - _profitability.length;
   }
-  if (count > 0) notify();
+  if (count > 0) notify(true, source === 'profitability' ? ['metrics', 'profitability'] : ['metrics']);
   return count;
 }
 
@@ -853,7 +924,7 @@ export function migrateDateRange(dateStart: string, dateEnd: string, days: numbe
     if (log.dataEnd) log.dataEnd = addDays(log.dataEnd, days);
   }
 
-  notify();
+  notify(true, ['metrics', 'profitability', 'importLogs']);
   return { ...preview, applied: true };
 }
 
@@ -869,7 +940,7 @@ export function clearMetricsAndImports(): void {
   _monthlyPlans = [];
   saveMonthlyPlansBackup();
   persistAll();
-  notify();
+  notify(false);
 }
 
 export function resetAllData(): void {
@@ -891,7 +962,7 @@ export function resetAllData(): void {
   _nextLogId = 1;
   seed();
   persistAll();
-  notify();
+  notify(false);
 }
 
 export async function importMappedData(
@@ -1175,10 +1246,11 @@ export async function importMappedData(
 
       if (parsed > 0) {
         const sourceFields = SOURCE_FIELDS[source];
+        const relatedByProductId = buildRelatedProductIndex();
         const replacementKeys = new Set<string>();
         for (const patch of newPatchesByKey.values()) {
           if (!patch.date || !patch.product_id) continue;
-          for (const relatedProductId of getRelatedProductIds([String(patch.product_id)])) {
+          for (const relatedProductId of getRelatedProductIds([String(patch.product_id)], relatedByProductId)) {
             replacementKeys.add(`${patch.date}|${relatedProductId}`);
           }
         }
@@ -1212,24 +1284,32 @@ export async function importMappedData(
     if (DEV) console.log('[import] completed:', parsed, 'rows, status:', log.status, 'period:', log.dataStart, '-', log.dataEnd, 'products:', productIds.size);
 
     if (parsed > 0) {
-      propagateWbSkuToCanonicalProducts();
-      buildAliasMap();
-      refreshEntryPointFinancialFields();
-      await persistAll();
+      const hasProductRows = source !== 'niche_dynamics' && source !== 'search_queries';
+      if (hasProductRows) {
+        propagateWbSkuToCanonicalProducts();
+        buildAliasMap();
+      }
+      const refreshEntryPoints = source === 'wb_funnel'
+        || source === 'xway'
+        || source === 'profitability'
+        || source === 'entry_points';
+      const entryPointsChanged = refreshEntryPoints ? refreshEntryPointFinancialFields() : false;
+      const changedStores = getImportStoreNames(source, entryPointsChanged);
+      await persistStores(changedStores);
 
       _suppressPersist = false;
-      notify(false);
+      notify(false, changedStores);
     } else {
       _suppressPersist = false;
     }
 
-    if (parsed === 0) notify();
+    if (parsed === 0) notify(true, ['importLogs']);
   } catch (err) {
     _suppressPersist = false;
     log.status = 'error';
     log.error = err instanceof Error ? err.message : 'Неизвестная ошибка';
     if (DEV) console.log('[import] error:', log.error);
-    notify();
+    notify(true, ['importLogs']);
   }
 
   return log;
@@ -1278,7 +1358,7 @@ function sumChildren(parentId: string) {
 }
 
 export function getPlanRecords(): PlanRecord[] {
-  return _plans.map(p => ({ ...p }));
+  return cachedRows('plans', _plans);
 }
 
 export function getPlanTotals() {
@@ -1319,7 +1399,7 @@ export function updatePlanField(entityId: string, field: 'ordersQty' | 'avgPrice
     sumChildren(rec.parentId);
   }
 
-  notify();
+  notify(true, ['plans']);
 }
 
 function seedDerivedData() {
@@ -1355,11 +1435,11 @@ function restoreNextId() {
 }
 
 export function getMonthlyPlans(): MonthlyPlanRecord[] {
-  return _monthlyPlans.map(p => ({ ...p }));
+  return cachedRows('monthlyPlans', _monthlyPlans);
 }
 
 export function getProfitabilityRecords(): ProfitabilityRecord[] {
-  return _profitability.map(r => ({ ...r }));
+  return cachedRows('profitability', _profitability);
 }
 
 export function getProfitabilityForProduct(productId: string): ProfitabilityRecord[] {
@@ -1395,7 +1475,7 @@ export function upsertMonthlyPlan(rec: MonthlyPlanRecord) {
     _monthlyPlans.push(rec);
   }
   saveMonthlyPlansBackup();
-  notify();
+  notify(true, ['monthlyPlans']);
 }
 
 export async function upsertMonthlyPlans(records: MonthlyPlanRecord[]) {
@@ -1408,14 +1488,14 @@ export async function upsertMonthlyPlans(records: MonthlyPlanRecord[]) {
     }
   }
   saveMonthlyPlansBackup();
-  notify();
-  await persistAll();
+  await persistStores(['monthlyPlans']);
+  notify(false, ['monthlyPlans']);
 }
 
 export function deleteMonthlyPlan(sku: string, month: string) {
   _monthlyPlans = _monthlyPlans.filter(p => !(p.sku === sku && p.month === month));
   saveMonthlyPlansBackup();
-  notify();
+  notify(true, ['monthlyPlans']);
 }
 
 export function getMonthlyPlansForMonth(month: string): MonthlyPlanRecord[] {
@@ -1427,7 +1507,7 @@ export function upsertGeographyPlan(month: string, localShareTarget: number | nu
   const index = _geographyPlans.findIndex(plan => plan.month === month);
   if (index >= 0) _geographyPlans[index] = record;
   else _geographyPlans.push(record);
-  notify();
+  notify(true, ['geographyPlans']);
 }
 
 export function updateMonthlyPlanField(sku: string, month: string, field: keyof Omit<MonthlyPlanRecord, 'sku' | 'month'>, value: number) {
@@ -1435,35 +1515,47 @@ export function updateMonthlyPlanField(sku: string, month: string, field: keyof 
   if (!rec) return;
   (rec as any)[field] = value;
   saveMonthlyPlansBackup();
-  notify();
+  notify(true, ['monthlyPlans']);
 }
 
-function persistAll(): Promise<void> {
-  const snapshot: DataSnapshot = {
-    cabinets: _cabinets.map(item => ({ ...item })),
-    brands: _brands.map(item => ({ ...item })),
-    groups: _groups.map(item => ({ ...item })),
-    products: _products.map(item => ({ ...item })),
-    memberships: _memberships.map(item => ({ ...item })),
-    metrics: _metrics.map(item => ({ ...item })),
-    plans: _plans.map(item => ({ ...item })),
-    monthlyPlans: _monthlyPlans.map(item => ({ ...item })),
-    profitability: _profitability.map(item => ({ ...item })),
-    geography: _geography.map(item => ({ ...item })),
-    geographyPlans: _geographyPlans.map(item => ({ ...item })),
-    entryPoints: _entryPoints.map(item => ({ ...item })),
-    searchQueries: _searchQueries.map(item => ({ ...item })),
-    nicheDynamics: _nicheDynamics.map(item => ({ ...item })),
-    importLogs: _importLog.map(item => ({
+function cloneStore(store: DataStoreName): DataSnapshot[DataStoreName] {
+  switch (store) {
+    case 'cabinets': return _cabinets.map(item => ({ ...item }));
+    case 'brands': return _brands.map(item => ({ ...item }));
+    case 'groups': return _groups.map(item => ({ ...item }));
+    case 'products': return _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
+    case 'memberships': return _memberships.map(item => ({ ...item }));
+    case 'metrics': return _metrics.map(item => ({ ...item }));
+    case 'plans': return _plans.map(item => ({ ...item }));
+    case 'monthlyPlans': return _monthlyPlans.map(item => ({ ...item }));
+    case 'profitability': return _profitability.map(item => ({ ...item }));
+    case 'geography': return _geography.map(item => ({ ...item }));
+    case 'geographyPlans': return _geographyPlans.map(item => ({ ...item }));
+    case 'entryPoints': return _entryPoints.map(item => ({ ...item }));
+    case 'searchQueries': return _searchQueries.map(item => ({ ...item }));
+    case 'nicheDynamics': return _nicheDynamics.map(item => ({ ...item }));
+    case 'importLogs': return _importLog.map(item => ({
       ...item,
       productIds: item.productIds ? [...item.productIds] : undefined,
-    })),
-  };
+    }));
+  }
+}
+
+function persistStores(storeNames: Iterable<DataStoreName>): Promise<void> {
+  const selectedStores = new Set(_lastPersistedSnapshot ? storeNames : DATA_STORE_NAMES);
+  const capturedStores = new Map<DataStoreName, DataSnapshot[DataStoreName]>();
+  for (const store of selectedStores) capturedStores.set(store, cloneStore(store));
 
   _persistQueue = _persistQueue
     .catch(() => undefined)
     .then(async () => {
-      const changes = _lastPersistedSnapshot ? createDataChanges(_lastPersistedSnapshot, snapshot) : null;
+      const previousSnapshot = _lastPersistedSnapshot;
+      const snapshot = previousSnapshot ? { ...previousSnapshot } : {} as DataSnapshot;
+      const writableSnapshot = snapshot as unknown as Record<DataStoreName, DataSnapshot[DataStoreName]>;
+      for (const [store, records] of capturedStores) writableSnapshot[store] = records;
+      const changes = previousSnapshot
+        ? createDataChanges(previousSnapshot, snapshot, selectedStores)
+        : null;
       if (changes && !hasDataChanges(changes)) return;
       const result = changes ? await repository.saveChanges(changes) : await repository.saveAll(snapshot);
       if (!result.ok) {
@@ -1474,6 +1566,10 @@ function persistAll(): Promise<void> {
     });
 
   return _persistQueue;
+}
+
+function persistAll(): Promise<void> {
+  return persistStores(DATA_STORE_NAMES);
 }
 
 export async function initStore() {
@@ -1576,18 +1672,16 @@ export async function initStore() {
   }
 
   await initializeExtraExpenses();
-  if (refreshEntryPointFinancialFields()) needsPersistence = true;
+  const needsEntryPointFinancialBackfill = _entryPoints.some(record =>
+    record.product_orders_total === undefined
+    || record.product_ordered_amount === undefined
+    || record.product_net_profit === undefined
+    || record.product_profitability === undefined
+  );
+  if (needsEntryPointFinancialBackfill && refreshEntryPointFinancialFields()) needsPersistence = true;
 
   _suppressPersist = false;
   _initCalled = true;
-
-  if (typeof window !== 'undefined') {
-    const doPersist = () => { if (!_suppressPersist) persistAll(); };
-    window.addEventListener('beforeunload', doPersist);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') doPersist();
-    });
-  }
 
   if (snapshot.cabinets.length === 0 || needsPersistence) {
     if (DEV) console.log('[diag] persisting initial or migrated data');

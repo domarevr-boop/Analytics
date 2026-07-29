@@ -60,10 +60,12 @@ export function useChartData(
   groupFilter?: string,
   skuFilter?: string,
 ) {
-  useSyncExternalStore(subscribe, getVersion);
+  const storeVersion = useSyncExternalStore(subscribe, getVersion);
   const extraExpensesVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
 
   return useMemo(() => {
+    void storeVersion;
+    void extraExpensesVersion;
     const allMetrics = getMetrics();
     const allProfitability = getProfitabilityRecords();
     const productsById = new Map(getProducts().map(product => [product.id, product]));
@@ -131,5 +133,5 @@ export function useChartData(
       }
       return { date, values };
     });
-  }, [periodStart, periodEnd, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter, extraExpensesVersion]);
+  }, [periodStart, periodEnd, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter, extraExpensesVersion, storeVersion]);
 }
