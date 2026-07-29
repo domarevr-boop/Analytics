@@ -1,18 +1,19 @@
 import { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getMonthlyPlans, upsertMonthlyPlan, findOrCreateProduct, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getMonthlyPlans, upsertMonthlyPlan, upsertMonthlyPlans, findOrCreateProduct, UNGROUPED_GROUP_ID } from '../data/store';
 import type { MonthlyPlanRecord } from '../types';
 import * as XLSX from 'xlsx';
+import FilterBar from './FilterBar';
+import type { FilterBarProps } from './FilterBar';
+import { getFilteredProductIds, hasProductFilters, isUngroupedFilter } from '../data/productFilters';
 
 const PLAN_FIELDS: { key: string; label: string; suffix: string; decimals: number }[] = [
   { key: 'avgQtyPerDay', label: 'Ср шт/день', suffix: '', decimals: 1 },
-  { key: 'costPrice', label: 'Себес', suffix: ' ₽', decimals: 2 },
   { key: 'checkAmount', label: 'Чек', suffix: ' ₽', decimals: 2 },
-  { key: 'netProfitPerUnit', label: 'ЧП', suffix: ' ₽', decimals: 2 },
-  { key: 'totalNetProfit', label: 'ЧП итого', suffix: ' ₽', decimals: 0 },
-  { key: 'profitability', label: 'Рент', suffix: '%', decimals: 1 },
-  { key: 'totalQty', label: 'Суммарно', suffix: '', decimals: 0 },
+  { key: 'totalQty', label: 'Заказы, шт', suffix: '', decimals: 0 },
   { key: 'totalRubles', label: 'Заказы, руб', suffix: ' ₽', decimals: 0 },
   { key: 'revenue', label: 'Выручка', suffix: ' ₽', decimals: 0 },
+  { key: 'profitability', label: 'Рентабельность', suffix: '%', decimals: 1 },
+  { key: 'totalNetProfit', label: 'Чистая прибыль', suffix: ' ₽', decimals: 0 },
 ];
 
 
@@ -26,13 +27,39 @@ interface CellEdit {
   field: string;
 }
 
-export default function PlanningPage() {
+export default function PlanningPage(filterProps: FilterBarProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
   const cabinets = useMemo(() => getCabinets(), [version]);
   const groups = useMemo(() => getGroups(), [version]);
   const products = useMemo(() => getProducts(), [version]);
   const memberships = useMemo(() => getMemberships(), [version]);
   const monthlyPlans = useMemo(() => getMonthlyPlans(), [version]);
+  const filteredProductIds = useMemo(
+    () => getFilteredProductIds(products, memberships, filterProps),
+    [products, memberships, filterProps],
+  );
+  const filtering = hasProductFilters(filterProps);
+  const filteredProducts = useMemo(
+    () => products.filter(product => filteredProductIds.has(product.id)),
+    [products, filteredProductIds],
+  );
+  const filteredCabinets = useMemo(
+    () => cabinets.filter(cabinet =>
+      (!filterProps.cabinetFilter || cabinet.id === filterProps.cabinetFilter)
+      && (!filtering || filteredProducts.some(product => product.cabinet_id === cabinet.id)),
+    ),
+    [cabinets, filterProps.cabinetFilter, filtering, filteredProducts],
+  );
+  const filteredGroups = useMemo(
+    () => groups.filter(group =>
+      filteredCabinets.some(cabinet => cabinet.id === group.cabinet_id)
+      && (!filterProps.groupFilter || group.id === filterProps.groupFilter)
+      && (!filtering || filteredProducts.some(product =>
+        memberships.some(membership => membership.group_id === group.id && membership.product_id === product.id)
+      )),
+    ),
+    [groups, filteredCabinets, filterProps.groupFilter, filtering, filteredProducts, memberships],
+  );
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<CellEdit | null>(null);
@@ -42,8 +69,6 @@ export default function PlanningPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [importStatus, setImportStatus] = useState('');
-  const [globalBuyoutRate, setGlobalBuyoutRate] = useState(85);
-
   const toggle = (id: string) => {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -63,6 +88,12 @@ export default function PlanningPage() {
   const getPlan = (sku: string, month: string): MonthlyPlanRecord | undefined => {
     return planMap.get(sku + '|' + month);
   };
+  const selectedMonthPlans = useMemo(
+    () => monthlyPlans.filter(plan => plan.month === selectedMonth),
+    [monthlyPlans, selectedMonth],
+  );
+  const monthBuyoutRate = selectedMonthPlans[0]?.buyoutRate ?? 85;
+  const monthProfitability = selectedMonthPlans[0]?.profitability ?? 0;
 
   // Aggregate plan totals per group and cabinet
   const planTotals = useMemo(() => {
@@ -73,12 +104,12 @@ export default function PlanningPage() {
       _cpSum: 0, _ckSum: 0, _npSum: 0, _cnt: 0,
     });
 
-    for (const cab of cabinets) {
+    for (const cab of filteredCabinets) {
       const cabTotal = init();
-      const cabGroups = groups.filter(g => g.cabinet_id === cab.id);
+      const cabGroups = filteredGroups.filter(g => g.cabinet_id === cab.id);
 
       for (const grp of cabGroups) {
-        const grpProducts = products.filter(p =>
+        const grpProducts = filteredProducts.filter(p =>
           memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
         );
         const grpTotal = init();
@@ -101,7 +132,7 @@ export default function PlanningPage() {
           grpTotal.checkAmount = grpTotal._ckSum / grpTotal._cnt;
           grpTotal.netProfitPerUnit = grpTotal._npSum / grpTotal._cnt;
         }
-        grpTotal.profitability = grpTotal.totalRubles ? (grpTotal.totalNetProfit / grpTotal.totalRubles) * 100 : 0;
+        grpTotal.profitability = monthProfitability;
         totals.set(grp.id, { ...grpTotal });
 
         for (const k of ['avgQtyPerDay', 'totalNetProfit', 'totalQty', 'totalRubles', '_cpSum', '_ckSum', '_npSum', '_cnt']) {
@@ -113,39 +144,39 @@ export default function PlanningPage() {
         cabTotal.checkAmount = cabTotal._ckSum / cabTotal._cnt;
         cabTotal.netProfitPerUnit = cabTotal._npSum / cabTotal._cnt;
       }
-      cabTotal.profitability = cabTotal.totalRubles ? (cabTotal.totalNetProfit / cabTotal.totalRubles) * 100 : 0;
+      cabTotal.profitability = monthProfitability;
       totals.set(cab.id, { ...cabTotal });
     }
     return totals;
-  }, [cabinets, groups, products, memberships, planMap, selectedMonth]);
+  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, planMap, selectedMonth, monthProfitability]);
 
   // Grand summary for the top bar
   const planSummary = useMemo(() => {
     let totalRubles = 0, totalNetProfit = 0, totalQty = 0, skuCount = 0;
-    for (const cab of cabinets) {
+    for (const cab of filteredCabinets) {
       const ct = planTotals.get(cab.id);
       if (!ct) continue;
       totalRubles += ct.totalRubles;
       totalNetProfit += ct.totalNetProfit;
       totalQty += ct.totalQty;
     }
-    for (const pr of products) {
+    for (const pr of filteredProducts) {
       if (getPlan(pr.sku, selectedMonth)) skuCount++;
     }
-    const profitability = totalRubles ? (totalNetProfit / totalRubles) * 100 : 0;
-    const revenue = totalRubles * globalBuyoutRate / 100;
+    const profitability = monthProfitability;
+    const revenue = totalRubles * monthBuyoutRate / 100;
     return { totalRubles, totalNetProfit, totalQty, profitability, skuCount, revenue };
-  }, [cabinets, products, planTotals, planMap, selectedMonth, globalBuyoutRate]);
+  }, [filteredCabinets, filteredProducts, planTotals, planMap, selectedMonth, monthBuyoutRate, monthProfitability]);
 
   const treeRows = useMemo(() => {
     const rows: { id: string; sku: string; name: string; depth: number; type: 'cabinet' | 'group' | 'product'; parent: string | null }[] = [];
     const ungroupedIds = new Set(memberships.filter(m => m.group_id === UNGROUPED_GROUP_ID).map(m => m.product_id));
 
-    for (const cab of cabinets) {
+    for (const cab of filteredCabinets) {
       rows.push({ id: cab.id, sku: '', name: cab.name, depth: 0, type: 'cabinet', parent: null });
-      const cabGroups = groups.filter(g => g.cabinet_id === cab.id).sort((a, b) => a.name.localeCompare(b.name));
+      const cabGroups = filteredGroups.filter(g => g.cabinet_id === cab.id).sort((a, b) => a.name.localeCompare(b.name));
       for (const grp of cabGroups) {
-        const grpProducts = products.filter(p =>
+        const grpProducts = filteredProducts.filter(p =>
           memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
         ).sort((a, b) => a.sku.localeCompare(b.sku));
         rows.push({ id: grp.id, sku: '', name: grp.name, depth: 1, type: 'group', parent: cab.id });
@@ -155,10 +186,10 @@ export default function PlanningPage() {
           }
         }
       }
-      const ungroupedProducts = products.filter(p =>
+      const ungroupedProducts = filteredProducts.filter(p =>
         ungroupedIds.has(p.id) && p.cabinet_id === cab.id
       ).sort((a, b) => a.sku.localeCompare(b.sku));
-      if (ungroupedProducts.length > 0) {
+      if ((!filterProps.groupFilter || isUngroupedFilter(filterProps.groupFilter)) && ungroupedProducts.length > 0) {
         const ugId = cab.id + '-' + UNGROUPED_GROUP_ID;
         rows.push({ id: ugId, sku: '', name: 'Без склейки', depth: 1, type: 'group', parent: cab.id });
         if (expanded.has(ugId)) {
@@ -169,10 +200,10 @@ export default function PlanningPage() {
       }
     }
     return rows;
-  }, [cabinets, groups, products, memberships, expanded]);
+  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, expanded, filterProps.groupFilter]);
 
   const handleStartEdit = (sku: string, field: string) => {
-    if (field === 'revenue') return;
+    if (field !== 'avgQtyPerDay' && field !== 'checkAmount') return;
     const plan = getPlan(sku, selectedMonth);
     const val = plan ? (plan as any)[field] as number : 0;
     setEditing({ sku, field });
@@ -185,10 +216,10 @@ export default function PlanningPage() {
     if (!isNaN(val)) {
       const existing = getPlan(editing.sku, selectedMonth);
       if (existing) {
-        upsertMonthlyPlan({ ...existing, [editing.field]: val });
+        upsertMonthlyPlan(recalculateMonthlyPlan({ ...existing, [editing.field]: val }));
       } else {
-        const empty: MonthlyPlanRecord = { sku: editing.sku, month: selectedMonth, avgQtyPerDay: 0, costPrice: 0, checkAmount: 0, netProfitPerUnit: 0, totalNetProfit: 0, profitability: 0, totalQty: 0, totalRubles: 0, buyoutRate: 85 };
-        upsertMonthlyPlan({ ...empty, [editing.field]: val });
+        const empty: MonthlyPlanRecord = { sku: editing.sku, month: selectedMonth, avgQtyPerDay: 0, costPrice: 0, checkAmount: 0, netProfitPerUnit: 0, totalNetProfit: 0, profitability: monthProfitability, totalQty: 0, totalRubles: 0, buyoutRate: monthBuyoutRate };
+        upsertMonthlyPlan(recalculateMonthlyPlan({ ...empty, [editing.field]: val }));
       }
     }
     setEditing(null);
@@ -197,7 +228,7 @@ export default function PlanningPage() {
   const renderCell = (sku: string, field: string, isEditing: boolean) => {
     if (field === 'revenue') {
       const plan = getPlan(sku, selectedMonth);
-      const val = plan ? plan.totalRubles * globalBuyoutRate / 100 : 0;
+      const val = plan ? plan.totalRubles * plan.buyoutRate / 100 : 0;
       const fieldDef = PLAN_FIELDS.find(f => f.key === 'revenue')!;
       return <span className="pl-cell-val">{f(val, fieldDef.decimals)}{fieldDef.suffix}</span>;
     }
@@ -236,86 +267,112 @@ export default function PlanningPage() {
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const arr: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const arr: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
 
       if (arr.length < 3) {
         setImportStatus('Ошибка: файл содержит недостаточно строк');
         return;
       }
 
-      const headerRow = arr[0];
+      const headerRow = arr[0] || [];
+      const subheaderRow = arr[1] || [];
+      const monthStarts = headerRow
+        .map((value, column) => ({ column, month: parseMonthFromHeader(String(value || '')) }))
+        .filter((item): item is { column: number; month: number } => item.column > 0 && item.month !== null);
 
-      const months: string[] = [];
-      let col = 1;
-      while (col < headerRow.length) {
-        const h = String(headerRow[col] || '').trim();
-        if (!h) break;
-        const monthNum = parseMonthFromHeader(h);
-        if (monthNum) {
-          months.push(`${selectedMonth.slice(0, 4)}-${String(monthNum).padStart(2, '0')}`);
-          col += 8;
-        } else {
-          col++;
-        }
+      if (monthStarts.length === 0) {
+        setImportStatus('Ошибка: в первой строке не найдены месяцы');
+        return;
+      }
+
+      let year = Number(selectedMonth.slice(0, 4));
+      let previousMonth = monthStarts[0].month;
+      const monthBlocks = monthStarts.map((item, index) => {
+        if (index > 0 && item.month < previousMonth) year++;
+        previousMonth = item.month;
+        const endColumn = monthStarts[index + 1]?.column ?? headerRow.length;
+        return {
+          month: `${year}-${String(item.month).padStart(2, '0')}`,
+          fields: mapPlanColumns(subheaderRow, item.column, endColumn),
+        };
+      });
+
+      const invalidMonths = monthBlocks.filter(block => Object.keys(block.fields).length < 2);
+      if (invalidMonths.length > 0) {
+        setImportStatus(`Ошибка: не найдены «Среднее шт/день» и «Чек» для ${invalidMonths.map(block => block.month).join(', ')}`);
+        return;
       }
 
       let imported = 0;
+      const records: MonthlyPlanRecord[] = [];
       for (let i = 2; i < arr.length; i++) {
         const row = arr[i];
-        const sku = String(row[0] || '').trim();
-        if (!sku || sku === 'null' || sku === '' || isNaN(Number(sku))) continue;
+        const sku = normalizePlanSku(row[0]);
+        if (!sku) continue;
 
         findOrCreateProduct(sku);
 
-        let colIdx = 1;
-        for (const month of months) {
-          const rec: MonthlyPlanRecord = {
-            sku, month,
-            avgQtyPerDay: Number(row[colIdx] ?? 0) || 0,
-            costPrice: Number(row[colIdx + 1] ?? 0) || 0,
-            checkAmount: Number(row[colIdx + 2] ?? 0) || 0,
-            netProfitPerUnit: Number(row[colIdx + 3] ?? 0) || 0,
-            totalNetProfit: Number(row[colIdx + 4] ?? 0) || 0,
-            profitability: Number(row[colIdx + 5] ?? 0) || 0,
-            totalQty: Number(row[colIdx + 6] ?? 0) || 0,
-            totalRubles: Number(row[colIdx + 7] ?? 0) || 0,
-            buyoutRate: 85,
-          };
-          upsertMonthlyPlan(rec);
+        for (const block of monthBlocks) {
+          const existingMonthPlan = monthlyPlans.find(plan => plan.month === block.month);
+          const rec = recalculateMonthlyPlan({
+            sku, month: block.month,
+            avgQtyPerDay: parsePlanNumber(row[block.fields.avgQtyPerDay]),
+            checkAmount: parsePlanNumber(row[block.fields.checkAmount]),
+            costPrice: 0,
+            netProfitPerUnit: 0,
+            totalNetProfit: 0,
+            profitability: existingMonthPlan?.profitability ?? 0,
+            totalQty: 0,
+            totalRubles: 0,
+            buyoutRate: existingMonthPlan?.buyoutRate ?? 85,
+          });
+          records.push(rec);
           imported++;
-          colIdx += 8;
         }
       }
-      setImportStatus(`Импортировано ${imported} записей для ${months.length} месяцев`);
+      await upsertMonthlyPlans(records);
+      setImportStatus(`Импортировано ${imported} записей для ${monthBlocks.length} месяцев`);
       setTimeout(() => setImportStatus(''), 4000);
     } catch (err) {
       setImportStatus('Ошибка: ' + (err instanceof Error ? err.message : 'Неизвестная ошибка'));
     }
-  }, [selectedMonth]);
+  }, [selectedMonth, monthlyPlans]);
 
   return (
     <div className="planning-page">
       <div className="pl-top">
         <div className="pl-top-title">План</div>
-        <div className="pl-top-controls">
+        <div className="table-toolbar workspace-toolbar">
+          <div className="date-filters planning-period-controls">
           <div className="pl-period-selector">
             <label>Месяц:</label>
             <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
           </div>
           <div className="pl-buyout-selector">
             <label>% выкупа:</label>
-            <input type="number" className="pl-buyout-input" value={globalBuyoutRate} onChange={e => setGlobalBuyoutRate(Number(e.target.value) || 0)} min={0} max={100} />
+            <input type="number" className="pl-buyout-input" value={monthBuyoutRate} onChange={e => updateMonthAssumptions(Number(e.target.value) || 0, monthProfitability, selectedMonthPlans, upsertMonthlyPlans)} min={0} max={100} />
           </div>
-          <div className="pl-import-area">
-            <label className={`pl-import-btn ${importStatus ? 'done' : ''}`}>
-              {importStatus || 'Импорт из Excel'}
-              <input type="file" accept=".xlsx,.xls" hidden onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) handleImportFile(f);
-                e.target.value = '';
-              }} />
-            </label>
+          <div className="pl-buyout-selector">
+            <label>Рентабельность:</label>
+            <input type="number" className="pl-buyout-input" value={monthProfitability} onChange={e => updateMonthAssumptions(monthBuyoutRate, Number(e.target.value) || 0, selectedMonthPlans, upsertMonthlyPlans)} min={-100} max={100} step="0.1" />
           </div>
+          </div>
+          <FilterBar
+            {...filterProps}
+            variant="dashboard"
+            afterControls={(
+              <div className="pl-import-area">
+                <label className={`pl-import-btn ${importStatus ? 'done' : ''}`}>
+                  {importStatus || 'Импорт из Excel'}
+                  <input type="file" accept=".xlsx,.xls" hidden onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportFile(file);
+                    e.target.value = '';
+                  }} />
+                </label>
+              </div>
+            )}
+          />
         </div>
       </div>
 
@@ -371,7 +428,7 @@ export default function PlanningPage() {
                     </td>
                     {PLAN_FIELDS.map(fd => {
                       let val = fd.key === 'revenue'
-                        ? ((totals as any).totalRubles || 0) * globalBuyoutRate / 100
+                        ? ((totals as any).totalRubles || 0) * monthBuyoutRate / 100
                         : (totals as any)[fd.key];
                       if (val === undefined || val === null) val = 0;
                       return (
@@ -416,4 +473,71 @@ function parseMonthFromHeader(h: string): number | null {
     if (lower.includes(name)) return num;
   }
   return null;
+}
+
+type PlanImportField = 'avgQtyPerDay' | 'checkAmount';
+
+const PLAN_IMPORT_HEADERS: Record<string, PlanImportField> = {
+  'среднеештдень': 'avgQtyPerDay',
+  'чек': 'checkAmount',
+};
+
+function normalizePlanHeader(value: unknown): string {
+  return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/g, '');
+}
+
+function mapPlanColumns(row: unknown[], start: number, end: number): Record<PlanImportField, number> {
+  const result = {} as Record<PlanImportField, number>;
+  for (let column = start; column < end; column++) {
+    const field = PLAN_IMPORT_HEADERS[normalizePlanHeader(row[column])];
+    if (field) result[field] = column;
+  }
+  return result;
+}
+
+function parsePlanNumber(value: unknown, percent = false): number {
+  if (typeof value === 'number') {
+    return percent && Math.abs(value) <= 1 && value !== 0 ? value * 100 : value;
+  }
+  const source = String(value ?? '').trim();
+  if (!source) return 0;
+  const normalized = source
+    .replace(/[₽%]/g, '')
+    .replace(/[\s\u00A0\u202F]/g, '')
+    .replace(/,/g, '.')
+    .replace(/[−–—]/g, '-');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizePlanSku(value: unknown): string {
+  const sku = String(value ?? '').trim().replace(/[\s\u00A0\u202F]/g, '');
+  return sku && sku.toLowerCase() !== 'null' && /^\d+$/.test(sku) ? sku : '';
+}
+
+function recalculateMonthlyPlan(plan: MonthlyPlanRecord): MonthlyPlanRecord {
+  const [year, month] = plan.month.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const totalQty = plan.avgQtyPerDay * daysInMonth;
+  const totalRubles = totalQty * plan.checkAmount;
+  const revenue = totalRubles * plan.buyoutRate / 100;
+  const totalNetProfit = revenue * plan.profitability / 100;
+  return {
+    ...plan,
+    totalQty,
+    totalRubles,
+    netProfitPerUnit: plan.avgQtyPerDay ? totalNetProfit / totalQty : 0,
+    totalNetProfit,
+  };
+}
+
+function updateMonthAssumptions(
+  buyoutRate: number,
+  profitability: number,
+  plans: MonthlyPlanRecord[],
+  save: (records: MonthlyPlanRecord[]) => Promise<void>,
+) {
+  if (plans.length === 0) return;
+  void save(plans.map(plan => recalculateMonthlyPlan({ ...plan, buyoutRate, profitability })))
+    .catch(error => console.error('[planning] failed to save monthly assumptions', error));
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useSyncExternalStore } from 'react';
+import { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { importMappedData, getImportLog, subscribe, getVersion, deleteImportLogEntry } from '../data/store';
 import { parseFile } from '../data/parseFile';
 import type { ParsedFile } from '../data/parseFile';
@@ -8,15 +8,25 @@ import ImportColumnMapper from './ImportColumnMapper';
 import DataCoverage from './DataCoverage';
 
 const SOURCE_LABELS: Record<string, string> = {
+  search_queries: 'Поисковые запросы WB',
+  niche_dynamics: 'Динамика ниши',
+  geography: 'География заказов',
   wb_funnel: 'WB Воронка',
   xway: 'XWay Реклама',
   profitability: 'Рентабельность',
+  entry_points: 'Точки входа',
+  plan_template: 'План',
 };
 
 const SOURCE_COLORS: Record<string, string> = {
+  search_queries: '#EAF2FF',
+  niche_dynamics: '#E9F7F2',
+  geography: '#DBEAFE',
   wb_funnel: '#F3F4F6',
   xway: '#F0FDF4',
   profitability: '#FEF9C3',
+  entry_points: '#F3E8FF',
+  plan_template: '#FFF7D6',
 };
 
 const FILE_TYPE_LABELS: Record<string, string> = {
@@ -29,6 +39,13 @@ export default function ImportPage() {
   const DEV = import.meta.env.DEV;
   useSyncExternalStore(subscribe, getVersion);
   const logs = getImportLog();
+  const latestLogs = useMemo(() => {
+    const latest = new Map<ImportSource, ImportFileLog>();
+    for (const log of logs) {
+      if (!latest.has(log.source)) latest.set(log.source, log);
+    }
+    return [...latest.values()].sort((a, b) => (SOURCE_LABELS[a.source] || a.source).localeCompare(SOURCE_LABELS[b.source] || b.source, 'ru'));
+  }, [logs]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
@@ -51,7 +68,14 @@ export default function ImportPage() {
     }
   }, []);
 
-  const handleConfirmMapping = useCallback(async (source: ImportSource, _mapping: ColumnMapping, remapped: Record<string, string>[], dateOverride?: string) => {
+  const handleConfirmMapping = useCallback(async (
+    source: ImportSource,
+    _mapping: ColumnMapping,
+    remapped: Record<string, string>[],
+    dateOverride?: string,
+    dateEndOverride?: string,
+    dateYearOverride?: number,
+  ) => {
     if (!parsed) return;
     if (DEV) console.log('[import-ui] source:', source, 'remapped rows:', remapped.length, 'dateOverride:', dateOverride);
     if (DEV && remapped.length > 0) console.log('[import-ui] first remapped row:', remapped[0], 'keys:', Object.keys(remapped[0]));
@@ -59,7 +83,7 @@ export default function ImportPage() {
     setProgress(`Импорт ${remapped.length} строк...`);
     setLoading(true);
     try {
-      const result = await importMappedData(parsed.fileName, source, remapped, dateOverride);
+      const result = await importMappedData(parsed.fileName, source, remapped, dateOverride, dateEndOverride, dateYearOverride);
       if (DEV) console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
       if (result.status === 'error') {
         alert(`Ошибка импорта: ${result.error}`);
@@ -167,31 +191,27 @@ export default function ImportPage() {
         </div>
       </div>
 
-      {logs.length > 0 && (
-        <div className="import-log">
-          <h3 className="log-title">История загрузок</h3>
+      {latestLogs.length > 0 && (
+        <div className="import-log import-latest-files">
+          <div className="import-section-head"><div><h3 className="log-title">Последние файлы</h3><p>По одному последнему импорту для каждого типа отчёта</p></div><span>{latestLogs.length} источников</span></div>
           <table className="import-table">
             <thead>
               <tr>
-                <th>Файл</th>
-                <th>Тип</th>
-                <th>Источник</th>
-                <th>Кабинет</th>
-                <th>Период</th>
+                <th>Отчёт</th>
+                <th>Последний файл</th>
+                <th>Период файла</th>
                 <th>Строк</th>
-                <th>Дата загрузки</th>
+                <th>Загружен</th>
                 <th>Статус</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {logs.map(log => {
+              {latestLogs.map(log => {
                 const ext = log.fileName.split('.').pop()?.toLowerCase() || '';
                 const fileType = FILE_TYPE_LABELS[ext] || ext.toUpperCase();
                 return (
                   <tr key={log.id} className={`import-row-${log.status}`}>
-                    <td className="import-filename">{log.fileName}</td>
-                    <td><span className="import-filetype">{fileType}</span></td>
                     <td>
                       <span
                         className="import-source-badge"
@@ -200,7 +220,7 @@ export default function ImportPage() {
                         {SOURCE_LABELS[log.source] || log.source}
                       </span>
                     </td>
-                    <td className="import-cabinet">{log.cabinetName || (log.cabinetId ? 'Каб.' : '—')}</td>
+                    <td className="import-filename"><span>{log.fileName}</span><small>{fileType}</small></td>
                     <td className="import-period">{formatPeriod(log)}</td>
                     <td className="import-count">{log.rowCount.toLocaleString('ru-RU')}</td>
                     <td className="import-date">{formatDate(log.uploadedAt)}</td>

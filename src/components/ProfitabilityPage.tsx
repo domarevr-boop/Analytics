@@ -1,9 +1,18 @@
 import { useState, useMemo, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getProfitabilityRecords, getCabinets, getGroups, getProducts, getMemberships, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, UNGROUPED_GROUP_ID, getMetrics, getProfitabilityRecords } from '../data/store';
 import { subscribeExtraExpenses, getExtraExpensesVersion, getExtraExpenses, setExtraExpense } from '../data/profitStore';
+import FilterBar from './FilterBar';
+import type { FilterBarProps } from './FilterBar';
+import { getFilteredProductIds, hasProductFilters, isUngroupedFilter } from '../data/productFilters';
+import { getReportGrossProfit } from '../data/profitabilityCalculations';
+import DateRangeFilter from './DateRangeFilter';
+import type { DatePeriod } from '../data/mock';
 
 function pad(n: number) { return n < 10 ? '0' + n : '' + n; }
-function todayStr() { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function todayDate() {
+  const date = new Date();
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 function monthStart(m: string) { return m + '-01'; }
 function monthEnd(m: string) { const d = new Date(+m.split('-')[0], +m.split('-')[1], 0); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
 
@@ -22,48 +31,51 @@ interface ProfitNode {
   cabinetId: string;
 }
 
-const PRESETS = [
-  { label: 'Текущий месяц', days: 'month' },
-  { label: '7 дней', days: 7 },
-  { label: '14 дней', days: 14 },
-  { label: '30 дней', days: 30 },
-  { label: '90 дней', days: 90 },
-] as const;
-
-function addDays(dateStr: string, days: number) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
-
-export default function ProfitabilityPage() {
+export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
   const eeVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
 
   const now = new Date();
   const curMonth = now.getFullYear() + '-' + pad(now.getMonth() + 1);
-  const [dateFrom, setDateFrom] = useState(() => monthStart(curMonth));
-  const [dateTo, setDateTo] = useState(() => monthEnd(curMonth));
-  const [presetLabel, setPresetLabel] = useState('Текущий месяц');
-
-  const period = { start: dateFrom, end: dateTo };
-  const extraExpenses = useMemo(() => getExtraExpenses(), [eeVersion]);
+  const [period, setPeriod] = useState<DatePeriod>(() => ({
+    start: monthStart(curMonth),
+    end: monthEnd(curMonth),
+  }));
+  const currentMonth = period.start.slice(0, 7);
+  const extraExpenses = useMemo(() => getExtraExpenses(currentMonth), [eeVersion, currentMonth]);
 
   const tree = useMemo(() => {
     const cabinets = getCabinets();
     const groups = getGroups();
     const products = getProducts();
     const memberships = getMemberships();
-    const allProfitability = getProfitabilityRecords();
+    const allMetrics = getMetrics();
+    const profitabilityRecords = getProfitabilityRecords();
+    const filteredProductIds = getFilteredProductIds(products, memberships, filterProps);
+    const filteredProducts = products.filter(product => filteredProductIds.has(product.id));
+    const filtering = hasProductFilters(filterProps);
 
-    // Match profitability records whose period_start falls within the selected range
+    // The profitability report is the source of truth for revenue and margin.
+    // Daily metrics remain only a fallback for months without that report.
     const prodMap = new Map<string, { revenue: number; profit: number }>();
-    for (const r of allProfitability) {
-      if (r.period_start >= period.start && r.period_start <= period.end) {
-        const cur = prodMap.get(r.product_id) || { revenue: 0, profit: 0 };
-        cur.revenue += r.profit_revenue || 0;
-        cur.profit += r.actual_profit || 0;
-        prodMap.set(r.product_id, cur);
+    const reportProductIds = new Set<string>();
+    for (const record of profitabilityRecords) {
+      if (record.period_end < period.start || record.period_start > period.end) continue;
+      const cur = prodMap.get(record.product_id) || { revenue: 0, profit: 0 };
+      cur.revenue += record.profit_revenue;
+      cur.profit += getReportGrossProfit(record);
+      prodMap.set(record.product_id, cur);
+      reportProductIds.add(record.product_id);
+    }
+    for (const m of allMetrics) {
+      if (reportProductIds.has(m.product_id)) continue;
+      if (m.date >= period.start && m.date <= period.end) {
+        const cur = prodMap.get(m.product_id) || { revenue: 0, profit: 0 };
+        const revenue = m.profit_revenue || 0;
+        const profit = revenue - (m.cost || 0) - (m.agent_fee || 0) - (m.logistics_cost || 0) - (m.marketing_cost || 0) - (m.storage_cost || 0);
+        cur.revenue += revenue;
+        cur.profit += profit;
+        prodMap.set(m.product_id, cur);
       }
     }
 
@@ -88,14 +100,21 @@ export default function ProfitabilityPage() {
     };
 
     for (const cab of cabinets) {
-      const cabGroups = groups.filter(g => g.cabinet_id === cab.id);
+      if (filterProps.cabinetFilter && cab.id !== filterProps.cabinetFilter) continue;
+      if (filtering && !filteredProducts.some(product => product.cabinet_id === cab.id)) continue;
+
+      const cabGroups = groups.filter(group =>
+        group.cabinet_id === cab.id
+        && (!filterProps.groupFilter || group.id === filterProps.groupFilter)
+      );
       const groupData: { grp: typeof groups[0]; rev: number; prof: number }[] = [];
 
       for (const grp of cabGroups) {
         let rev = 0, prof = 0;
-        const grpProducts = products.filter(p =>
+        const grpProducts = filteredProducts.filter(p =>
           memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
         );
+        if (filtering && grpProducts.length === 0) continue;
         addProductNodes(grp.id, grpProducts, 2);
         for (const p of grpProducts) {
           const d = prodMap.get(p.id) || { revenue: 0, profit: 0 };
@@ -116,10 +135,12 @@ export default function ProfitabilityPage() {
         cabRev += rev; cabProf += prof;
       }
 
-      const ungroupedProducts = products.filter(p =>
-        ungroupedIds.has(p.id) && p.cabinet_id === cab.id && !productSet.has(p.id)
+      const ungroupedProducts = filteredProducts.filter(p =>
+        p.cabinet_id === cab.id
+        && !productSet.has(p.id)
+        && (ungroupedIds.has(p.id) || !memberships.some(membership => membership.product_id === p.id))
       );
-      if (ungroupedProducts.length > 0) {
+      if ((!filterProps.groupFilter || isUngroupedFilter(filterProps.groupFilter)) && ungroupedProducts.length > 0) {
         let rev = 0, prof = 0;
         addProductNodes(cab.id + '-' + UNGROUPED_GROUP_ID, ungroupedProducts, 2);
         for (const p of ungroupedProducts) {
@@ -142,7 +163,7 @@ export default function ProfitabilityPage() {
     }
 
     return nodes;
-  }, [version, period]);
+  }, [version, period, filterProps]);
 
   const summary = useMemo(() => {
     const cabs = tree.filter(n => n.type === 'cabinet');
@@ -178,17 +199,18 @@ export default function ProfitabilityPage() {
 
   const visible = useMemo(() => {
     const result: ProfitNode[] = [];
+    const filtering = hasProductFilters(filterProps);
     const expandedCabs = new Set(tree.filter(n => n.type === 'cabinet' && expanded.has(n.id)).map(n => n.id));
     const expandedGroups = new Set(tree.filter(n => n.type === 'group' && expanded.has(n.id)).map(n => n.id));
 
     for (const n of tree) {
       if (n.type === 'cabinet') {
         result.push(n);
-        if (expandedCabs.has(n.id)) {
+        if (filtering || expandedCabs.has(n.id)) {
           for (const child of tree) {
             if (child.parent === n.id && child.type === 'group') {
               result.push(child);
-              if (expandedGroups.has(child.id)) {
+              if (filtering || expandedGroups.has(child.id)) {
                 for (const grandChild of tree) {
                   if (grandChild.parent === child.id) result.push(grandChild);
                 }
@@ -199,28 +221,15 @@ export default function ProfitabilityPage() {
       }
     }
     return result;
-  }, [tree, expanded]);
+  }, [tree, expanded, filterProps]);
 
   return (
     <div className="profit-page">
-      <div className="profit-date-range">
-        <span className="profit-date-label">Период:</span>
-        <span className="profit-date-preset-label">{presetLabel}</span>
-        <input type="date" className="daterange-input" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPresetLabel(''); }} />
-        <span className="daterange-sep">—</span>
-        <input type="date" className="daterange-input" value={dateTo} onChange={e => { setDateTo(e.target.value); setPresetLabel(''); }} />
-        <span className="nav-sep">|</span>
-        {PRESETS.map(p => (
-          <span key={p.label} className="profit-preset" onClick={() => {
-            if (p.days === 'month') {
-              const m = new Date().getFullYear() + '-' + pad(new Date().getMonth() + 1);
-              setDateFrom(monthStart(m)); setDateTo(monthEnd(m));
-            } else {
-              setDateTo(todayStr()); setDateFrom(addDays(todayStr(), -(p.days - 1)));
-            }
-            setPresetLabel(p.label);
-          }}>{p.label}</span>
-        ))}
+      <div className="table-toolbar workspace-toolbar profit-toolbar">
+        <div className="date-filters">
+          <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={todayDate()} />
+        </div>
+        <FilterBar {...filterProps} variant="dashboard" />
       </div>
 
       <div className="profit-summary">
@@ -247,7 +256,7 @@ export default function ProfitabilityPage() {
       </div>
 
       <div className="profit-expenses">
-        <span className="profit-expenses-title">Доп. расходы по кабинетам:</span>
+        <span className="profit-expenses-title">Доп. расходы за {currentMonth}:</span>
         {tree.filter(n => n.type === 'cabinet').length === 0 && <span className="profit-expenses-empty">Нет кабинетов</span>}
         {tree.filter(n => n.type === 'cabinet').map(cab => (
           <div key={cab.id} className="profit-expense-item">
@@ -257,7 +266,7 @@ export default function ProfitabilityPage() {
               className="profit-expense-input"
               min="0" max="100" step="0.1"
               value={extraExpenses[cab.cabinetId] || 0}
-              onChange={e => setExtraExpense(cab.cabinetId, parseFloat(e.target.value) || 0)}
+              onChange={e => setExtraExpense(currentMonth, cab.cabinetId, parseFloat(e.target.value) || 0)}
             />
             <span className="profit-expense-suffix">%</span>
           </div>

@@ -1,58 +1,113 @@
 import { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  Bar,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
-function fmt(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (abs >= 1_000) return Math.round(n / 1_000).toLocaleString('ru-RU') + 'k';
-  return Math.round(n).toLocaleString('ru-RU');
+const CATEGORY_COLORS = ['#2563EB', '#3B82F6', '#14B8A6', '#34D399', '#7DD3FC', '#A7F3D0'];
+
+function fmt(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${Math.round(value / 1_000).toLocaleString('ru-RU')}k`;
+  return Math.round(value).toLocaleString('ru-RU');
 }
 
-function MiniArea({ data, dataKey, color, label, formatter }: {
-  data: { date: string; values: Record<string, number> }[];
-  dataKey: string;
-  color: string;
-  label: string;
-  formatter?: (n: number) => string;
-}) {
-  const chartData = useMemo(() => data.map(d => ({ date: d.date, value: d.values[dataKey] ?? 0 })), [data, dataKey]);
-  const latest = chartData.length ? chartData[chartData.length - 1].value : 0;
-  const first = chartData.length ? chartData[0].value : 0;
-  const pct = first ? ((latest - first) / first * 100).toFixed(1) : null;
+function chartRows(data: { date: string; values: Record<string, number> }[]) {
+  return data.map(point => ({
+    date: point.date,
+    margin: point.values.margin || 0,
+    profit: point.values.profit || 0,
+    adSpend: point.values.ad_spend || 0,
+    drr: point.values.drr || 0,
+  }));
+}
 
+function CategoryOrders({ data }: { data: { name: string; value: number }[] }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  return (
+    <div className="mini-chart overview-donut-card">
+      <div className="mini-chart-header">
+        <span className="mini-chart-label">Сумма заказов по категориям</span>
+      </div>
+      <div className="overview-donut-layout">
+        <div className="overview-donut-chart">
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" innerRadius={47} outerRadius={72} paddingAngle={2}>
+                {data.map((item, index) => <Cell key={item.name} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />)}
+              </Pie>
+              <Tooltip formatter={value => [`${fmt(Number(value || 0))} ₽`, 'Сумма заказов']} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="overview-donut-total"><strong>{fmt(total)} ₽</strong><span>Всего</span></div>
+        </div>
+        <div className="overview-donut-legend">
+          {data.map((item, index) => (
+            <div key={item.name}>
+              <i style={{ background: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }} />
+              <span title={item.name}>{item.name}</span>
+              <strong>{total ? `${(item.value / total * 100).toFixed(1)}%` : '0%'}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfitabilityTrend({ data }: { data: ReturnType<typeof chartRows> }) {
   return (
     <div className="mini-chart">
       <div className="mini-chart-header">
-        <span className="mini-chart-label">{label}</span>
-        <span className="mini-chart-val">{formatter ? formatter(latest) : fmt(latest)}</span>
-        {pct !== null && (
-          <span className={`mini-chart-pct ${+pct >= 0 ? 'up' : 'down'}`}>
-            {+pct >= 0 ? '+' : ''}{pct}%
-          </span>
-        )}
+        <span className="mini-chart-label">Чистая прибыль и рентабельность</span>
       </div>
       <div className="mini-chart-area">
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-            <defs>
-              <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.2} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#9CA3AF' }} tickLine={false} axisLine={{ stroke: '#E5E7EB' }} tickFormatter={d => d.slice(5)} />
-            <YAxis tick={{ fontSize: 9, fill: '#9CA3AF' }} tickLine={false} axisLine={{ stroke: '#E5E7EB' }} width={40} tickFormatter={n => fmt(Number(n))} />
-            <Tooltip
-              contentStyle={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 11 }}
-              labelFormatter={d => d}
-              formatter={value => {
-                const numericValue = Number(value ?? 0);
-                return [formatter ? formatter(numericValue) : fmt(numericValue), label];
-              }}
-            />
-            <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#grad-${dataKey})`} dot={false} />
-          </AreaChart>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF2" />
+            <XAxis dataKey="date" tickFormatter={date => date.slice(5)} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} />
+            <YAxis yAxisId="rub" tickFormatter={value => fmt(Number(value))} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} width={40} />
+            <YAxis yAxisId="pct" orientation="right" tickFormatter={value => `${Number(value).toFixed(0)}%`} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} width={32} />
+            <Tooltip formatter={(value, name) => name === 'margin' ? [`${Number(value || 0).toFixed(1)}%`, 'Рентабельность'] : [`${fmt(Number(value || 0))} ₽`, 'Чистая прибыль']} labelFormatter={date => String(date)} />
+            <Legend formatter={value => value === 'profit' ? 'Чистая прибыль' : 'Рентабельность'} wrapperStyle={{ fontSize: 10 }} />
+            <Bar yAxisId="rub" dataKey="profit" fill="#B9E6D5" radius={[3, 3, 0, 0]} maxBarSize={18} />
+            <Line yAxisId="pct" type="monotone" dataKey="margin" stroke="#10A778" strokeWidth={2.2} dot={false} activeDot={{ r: 4 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function AdvertisingEfficiency({ data }: { data: ReturnType<typeof chartRows> }) {
+  return (
+    <div className="mini-chart">
+      <div className="mini-chart-header">
+        <span className="mini-chart-label">Расходы на рекламу и ДРР</span>
+      </div>
+      <div className="mini-chart-area">
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF2" />
+            <XAxis dataKey="date" tickFormatter={date => date.slice(5)} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} />
+            <YAxis yAxisId="rub" tickFormatter={value => fmt(Number(value))} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} width={40} />
+            <YAxis yAxisId="pct" orientation="right" tickFormatter={value => `${Number(value).toFixed(0)}%`} tick={{ fontSize: 9, fill: '#8A97A8' }} tickLine={false} width={34} />
+            <Tooltip formatter={(value, name) => name === 'drr' ? [`${Number(value || 0).toFixed(1)}%`, 'ДРР'] : [`${fmt(Number(value || 0))} ₽`, 'Расходы']} />
+            <Legend formatter={value => value === 'adSpend' ? 'Расходы' : 'ДРР'} wrapperStyle={{ fontSize: 10 }} />
+            <Bar yAxisId="rub" dataKey="adSpend" fill="#F6C84C" radius={[3, 3, 0, 0]} maxBarSize={18} />
+            <Line yAxisId="pct" type="monotone" dataKey="drr" stroke="#10A778" strokeWidth={2.1} dot={false} activeDot={{ r: 4 }} />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>
@@ -61,14 +116,16 @@ function MiniArea({ data, dataKey, color, label, formatter }: {
 
 interface MiniChartsProps {
   data: { date: string; values: Record<string, number> }[];
+  categoryData: { name: string; value: number }[];
 }
 
-export default function MiniCharts({ data }: MiniChartsProps) {
+export default function MiniCharts({ data, categoryData }: MiniChartsProps) {
+  const rows = useMemo(() => chartRows(data), [data]);
   return (
     <div className="mini-charts-row">
-      <MiniArea data={data} dataKey="profit" color="#10B981" label="Прибыль" />
-      <MiniArea data={data} dataKey="margin" color="#F59E0B" label="Рентабельность" formatter={n => n.toFixed(1) + '%'} />
-      <MiniArea data={data} dataKey="ad_spend" color="#EF4444" label="Расходы на рекламу" />
+      <CategoryOrders data={categoryData} />
+      <ProfitabilityTrend data={rows} />
+      <AdvertisingEfficiency data={rows} />
     </div>
   );
 }

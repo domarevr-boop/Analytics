@@ -1,235 +1,211 @@
-import { useState, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getBrands, getGroups, getMemberships, getProducts as getProductsStore, addCabinet, addGroup, addProduct, UNGROUPED_GROUP_ID } from '../data/store';
-import EntityEditPanel from './EntityEditPanel';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import type { Product } from '../types';
+import {
+  subscribe, getVersion, getCabinets, getBrands, getGroups, getMemberships,
+  getProducts, addProduct, updateProduct,
+} from '../data/store';
+import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
 
-type EntityType = 'cabinet' | 'group' | 'product';
+type QualityFilter = 'all' | 'complete' | 'missing_wb' | 'unassigned' | 'archived';
 
-interface Selected {
-  type: EntityType;
-  id: string;
+function ProductThumb({ product }: { product: Product }) {
+  const urls = product.wb_sku ? getWbImageUrls(product.wb_sku) : [];
+  return (
+    <div className="registry-thumb">
+      <span>{product.sku.slice(0, 1).toUpperCase()}</span>
+      {urls[0] && (
+        <img
+          src={urls[0]}
+          alt=""
+          loading="lazy"
+          data-url-index="0"
+          onLoad={event => rememberWbImageUrl(product.wb_sku, event.currentTarget.currentSrc || event.currentTarget.src)}
+          onError={event => {
+            const image = event.currentTarget;
+            const nextIndex = Number(image.dataset.urlIndex || '0') + 1;
+            if (nextIndex < urls.length) {
+              image.dataset.urlIndex = String(nextIndex);
+              image.src = urls[nextIndex];
+            } else {
+              image.style.display = 'none';
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductEditor({ product, onClose }: { product: Product; onClose: () => void }) {
+  const brands = getBrands();
+  const cabinets = getCabinets();
+  const groups = getGroups();
+  const membership = getMemberships().find(item => item.product_id === product.id);
+  const [form, setForm] = useState({
+    sku: product.sku,
+    wb_sku: product.wb_sku || '',
+    name: product.name || '',
+    category: product.category || '',
+    brand_id: product.brand_id || '',
+    cabinet_id: product.cabinet_id || '',
+    group_id: membership?.group_id || '',
+    aliases: (product.aliases || []).join(', '),
+    status: product.status || 'active',
+  });
+
+  useEffect(() => {
+    setForm({
+      sku: product.sku,
+      wb_sku: product.wb_sku || '',
+      name: product.name || '',
+      category: product.category || '',
+      brand_id: product.brand_id || '',
+      cabinet_id: product.cabinet_id || '',
+      group_id: membership?.group_id || '',
+      aliases: (product.aliases || []).join(', '),
+      status: product.status || 'active',
+    });
+  }, [product.id]);
+
+  const setField = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
+  const save = () => {
+    updateProduct(product.id, {
+      sku: form.sku.trim(),
+      wb_sku: form.wb_sku.trim(),
+      name: form.name.trim(),
+      category: form.category.trim(),
+      brand_id: form.brand_id,
+      cabinet_id: form.cabinet_id,
+      group_id: form.group_id,
+      aliases: [...new Set(form.aliases.split(',').map(value => value.trim()).filter(Boolean))],
+      status: form.status as Product['status'],
+      data_source: 'manual',
+    });
+    onClose();
+  };
+
+  return (
+    <aside className="registry-editor">
+      <div className="registry-editor-head">
+        <div>
+          <span className="registry-eyebrow">Карточка товара</span>
+          <h2>{product.sku}</h2>
+        </div>
+        <button className="registry-icon-btn" onClick={onClose} aria-label="Закрыть">×</button>
+      </div>
+      <div className="registry-editor-preview">
+        <ProductThumb product={{ ...product, wb_sku: form.wb_sku }} />
+        <div><strong>{form.name || form.sku}</strong><span>ID: {product.id}</span></div>
+      </div>
+      <div className="registry-form-grid">
+        <label><span>Артикул продавца</span><input value={form.sku} onChange={e => setField('sku', e.target.value)} /></label>
+        <label><span>Артикул WB</span><input value={form.wb_sku} onChange={e => setField('wb_sku', e.target.value)} /></label>
+        <label className="registry-field-wide"><span>Название</span><input value={form.name} onChange={e => setField('name', e.target.value)} /></label>
+        <label><span>Категория</span><input value={form.category} onChange={e => setField('category', e.target.value)} /></label>
+        <label><span>Бренд</span><select value={form.brand_id} onChange={e => setField('brand_id', e.target.value)}><option value="">Не указан</option>{brands.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label><span>Кабинет</span><select value={form.cabinet_id} onChange={e => setField('cabinet_id', e.target.value)}><option value="">Не назначен</option>{cabinets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label><span>Склейка / группа</span><select value={form.group_id} onChange={e => setField('group_id', e.target.value)}><option value="">Без склейки</option>{groups.filter(item => !form.cabinet_id || item.cabinet_id === form.cabinet_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="registry-field-wide"><span>Исторические артикулы и алиасы</span><textarea value={form.aliases} onChange={e => setField('aliases', e.target.value)} placeholder="Через запятую" /></label>
+        <label><span>Статус</span><select value={form.status} onChange={e => setField('status', e.target.value)}><option value="active">Активен</option><option value="archived">Архив</option></select></label>
+      </div>
+      <div className="registry-editor-actions">
+        <button className="dict-btn" onClick={onClose}>Отмена</button>
+        <button className="dict-btn dict-btn-primary" onClick={save}>Сохранить</button>
+      </div>
+    </aside>
+  );
 }
 
 export default function DictionaryPage() {
   const version = useSyncExternalStore(subscribe, getVersion);
-  void version;
-  const cabinets = getCabinets();
-  const brands = getBrands();
-  const groups = getGroups();
-  const products = getProductsStore();
-  const memberships = getMemberships();
-  const [selected, setSelected] = useState<Selected | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(cabinets.map(c => c.id)));
-  const [addingGroup, setAddingGroup] = useState<string | null>(null);
-  const [addingProduct, setAddingProduct] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [addingCabinet, setAddingCabinet] = useState(false);
-  const [newCabinetName, setNewCabinetName] = useState('');
+  const products = useMemo(() => getProducts(), [version]);
+  const brands = useMemo(() => getBrands(), [version]);
+  const cabinets = useMemo(() => getCabinets(), [version]);
+  const groups = useMemo(() => getGroups(), [version]);
+  const memberships = useMemo(() => getMemberships(), [version]);
+  const [query, setQuery] = useState('');
+  const [quality, setQuality] = useState<QualityFilter>('all');
+  const [cabinetId, setCabinetId] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const toggle = (id: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
+  const brandMap = useMemo(() => new Map(brands.map(item => [item.id, item.name])), [brands]);
+  const cabinetMap = useMemo(() => new Map(cabinets.map(item => [item.id, item.name])), [cabinets]);
+  const groupMap = useMemo(() => new Map(groups.map(item => [item.id, item.name])), [groups]);
+  const membershipMap = useMemo(() => new Map(memberships.map(item => [item.product_id, item.group_id])), [memberships]);
+
+  const isComplete = (product: Product) => Boolean(product.sku && product.wb_sku && product.brand_id && product.cabinet_id && product.category);
+  const visibleProducts = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return products.filter(product => {
+      if (cabinetId && product.cabinet_id !== cabinetId) return false;
+      if (quality === 'complete' && !isComplete(product)) return false;
+      if (quality === 'missing_wb' && product.wb_sku) return false;
+      if (quality === 'unassigned' && product.cabinet_id && membershipMap.get(product.id)) return false;
+      if (quality === 'archived' && product.status !== 'archived') return false;
+      if (quality !== 'archived' && product.status === 'archived') return false;
+      if (!normalizedQuery) return true;
+      return [product.sku, product.wb_sku, product.name, product.category, ...(product.aliases || [])]
+        .some(value => value?.toLowerCase().includes(normalizedQuery));
     });
+  }, [products, query, quality, cabinetId, membershipMap]);
+
+  const stats = {
+    all: products.length,
+    complete: products.filter(isComplete).length,
+    missingWb: products.filter(product => !product.wb_sku).length,
+    unassigned: products.filter(product => !product.cabinet_id || !membershipMap.get(product.id)).length,
   };
+  const selectedProduct = products.find(item => item.id === selectedId);
 
-  const brandMap = new Map(brands.map(b => [b.id, b.name]));
-
-  const selectedEntity = selected
-    ? (selected.type === 'cabinet' ? cabinets.find(c => c.id === selected.id) : null)
-    ?? (selected.type === 'group' ? groups.find(g => g.id === selected.id) : null)
-    ?? (selected.type === 'product' ? products.find(p => p.id === selected.id) : null)
-    : null;
-
-  const handleAddCabinet = () => {
-    const name = newCabinetName.trim();
-    if (!name) return;
-    const cab = addCabinet(name);
-    setNewCabinetName('');
-    setAddingCabinet(false);
-    setExpanded(prev => { const next = new Set(prev); next.add(cab.id); return next; });
-  };
-
-  const handleAddGroup = (cabinetId: string) => {
-    const name = newName.trim();
-    if (!name) return;
-    const grp = addGroup(name, cabinetId);
-    setNewName('');
-    setAddingGroup(null);
-    setExpanded(prev => { const next = new Set(prev); next.add(grp.id); return next; });
-  };
-
-  const handleAddProduct = (_groupId: string) => {
-    const name = newName.trim();
-    if (!name) return;
-    const defaultBrandId = brands[0]?.id || '';
-    addProduct(name, name, defaultBrandId);
-    setNewName('');
-    setAddingProduct(null);
+  const createProduct = () => {
+    const product = addProduct(`NEW-${Date.now()}`, 'Новый товар', brands[0]?.id || '');
+    setSelectedId(product.id);
   };
 
   return (
-    <div className="dict-page">
-      <div className="dict-tree">
-        <div className="dict-tree-header">
-          <span>Справочник</span>
-          <button className="dict-btn dict-btn-sm" onClick={() => setAddingCabinet(true)}>+ Кабинет</button>
+    <div className="registry-page">
+      <header className="registry-header">
+        <div><span className="registry-eyebrow">Единый товарный реестр</span><h1>Справочник товаров</h1><p>Постоянная карточка для всех исторических и будущих импортов.</p></div>
+        <button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>
+      </header>
+      <section className="registry-stats">
+        <button onClick={() => setQuality('all')} className={quality === 'all' ? 'active' : ''}><span>Всего</span><strong>{stats.all}</strong></button>
+        <button onClick={() => setQuality('complete')} className={quality === 'complete' ? 'active' : ''}><span>Полные карточки</span><strong>{stats.complete}</strong></button>
+        <button onClick={() => setQuality('missing_wb')} className={quality === 'missing_wb' ? 'active' : ''}><span>Нет WB ID</span><strong>{stats.missingWb}</strong></button>
+        <button onClick={() => setQuality('unassigned')} className={quality === 'unassigned' ? 'active' : ''}><span>Не распределены</span><strong>{stats.unassigned}</strong></button>
+      </section>
+      <section className="registry-surface">
+        <div className="registry-toolbar">
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по SKU, WB ID, названию или алиасу" />
+          <select value={cabinetId} onChange={e => setCabinetId(e.target.value)}><option value="">Все кабинеты</option>{cabinets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          <select value={quality} onChange={e => setQuality(e.target.value as QualityFilter)}><option value="all">Все активные</option><option value="complete">Полные карточки</option><option value="missing_wb">Без WB ID</option><option value="unassigned">Не распределены</option><option value="archived">Архив</option></select>
+          <span>Найдено: <strong>{visibleProducts.length}</strong></span>
         </div>
-        <div className="dict-tree-scroll">
-          {addingCabinet && (
-            <div className="dict-inline-form">
-              <input value={newCabinetName} onChange={e => setNewCabinetName(e.target.value)} placeholder="Название кабинета" autoFocus />
-              <button className="dict-btn dict-btn-primary dict-btn-xs" onClick={handleAddCabinet}>OK</button>
-              <button className="dict-btn dict-btn-xs" onClick={() => { setAddingCabinet(false); setNewCabinetName(''); }}>✕</button>
-            </div>
-          )}
-          {cabinets.map(cab => {
-            const cabGroups = groups.filter(g => g.cabinet_id === cab.id);
-            const isExp = expanded.has(cab.id);
-            const isSel = selected?.id === cab.id;
-            return (
-              <div key={cab.id}>
-                <div
-                  className={`dict-node dict-cabinet ${isSel ? 'selected' : ''}`}
-                  style={{ paddingLeft: 4 }}
-                  onClick={() => setSelected({ type: 'cabinet', id: cab.id })}
-                >
-                  <span className="dict-toggle" onClick={e => { e.stopPropagation(); toggle(cab.id); }}>
-                    {cabGroups.length ? (isExp ? '−' : '+') : ' '}
-                  </span>
-                  <span className="dict-node-icon">◆</span>
-                  {cab.name}
-                  <span className="dict-add-btn" onClick={e => { e.stopPropagation(); setAddingGroup(cab.id); setNewName(''); }}>
-                    + гр.
-                  </span>
-                </div>
-                {isExp && (
-                  <>
-                    {addingGroup === cab.id && (
-                      <div className="dict-inline-form" style={{ paddingLeft: 28 }}>
-                        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название группы" autoFocus />
-                        <button className="dict-btn dict-btn-primary dict-btn-xs" onClick={() => handleAddGroup(cab.id)}>OK</button>
-                        <button className="dict-btn dict-btn-xs" onClick={() => setAddingGroup(null)}>✕</button>
-                      </div>
-                    )}
-                    {cabGroups.map(grp => {
-                      const grpMemberships = memberships.filter(m => m.group_id === grp.id);
-                      const grpProducts = products.filter(p =>
-                        grpMemberships.some(m => m.product_id === p.id)
-                      );
-                      const isGrpExp = expanded.has(grp.id);
-                      const isGrpSel = selected?.id === grp.id;
-                      return (
-                        <div key={grp.id}>
-                          <div
-                            className={`dict-node dict-group ${isGrpSel ? 'selected' : ''}`}
-                            style={{ paddingLeft: 24 }}
-                            onClick={() => setSelected({ type: 'group', id: grp.id })}
-                          >
-                            <span className="dict-toggle" onClick={e => { e.stopPropagation(); toggle(grp.id); }}>
-                              {grpProducts.length ? (isGrpExp ? '−' : '+') : ' '}
-                            </span>
-                              <span className="dict-node-icon">▦</span>
-                            {grp.name}
-                            <span className="dict-add-btn" onClick={e => { e.stopPropagation(); setAddingProduct(grp.id); setNewName(''); }}>
-                              + тов.
-                            </span>
-                          </div>
-                          {isGrpExp && (
-                            <>
-                              {addingProduct === grp.id && (
-                                <div className="dict-inline-form" style={{ paddingLeft: 48 }}>
-                                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="SKU или название" autoFocus />
-                                  <button className="dict-btn dict-btn-primary dict-btn-xs" onClick={() => handleAddProduct(grp.id)}>OK</button>
-                                  <button className="dict-btn dict-btn-xs" onClick={() => setAddingProduct(null)}>✕</button>
-                                </div>
-                              )}
-                              {grpProducts.map(pr => {
-                                const isPrSel = selected?.id === pr.id;
-                                const brandName = brandMap.get(pr.brand_id) || '';
-                                return (
-                                  <div
-                                    key={pr.id}
-                                    className={`dict-node dict-product ${isPrSel ? 'selected' : ''}`}
-                                    style={{ paddingLeft: 44 }}
-                                    onClick={() => setSelected({ type: 'product', id: pr.id })}
-                                  >
-                                    <span className="dict-toggle"> </span>
-                                    <span className="dict-node-icon">·</span>
-                                    <span className="dict-sku">{pr.sku}</span> {pr.name}
-                                    {brandName && <span className="dict-brand-tag">{brandName}</span>}
-                                  </div>
-                                );
-                              })}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {/* Без склейки */}
-                    {(() => {
-                      const ungroupedProducts = products.filter(p =>
-                        memberships.some(m => m.product_id === p.id && m.group_id === UNGROUPED_GROUP_ID) &&
-                        p.cabinet_id === cab.id
-                      );
-                      if (!ungroupedProducts.length) return null;
-                      const ugId = cab.id + '-' + UNGROUPED_GROUP_ID;
-                      const isUgExp = expanded.has(ugId);
-                      const isUgSel = selected?.id === ugId;
-                      return (
-                        <div key={ugId}>
-                          <div
-                            className={`dict-node dict-group ${isUgSel ? 'selected' : ''}`}
-                            style={{ paddingLeft: 24 }}
-                            onClick={() => setSelected({ type: 'group', id: ugId })}
-                          >
-                            <span className="dict-toggle" onClick={e => { e.stopPropagation(); toggle(ugId); }}>
-                              {ungroupedProducts.length ? (isUgExp ? '−' : '+') : ' '}
-                            </span>
-                              <span className="dict-node-icon">▦</span>
-                            Без склейки
-                          </div>
-                          {isUgExp && ungroupedProducts.map(pr => {
-                            const isPrSel = selected?.id === pr.id;
-                            const brandName = brandMap.get(pr.brand_id) || '';
-                            return (
-                              <div
-                                key={pr.id}
-                                className={`dict-node dict-product ${isPrSel ? 'selected' : ''}`}
-                                style={{ paddingLeft: 44 }}
-                                onClick={() => setSelected({ type: 'product', id: pr.id })}
-                              >
-                                <span className="dict-toggle"> </span>
-                                <span className="dict-node-icon">·</span>
-                                <span className="dict-sku">{pr.sku}</span> {pr.name}
-                                {brandName && <span className="dict-brand-tag">{brandName}</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </>
-                )}
-              </div>
-            );
-          })}
-          {!cabinets.length && (
-            <div style={{ padding: 16, color: '#9CA3AF' }}>Нет данных</div>
-          )}
+        <div className="registry-table-wrap">
+          <table className="registry-table">
+            <thead><tr><th>Товар</th><th>Артикул продавца</th><th>WB ID</th><th>Категория</th><th>Бренд</th><th>Кабинет</th><th>Склейка</th><th>Качество</th></tr></thead>
+            <tbody>
+              {visibleProducts.map(product => {
+                const complete = isComplete(product);
+                return (
+                  <tr key={product.id} onClick={() => setSelectedId(product.id)}>
+                    <td><div className="registry-product-cell"><ProductThumb product={product} /><div><strong>{product.name || product.sku}</strong><span>{product.aliases?.length ? `Алиасов: ${product.aliases.length}` : 'Без алиасов'}</span></div></div></td>
+                    <td><strong>{product.sku}</strong></td>
+                    <td>{product.wb_sku || <span className="registry-missing">Не указан</span>}</td>
+                    <td>{product.category || '—'}</td>
+                    <td>{brandMap.get(product.brand_id) || '—'}</td>
+                    <td>{cabinetMap.get(product.cabinet_id) || '—'}</td>
+                    <td>{groupMap.get(membershipMap.get(product.id) || '') || 'Без склейки'}</td>
+                    <td><span className={`registry-status ${complete ? 'complete' : 'attention'}`}>{complete ? 'Полная' : 'Требует данных'}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!visibleProducts.length && <div className="registry-empty">Товары по выбранным условиям не найдены.</div>}
         </div>
-      </div>
-      <div className="dict-edit">
-        {selectedEntity ? (
-          <EntityEditPanel
-            type={selected!.type}
-            entity={selectedEntity}
-            onClose={() => setSelected(null)}
-          />
-        ) : (
-          <div className="dict-edit-empty">Выберите элемент в дереве слева</div>
-        )}
-      </div>
+      </section>
+      {selectedProduct && <ProductEditor product={selectedProduct} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

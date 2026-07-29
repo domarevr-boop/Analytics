@@ -17,11 +17,13 @@ interface DropdownGroup {
 const GROUPS: DropdownGroup[] = [
   {
     label: 'Аналитика',
-    matchPages: ['funnel', 'entry-points', 'search-phrases'],
+    matchPages: ['funnel', 'entry-points', 'search-phrases', 'niche', 'geography'],
     items: [
+      { page: 'geography', label: 'География заказов' },
       { page: 'funnel', label: 'Воронка' },
       { page: 'entry-points', label: 'Точки входа' },
       { page: 'search-phrases', label: 'Поисковые фразы' },
+      { page: 'niche', label: 'Динамика ниши' },
     ],
   },
   {
@@ -104,10 +106,16 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: 
             onClick={() => navigate('import')}
           >Импорт</span>
           {showAdmin && (
-            <span
-              className={`nav-tab ${activePage === 'admin' ? 'active' : ''}`}
-              onClick={() => navigate('admin')}
-            >Админ</span>
+            <>
+              <span
+                className={`nav-tab ${activePage === 'admin' ? 'active' : ''}`}
+                onClick={() => navigate('admin')}
+              >Админ</span>
+              <span
+                className={`nav-tab ${activePage === 'dev' ? 'active' : ''}`}
+                onClick={() => navigate('dev')}
+              >Разработка</span>
+            </>
           )}
         </div>
       </div>

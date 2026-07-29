@@ -1,14 +1,59 @@
+import { useMemo, useSyncExternalStore } from 'react';
+import { getMemberships, getMetrics, getProducts, getVersion, subscribe } from '../data/store';
+import { getFilteredProductIds } from '../data/productFilters';
 import type { ChartDataPoint } from '../hooks/useChartData';
 import MiniCharts from './MiniCharts';
 
 interface MiniChartsBlockProps {
   data: ChartDataPoint[];
+  periodStart: string;
+  periodEnd: string;
+  cabinetFilter?: string;
+  categoryFilter?: string;
+  brandFilter?: string;
+  groupFilter?: string;
+  skuFilter?: string;
 }
 
-export default function MiniChartsBlock({ data }: MiniChartsBlockProps) {
+export default function MiniChartsBlock({
+  data,
+  periodStart,
+  periodEnd,
+  cabinetFilter,
+  categoryFilter,
+  brandFilter,
+  groupFilter,
+  skuFilter,
+}: MiniChartsBlockProps) {
+  const version = useSyncExternalStore(subscribe, getVersion);
+  const categoryData = useMemo(() => {
+    const products = getProducts();
+    const productIds = getFilteredProductIds(products, getMemberships(), {
+      cabinetFilter,
+      categoryFilter,
+      brandFilter,
+      groupFilter,
+      skuFilter,
+    });
+    const productById = new Map(products.map(product => [product.id, product]));
+    const totals = new Map<string, number>();
+
+    getMetrics().forEach(metric => {
+      if (!productIds.has(metric.product_id) || metric.date < periodStart || metric.date > periodEnd) return;
+      const category = productById.get(metric.product_id)?.category || 'Без категории';
+      totals.set(category, (totals.get(category) || 0) + metric.ordered_amount);
+    });
+
+    return [...totals.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0)
+      .sort((left, right) => right.value - left.value)
+      .slice(0, 6);
+  }, [version, periodStart, periodEnd, cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter]);
+
   return (
     <div className="mini-charts-block">
-      <MiniCharts data={data} />
+      <MiniCharts data={data} categoryData={categoryData} />
     </div>
   );
 }

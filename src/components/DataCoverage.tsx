@@ -1,103 +1,61 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getMetrics } from '../data/store';
+import { getEntryPoints, getGeographyOrders, getMetrics, getMonthlyPlans, getNicheDynamics, getProfitabilityRecords, getSearchQueries, getVersion, subscribe } from '../data/store';
 
-function fmt(d: string) {
-  const [y, m, day] = d.split('-');
-  return `${day}.${m}.${y}`;
+function fmt(date: string) {
+  const [year, month, day] = date.split('-');
+  return `${day}.${month}.${year}`;
 }
 
-function addDays(d: string, n: number): string {
-  const dt = new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)));
-  dt.setDate(dt.getDate() + n);
-  const y = dt.getFullYear();
-  const mo = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${dd}`;
+function addDays(date: string, amount: number): string {
+  const value = new Date(`${date}T00:00:00`);
+  value.setDate(value.getDate() + amount);
+  return value.toISOString().slice(0, 10);
 }
 
 function eachDay(from: string, to: string): string[] {
   const days: string[] = [];
-  let cur = from;
-  while (cur <= to) {
-    days.push(cur);
-    cur = addDays(cur, 1);
-  }
+  for (let current = from; current <= to; current = addDays(current, 1)) days.push(current);
   return days;
 }
 
-const SOURCE_KEYS: { key: string; label: string; test: (m: import('../types').DailyMetrics) => boolean }[] = [
-  { key: 'wb_funnel', label: 'Воронка WB', test: m => m.ordered_amount > 0 || m.impressions > 0 },
-  { key: 'xway', label: 'XWay Реклама', test: m => m.ad_spend > 0 },
-  { key: 'profitability', label: 'Рентабельность', test: m => m.actual_profit !== 0 || m.actual_margin !== 0 },
-];
+function coverage(key: string, label: string, values: Iterable<string>) {
+  const dates = [...new Set(values)].filter(Boolean).sort();
+  if (!dates.length) return { key, label, start: '', end: '', dayCount: 0, rangeDays: 0, gaps: 0 };
+  const start = dates[0];
+  const end = dates.at(-1)!;
+  const fullRange = eachDay(start, end);
+  const present = new Set(dates);
+  return { key, label, start, end, dayCount: dates.length, rangeDays: fullRange.length, gaps: fullRange.filter(date => !present.has(date)).length };
+}
 
 export default function DataCoverage() {
   const version = useSyncExternalStore(subscribe, getVersion);
-
   const rows = useMemo(() => {
     const metrics = getMetrics();
-    if (!metrics.length) return [];
-
-    return SOURCE_KEYS.map(sk => {
-      const dates = new Set<string>();
-      for (const m of metrics) {
-        if (sk.test(m)) dates.add(m.date);
-      }
-      if (!dates.size) return { ...sk, start: '', end: '', dayCount: 0, rangeDays: 0, gaps: 0 };
-
-      const sorted = [...dates].sort();
-      const start = sorted[0];
-      const end = sorted[sorted.length - 1];
-      const dayCount = sorted.length;
-      const allDays = eachDay(start, end);
-      const rangeDays = allDays.length;
-      const present = new Set(sorted);
-      const gaps = allDays.filter(d => !present.has(d)).length;
-
-      return { ...sk, start, end, dayCount, rangeDays, gaps };
-    });
+    const profitabilityDates: string[] = [];
+    for (const record of getProfitabilityRecords()) profitabilityDates.push(...eachDay(record.period_start, record.period_end || record.period_start));
+    const planDates: string[] = [];
+    for (const month of new Set(getMonthlyPlans().map(record => record.month))) {
+      const [year, monthNumber] = month.split('-').map(Number);
+      const end = new Date(year, monthNumber, 0).toISOString().slice(0, 10);
+      planDates.push(...eachDay(`${month}-01`, end));
+    }
+    return [
+      coverage('wb_funnel', 'Воронка WB', metrics.filter(item => item.ordered_amount > 0 || item.impressions > 0).map(item => item.date)),
+      coverage('xway', 'XWay Реклама', metrics.filter(item => item.ad_spend > 0 || item.ad_impressions > 0).map(item => item.date)),
+      coverage('profitability', 'Рентабельность', profitabilityDates),
+      coverage('geography', 'География заказов', getGeographyOrders().map(item => item.date)),
+      coverage('entry_points', 'Точки входа', getEntryPoints().map(item => item.date)),
+      coverage('search_queries', 'Поисковые запросы WB', getSearchQueries().map(item => item.date)),
+      coverage('niche_dynamics', 'Динамика ниши', getNicheDynamics().map(item => item.date)),
+      coverage('plan_template', 'План', planDates),
+    ];
   }, [version]);
 
-  if (!rows.length) return null;
+  if (!rows.some(row => row.dayCount > 0)) return null;
 
-  const hasAny = rows.some(r => r.dayCount > 0);
-  if (!hasAny) return null;
-
-  return (
-    <div className="data-coverage">
-      <h3 className="coverage-title">Покрытие данных</h3>
-      <table className="coverage-table">
-        <thead>
-          <tr>
-            <th>Тип</th>
-            <th>Период</th>
-            <th>Дней</th>
-            <th>Покрытие</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.key}>
-              <td className="coverage-source">{r.label}</td>
-              <td className="coverage-range">
-                {r.dayCount > 0 ? (
-                  r.start === r.end
-                    ? fmt(r.start)
-                    : `${fmt(r.start)} — ${fmt(r.end)}`
-                ) : '—'}
-              </td>
-              <td className="coverage-count">{r.dayCount > 0 ? `${r.dayCount}/${r.rangeDays}` : '—'}</td>
-              <td className={`coverage-pct ${r.gaps > 0 ? 'has-gaps' : 'full'}`}>
-                {r.dayCount > 0 ? (
-                  r.gaps > 0
-                    ? `есть пропуски (${r.gaps} дн.)`
-                    : 'нет пропусков'
-                ) : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <div className="data-coverage">
+    <div className="import-section-head"><div><h3 className="coverage-title">Покрытие данных</h3><p>Фактически сохранённый период и наличие пропущенных дней</p></div></div>
+    <table className="coverage-table"><thead><tr><th>Отчёт</th><th>Период данных</th><th>Дней</th><th>Покрытие</th></tr></thead><tbody>{rows.map(row => <tr key={row.key} className={!row.dayCount ? 'coverage-empty-row' : ''}><td className="coverage-source">{row.label}</td><td className="coverage-range">{row.dayCount ? row.start === row.end ? fmt(row.start) : `${fmt(row.start)} — ${fmt(row.end)}` : 'Нет данных'}</td><td className="coverage-count">{row.dayCount ? `${row.dayCount}/${row.rangeDays}` : '—'}</td><td className={`coverage-pct ${row.gaps > 0 ? 'has-gaps' : row.dayCount ? 'full' : ''}`}>{row.dayCount ? row.gaps ? `Есть пропуски: ${row.gaps} дн.` : 'Нет пропусков' : 'Отчёт ещё не загружен'}</td></tr>)}</tbody></table>
+  </div>;
 }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 
 const METRICS = [
+  { key: 'fact_orders', label: 'Заказы, руб.' },
   { key: 'orders', label: 'Заказы' },
   { key: 'revenue', label: 'Выручка' },
   { key: 'profit', label: 'Прибыль' },

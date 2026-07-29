@@ -1,10 +1,12 @@
-import { useState, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useState, useMemo, useSyncExternalStore } from 'react';
 import type { MetricValues, TableRow } from '../types';
 import type { DailyMetrics } from '../types';
 import { subscribe, getVersion, getProducts, getMetrics, getProfitabilityRecords } from '../data/store';
 import { getTableData, sumForProduct, toMetrics as mockToMetrics, getPlanMap } from '../data/mock';
 import type { DatePeriod } from '../data/mock';
-import { getWbImageUrls } from '../data/images';
+import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
+import { getCabinetExtraExpense } from '../data/profitStore';
+import { getReportNetProfit } from '../data/profitabilityCalculations';
 
 const emptyMetrics = (): MetricValues => ({ impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, avg_price: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, plan_orders_qty: 0, plan_sum: 0, plan_price: 0, plan_net_profit: 0, plan_profitability: 0, plan_revenue: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 });
 const addTo = (a: MetricValues, b: MetricValues) => {
@@ -29,14 +31,16 @@ function pctChange(curr: number, prev: number): number | null {
   return ((curr - prev) / prev) * 100;
 }
 
-const HEADER_GROUPS = [
+export const TABLE_METRIC_GROUPS = [
   { label: 'Бизнес метрики', keys: ['fact_orders', 'orders', 'avg_price', 'profit', 'margin'] as const },
-  { label: 'Воронка', keys: ['impressions', 'clicks', 'ctr', 'carts', 'cr_cart', 'cr_order'] as const },
   { label: 'Реклама', keys: ['ad_spend', 'drr'] as const },
+  { label: 'Воронка', keys: ['impressions', 'clicks', 'ctr', 'carts', 'cr_cart', 'cr_order'] as const },
   { label: 'Финансы', keys: ['revenue'] as const },
 ];
 
-const LABELS: Record<string, string> = {
+export type TableMetricKey = typeof TABLE_METRIC_GROUPS[number]['keys'][number];
+
+export const TABLE_METRIC_LABELS: Record<TableMetricKey, string> = {
   impressions: 'Показы', clicks: 'Клики', ctr: 'CTR',
   carts: 'Корзины', cr_cart: 'CR корз', orders: 'Заказы, шт', cr_order: 'CR зак',
   fact_orders: 'Факт заказов', avg_price: 'Средняя цена',
@@ -59,7 +63,7 @@ const METRIC_CFG: Record<string, { suffix: string; decimals: boolean; rev: boole
   carts: { suffix: '', decimals: false, rev: false, primary: false },
   cr_cart: { suffix: '%', decimals: true, rev: false, primary: false },
   cr_order: { suffix: '%', decimals: true, rev: false, primary: false },
-  ad_spend: { suffix: ' ₽', decimals: false, rev: false, primary: false },
+  ad_spend: { suffix: ' ₽', decimals: false, rev: true, primary: false },
   drr: { suffix: '%', decimals: true, rev: true, primary: false },
   revenue: { suffix: ' ₽', decimals: false, rev: false, primary: true },
 };
@@ -118,11 +122,14 @@ function addAggDay(a: AggDay, b: AggDay): AggDay {
 
 interface Props {
   cabinetFilter: string;
+  categoryFilter: string;
   brandFilter: string;
   groupFilter: string;
   skuFilter: string;
   periodA: DatePeriod;
   periodB: DatePeriod;
+  visibleMetrics?: TableMetricKey[];
+  onProductOpen?: (productId: string) => void;
 }
 
 const CHART_BAR_W = 18;
@@ -130,6 +137,7 @@ const CHART_BAR_H = 24;
 const CHART_LABEL_H = 12;
 const CHART_H = CHART_BAR_H + CHART_LABEL_H;
 const CHART_W = 7 * CHART_BAR_W;
+const TREND_METRICS = new Set(['ctr', 'cr_cart', 'cr_order', 'drr', 'margin']);
 
 function formatDateLabel(dateStr: string): string {
   const p = dateStr.split('-');
@@ -142,20 +150,55 @@ function MiniBarChart({ values, dates, metricKey }: { values: number[]; dates: s
   const maxVal = Math.max(...values, 1);
   const cfg = METRIC_CFG[metricKey];
   const fmt = (v: number) => (cfg.decimals ? f1(v) : f(v)) + cfg.suffix;
+  const isTrend = TREND_METRICS.has(metricKey);
+  const minValue = Math.min(...values, 0);
+  const maxValue = Math.max(...values, 0);
+  const spread = Math.max(maxValue - minValue, 0.1);
+  const trendMin = minValue - spread * 0.12;
+  const trendMax = maxValue + spread * 0.12;
+  const trendRange = trendMax - trendMin;
+  const trendPoints = values.map((value, index) => ({
+    x: index * CHART_BAR_W + 7,
+    y: CHART_BAR_H - ((value - trendMin) / trendRange) * (CHART_BAR_H - 3) - 1,
+  }));
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
       <svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`} style={{ display: 'block' }}>
-        {values.map((v, i) => {
-          const barH = Math.max((v / maxVal) * CHART_BAR_H, 1);
-          const x = i * CHART_BAR_W;
-          return (
-            <rect key={i} x={x} y={CHART_BAR_H - barH} width={14} height={barH}
-              fill="var(--color-primary)" rx={1}
-              onMouseEnter={() => setHover({ text: fmt(v), cx: x + 5 })}
-              onMouseLeave={() => setHover(null)}
+        {isTrend ? (
+          <>
+            <polyline
+              points={trendPoints.map((point) => `${point.x},${point.y}`).join(' ')}
+              fill="none"
+              stroke="var(--color-primary)"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
-          );
-        })}
+            {trendPoints.map((point, index) => (
+              <circle
+                key={index}
+                cx={point.x}
+                cy={point.y}
+                r="2.4"
+                fill="var(--color-surface)"
+                stroke="var(--color-primary)"
+                strokeWidth="1.5"
+                onMouseEnter={() => setHover({ text: fmt(values[index]), cx: point.x })}
+                onMouseLeave={() => setHover(null)}
+              />
+            ))}
+          </>
+        ) : values.map((v, i) => {
+            const barH = Math.max((v / maxVal) * CHART_BAR_H, 1);
+            const x = i * CHART_BAR_W;
+            return (
+              <rect key={i} x={x} y={CHART_BAR_H - barH} width={14} height={barH}
+                fill="var(--color-primary)" rx={1}
+                onMouseEnter={() => setHover({ text: fmt(v), cx: x + 5 })}
+                onMouseLeave={() => setHover(null)}
+              />
+            );
+          })}
         {dates.map((d, i) => (
           <text key={i} x={i * CHART_BAR_W + 5} y={CHART_H - 2} textAnchor="middle"
             fill="var(--color-text-muted)" fontSize="8" fontFamily="inherit">
@@ -179,29 +222,45 @@ function MiniBarChart({ values, dates, metricKey }: { values: number[]; dates: s
   );
 }
 
-export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter, skuFilter, periodA, periodB }: Props) {
+export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter, periodA, periodB, visibleMetrics, onProductOpen }: Props) {
   const version = useSyncExternalStore(subscribe, getVersion);
   if (import.meta.env.DEV) console.log('[AnalyticsTable] render', { periodA, periodB, version });
   const filters = useMemo(() => {
     const f: Record<string, string> = {};
     if (cabinetFilter) f.cabinetId = cabinetFilter;
+    if (categoryFilter) f.category = categoryFilter;
     if (brandFilter) f.brandId = brandFilter;
     if (groupFilter) f.groupId = groupFilter;
+    if (skuFilter) f.sku = skuFilter;
     return f;
-  }, [cabinetFilter, brandFilter, groupFilter]);
+  }, [cabinetFilter, categoryFilter, brandFilter, groupFilter, skuFilter]);
   const allRows = useMemo(() => {
     const result = getTableData(periodA, periodB, filters);
     if (import.meta.env.DEV) console.log('[AnalyticsTable] allRows computed', { periodA, periodB, filters, rows: result.length });
     return result;
   }, [version, periodA, periodB, filters]);
   const products = useMemo(() => getProducts(), [version]);
-  const skuToWbSku = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of getProducts()) {
-      if (p.wb_sku && p.wb_sku !== p.sku) m.set(p.sku, p.wb_sku);
+  const productToWbSku = useMemo(() => {
+    const result = new Map<string, string>();
+    const baseSkuToWbSku = new Map<string, string>();
+    const normalizeBaseSku = (sku: string) => sku.trim().replace(/-\d+$/, '');
+
+    for (const product of products) {
+      if (product.wb_sku && (product.wb_sku !== product.sku || product.sku.replace(/\D/g, '').length >= 7)) {
+        result.set(product.id, product.wb_sku);
+        const baseSku = normalizeBaseSku(product.sku);
+        if (!baseSkuToWbSku.has(baseSku)) baseSkuToWbSku.set(baseSku, product.wb_sku);
+      }
     }
-    return m;
-  }, [version]);
+
+    for (const product of products) {
+      if (result.has(product.id)) continue;
+      const inheritedWbSku = baseSkuToWbSku.get(normalizeBaseSku(product.sku));
+      if (inheritedWbSku) result.set(product.id, inheritedWbSku);
+    }
+
+    return result;
+  }, [products]);
   const monthStart = useMemo(() => periodA.end.slice(0, 7) + '-01', [periodA]);
   const last7Start = useMemo(() => {
     const d = new Date(periodA.end);
@@ -211,7 +270,33 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set([allRows[0]?.id]));
   const [chartMetrics, setChartMetrics] = useState<Set<string>>(new Set());
+  const [focusedMetric, setFocusedMetric] = useState('');
   const [planMetrics, setPlanMetrics] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const handleKpiSelect = (event: Event) => {
+      const { metricKey, active } = (event as CustomEvent<{ metricKey: string; active?: boolean }>).detail || {};
+      if (!metricKey || !TABLE_METRIC_LABELS[metricKey as TableMetricKey]) return;
+      setFocusedMetric(current => active === false && current === metricKey ? '' : metricKey);
+      setChartMetrics(current => {
+        const next = new Set(current);
+        if (active === false) next.delete(metricKey); else next.add(metricKey);
+        return next;
+      });
+    };
+    window.addEventListener('analytics:kpi-select', handleKpiSelect);
+    return () => window.removeEventListener('analytics:kpi-select', handleKpiSelect);
+  }, []);
+  const visibleMetricSet = useMemo(
+    () => new Set<TableMetricKey>(visibleMetrics || TABLE_METRIC_GROUPS.flatMap(group => [...group.keys])),
+    [visibleMetrics],
+  );
+  const visibleGroups = useMemo(
+    () => TABLE_METRIC_GROUPS
+      .map(group => ({ ...group, keys: group.keys.filter(key => visibleMetricSet.has(key)) }))
+      .filter(group => group.keys.length > 0),
+    [visibleMetricSet],
+  );
 
   const toggleChart = (key: string) => {
     setChartMetrics(prev => {
@@ -304,11 +389,13 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
       if (r.period_start < last7Start || r.period_start > periodA.end) continue;
       const arr = map.get(r.product_id) || [];
       const existing = arr.find(a => a.date === r.period_start);
+      const extraExpensePct = getCabinetExtraExpense(r.period_start.slice(0, 7), products.find(product => product.id === r.product_id)?.cabinet_id || '');
+      const reportProfit = getReportNetProfit(r, extraExpensePct);
       if (existing) {
-        existing.actual_profit += r.actual_profit;
-        existing.profit_revenue += r.profit_revenue;
+        existing.actual_profit = reportProfit;
+        existing.profit_revenue = r.profit_revenue;
       } else {
-        arr.push({ date: r.period_start, impressions: 0, clicks: 0, carts: 0, orders: 0, ordered_amount: 0, buyout_amount: 0, ad_spend: 0, actual_profit: r.actual_profit, profit_revenue: r.profit_revenue });
+        arr.push({ date: r.period_start, impressions: 0, clicks: 0, carts: 0, orders: 0, ordered_amount: 0, buyout_amount: 0, ad_spend: 0, actual_profit: reportProfit, profit_revenue: r.profit_revenue });
         map.set(r.product_id, arr);
       }
     }
@@ -462,7 +549,7 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
     const isGood = change !== null && (cfg.rev ? change < 0 : change >= 0);
 
     return (
-      <td key={key} className="at-td at-mcell">
+      <td key={key} className={`at-td at-mcell${focusedMetric === key ? ' at-metric-focused' : ''}`}>
         <span className={`at-mv${cfg.primary ? ' primary' : ''}`}>{display}</span>
         {change !== null && (
           <span className={`at-mc ${isGood ? 'up' : 'down'} ${Math.abs(change) < 0.01 ? 'flat' : ''}`}>
@@ -478,8 +565,8 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
       <table className="at">
         <thead>
           <tr className="at-header">
-            <th className="at-th at-left-top" rowSpan={2} colSpan={3}></th>
-            {HEADER_GROUPS.map(g => {
+            <th className="at-th at-left-top" rowSpan={2}>Товар / группа</th>
+            {visibleGroups.map(g => {
               const chartExtra = g.keys.filter(k => chartMetrics.has(k)).length;
               const planExtra = g.keys.filter(k => planMetrics.has(k) && PLAN_KEYS.has(k)).length;
               return (
@@ -488,12 +575,12 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
             })}
           </tr>
           <tr className="at-subheader">
-            {HEADER_GROUPS.flatMap(g => g.keys.flatMap(key => {
+            {visibleGroups.flatMap(g => g.keys.flatMap(key => {
               const chartActive = chartMetrics.has(key);
               const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
               return [
-                <th key={key} className={`at-th at-metric${chartActive ? ' at-metric-chart-on' : ''}`}>
-                  {LABELS[key]}
+                <th key={key} className={`at-th at-metric${chartActive ? ' at-metric-chart-on' : ''}${focusedMetric === key ? ' at-metric-focused' : ''}`}>
+                  {TABLE_METRIC_LABELS[key]}
                   <span className={`at-chart-btn${chartActive ? ' active' : ''}`} onClick={() => toggleChart(key)}>
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <rect x="1" y="6" width="2" height="5" rx="0.5" fill="currentColor"/>
@@ -522,45 +609,70 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
             const children = allRows.filter(r => r.parent === row.id);
             const hasChildren = children.length > 0;
             const isExpanded = expanded.has(row.id);
-            const imgSku = row.sku ? (skuToWbSku.get(row.sku) || row.sku) : undefined;
+            const imgSku = row.type === 'product' ? productToWbSku.get(row.id) : undefined;
+            const hasDistinctProductName = row.type !== 'product'
+              || Boolean(row.name?.trim() && row.name.trim() !== row.sku?.trim());
 
             return (
-              <tr key={row.id} className={`at-row at-${row.type}`}>
-                <td className="at-td at-toggle">
-                  {hasChildren && (
-                    <span className="at-expand" onClick={() => toggleRow(row.id)}>
-                      {isExpanded ? '−' : '+'}
-                    </span>
-                  )}
+              <tr key={row.id} className={`at-row at-row-${row.type}`}>
+                <td className="at-td at-product-cell">
+                  <div className="at-product-inner">
+                    <div className="at-product-indent" style={{ width: row.depth * 14 }} />
+                    <button
+                      type="button"
+                      className={`at-expand${hasChildren ? '' : ' at-expand-placeholder'}`}
+                      onClick={() => hasChildren && toggleRow(row.id)}
+                      aria-label={hasChildren ? (isExpanded ? 'Свернуть' : 'Развернуть') : undefined}
+                    >
+                      {hasChildren ? (isExpanded ? '−' : '+') : ''}
+                    </button>
+                    <div className={`at-product-media${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.id)}>
+                      {row.type === 'product' && row.sku ? (
+                        <>
+                          <span className="at-image-fallback" aria-hidden="true">Т</span>
+                          {imgSku && (
+                            <img className="at-photo-img"
+                              src={getWbImageUrls(imgSku)[0] || ''}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              data-url-index="0"
+                              onLoad={e => {
+                                const img = e.currentTarget;
+                                rememberWbImageUrl(imgSku, img.currentSrc || img.src);
+                              }}
+                              onError={e => {
+                                const img = e.currentTarget;
+                                const urls = getWbImageUrls(imgSku);
+                                const nextIndex = Number(img.dataset.urlIndex || '0') + 1;
+                                if (nextIndex < urls.length) {
+                                  img.dataset.urlIndex = String(nextIndex);
+                                  img.src = urls[nextIndex];
+                                } else {
+                                  img.style.display = 'none';
+                                }
+                              }}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <span className={`at-entity-icon at-entity-${row.type}`}>{row.type === 'cabinet' ? 'К' : 'Г'}</span>
+                      )}
+                    </div>
+                    <div className={`at-product-info${hasDistinctProductName ? '' : ' at-product-info-compact'}${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.id)}>
+                      {hasDistinctProductName && <span className={`at-product-name at-product-name-${row.type}`}>{row.name}</span>}
+                      <span className="at-product-meta">
+                        {row.type === 'product'
+                          ? <>
+                              <span className="at-sku-chip">{row.sku}</span>
+                              {imgSku && imgSku !== row.sku && <span className="at-wb-id">WB {imgSku}</span>}
+                            </>
+                          : row.type === 'cabinet' ? 'Кабинет' : 'Группа товаров'}
+                      </span>
+                    </div>
+                  </div>
                 </td>
-                <td className="at-td at-photo">
-                  {row.type === 'product' && row.sku ? (
-                    <img className="at-photo-img"
-                      src={getWbImageUrls(imgSku!)[0] || ''}
-                      alt=""
-                      onError={e => {
-                        const img = e.target as HTMLImageElement;
-                        const urls = getWbImageUrls(imgSku!);
-                        const idx = urls.indexOf(img.src);
-                        if (idx < urls.length - 1) {
-                          img.src = urls[idx + 1];
-                        } else {
-                          img.style.display = 'none';
-                        }
-                      }}
-                    />
-                  ) : (
-                    <span className="photo-placeholder"></span>
-                  )}
-                </td>
-                <td className="at-td at-name" style={{ paddingLeft: 8 + row.depth * 18 }}>
-                  {row.type === 'product' ? (
-                    <><span className="at-sku">{row.sku}</span> {row.name}</>
-                  ) : (
-                    <span className={`at-typename at-${row.type}`}>{row.name}</span>
-                  )}
-                </td>
-                {HEADER_GROUPS.flatMap(g => g.keys.flatMap(key => {
+                {visibleGroups.flatMap(g => g.keys.flatMap(key => {
                   const chartVals = rowChartCache.get(row.id)?.get(key);
                   const chartDates = rowDateCache.get(row.id);
                   const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
@@ -581,10 +693,10 @@ export default function AnalyticsTable({ cabinetFilter, brandFilter, groupFilter
         {totalRow && (
           <tfoot>
             <tr className="at-row at-total">
-              <td className="at-td at-toggle"></td>
-              <td className="at-td at-photo"></td>
-              <td className="at-td at-name">Итого</td>
-              {HEADER_GROUPS.flatMap(g => g.keys.flatMap(key => {
+              <td className="at-td at-product-cell">
+                <div className="at-product-inner at-total-label">Итого</div>
+              </td>
+              {visibleGroups.flatMap(g => g.keys.flatMap(key => {
                 const chartActive = chartMetrics.has(key);
                 const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
                 return [
