@@ -310,7 +310,10 @@ export default function EntryPointsPage() {
     };
   }, [financeBaseRows, filtered, productMap, canonicalProductId, start, end]);
 
-  if (!rows.length) return <div className="page-stub"><h2>Точки входа</h2><p>Импортируйте отчёт «Точки входа».</p></div>;
+  if (!rows.length) return <section className="entry-page analytics-empty-page">
+    <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></header>
+    <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>Точки входа пока недоступны</h2><p>Импортируйте отчёт «Точки входа», чтобы собрать структуру трафика и финансовую аналитику каналов.</p></article>
+  </section>;
 
   return (
     <section className="entry-page">

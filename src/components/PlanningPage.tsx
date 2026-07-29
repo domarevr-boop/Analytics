@@ -339,7 +339,10 @@ export default function PlanningPage(filterProps: FilterBarProps) {
   }, [selectedMonth, monthlyPlans]);
 
   return (
-    <div className="planning-page">
+    <div className="planning-page analytics-page-shell">
+      <header className="analytics-page-header">
+        <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Планирование</h1><p>Помесячный план заказов, выручки, прибыли и рентабельности по ассортименту.</p></div>
+      </header>
       <div className="pl-top">
         <div className="pl-top-title">План</div>
         <div className="table-toolbar workspace-toolbar">

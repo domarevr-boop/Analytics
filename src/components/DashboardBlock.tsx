@@ -351,8 +351,8 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
   };
 
   return (
-    <div className="dashboard-block">
-      <div className="db-overview-toolbar">
+    <div className="dashboard-block analytics-sheet">
+      <div className="db-overview-toolbar analytics-toolbar">
         <div className="db-month-selector">
           <label className="db-month-label">Месяц</label>
           <input type="month" className="db-month-input" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
@@ -365,7 +365,7 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
           {onExport && <button type="button" className="db-export-button" onClick={onExport}>Экспорт</button>}
         </div>
       </div>
-      <div className="db-primary-cards">
+      <div className="db-primary-cards analytics-kpi-sheet">
         {(['fact_orders', 'revenue', 'profit', 'margin'] as const).map(key => {
           const metric = metrics.find(item => item.key === key);
           return metric ? <DbCard key={metric.key} m={metric} renderValue={renderValue} primary selected={selectedMetric === metric.key} onActivate={() => handleMetricSelect(metric.key)} /> : null;

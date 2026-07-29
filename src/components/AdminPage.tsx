@@ -110,7 +110,10 @@ export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => v
   const currentAdminEmail = getAdminEmail() || 'не задан';
 
   return (
-    <div className="admin-page">
+    <div className="admin-page analytics-page-shell">
+      <header className="analytics-page-header">
+        <div><span>УПРАВЛЕНИЕ</span><h1>Админ-панель</h1><p>Аккаунты, роли и журнал пользовательских сессий.</p></div>
+      </header>
       <h2>Админ-панель</h2>
       <div className="admin-meta">
         <div>Админ email: {currentAdminEmail}</div>

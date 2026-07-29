@@ -194,7 +194,10 @@ export default function DevPage() {
   );
 
   return (
-    <div className="dev-page">
+    <div className="dev-page analytics-page-shell">
+      <header className="analytics-page-header">
+        <div><span>СИСТЕМА</span><h1>Разработка</h1><p>Диагностика данных, резервные копии, миграции и технические операции.</p></div>
+      </header>
       <div className="dev-tabs">
         <span className={`dev-tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>
           Данные

@@ -184,7 +184,10 @@ export default function GeographyPage() {
   }, [selectedGeoRecords]);
   const potential = Math.min(totals.nonlocal, totals.stock);
 
-  if (!records.length) return <section className="geo-page page-card"><h2>География заказов</h2><p className="geo-empty">Импортируйте отчёт «География заказов» на странице импорта, чтобы увидеть показатели.</p></section>;
+  if (!records.length) return <section className="geo-page analytics-empty-page">
+    <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div></header>
+    <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>География пока недоступна</h2><p>Импортируйте отчёт «География заказов», чтобы увидеть показатели по округам, регионам и населённым пунктам.</p></article>
+  </section>;
 
   return <section className="geo-page">
     <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div></header>

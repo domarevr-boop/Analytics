@@ -149,7 +149,10 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="import-page">
+    <div className="import-page analytics-page-shell">
+      <header className="analytics-page-header">
+        <div><span>ДАННЫЕ</span><h1>Импорт отчётов</h1><p>Единая точка загрузки, проверки покрытия и обновления аналитических источников.</p></div>
+      </header>
       {parsed && (
         <div className="import-mapper-wrapper">
           {loading && (

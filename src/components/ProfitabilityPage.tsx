@@ -224,15 +224,18 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   }, [tree, expanded, filterProps]);
 
   return (
-    <div className="profit-page">
-      <div className="table-toolbar workspace-toolbar profit-toolbar">
+    <div className="profit-page analytics-page-shell">
+      <header className="analytics-page-header">
+        <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Рентабельность</h1><p>Финансовый результат по периодам, кабинетам, группам и отдельным товарам.</p></div>
+      </header>
+      <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar">
         <div className="date-filters">
           <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={todayDate()} />
         </div>
         <FilterBar {...filterProps} variant="dashboard" />
       </div>
 
-      <div className="profit-summary">
+      <div className="profit-summary analytics-kpi-sheet">
         <div className="profit-summary-card">
           <div className="profit-summary-label">Выручка</div>
           <div className="profit-summary-value">{f(summary.revenue)} ₽</div>

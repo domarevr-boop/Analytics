@@ -163,8 +163,8 @@ export default function DictionaryPage() {
   };
 
   return (
-    <div className="registry-page">
-      <header className="registry-header">
+    <div className="registry-page analytics-page-shell">
+      <header className="registry-header analytics-page-header">
         <div><span className="registry-eyebrow">Единый товарный реестр</span><h1>Справочник товаров</h1><p>Постоянная карточка для всех исторических и будущих импортов.</p></div>
         <button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>
       </header>
