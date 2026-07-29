@@ -7,47 +7,69 @@ function fmt(date: string) {
   return `${day}.${month}.${year}`;
 }
 
-function addDays(date: string, amount: number): string {
-  const value = new Date(`${date}T00:00:00`);
-  value.setDate(value.getDate() + amount);
-  return value.toISOString().slice(0, 10);
+const DAY_MS = 86_400_000;
+type DayInterval = { start: number; end: number };
+
+function parseIsoDay(value: string | undefined): number | null {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const normalized = new Date(timestamp).toISOString().slice(0, 10);
+  return normalized === value ? Math.floor(timestamp / DAY_MS) : null;
 }
 
-function eachDay(from: string, to: string): string[] {
-  const days: string[] = [];
-  for (let current = from; current <= to; current = addDays(current, 1)) days.push(current);
-  return days;
+function isoFromDay(day: number): string {
+  return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
-function coverage(key: string, label: string, values: Iterable<string>) {
-  const dates = [...new Set(values)].filter(Boolean).sort();
-  if (!dates.length) return { key, label, start: '', end: '', dayCount: 0, rangeDays: 0, gaps: 0 };
-  const start = dates[0];
-  const end = dates.at(-1)!;
-  const fullRange = eachDay(start, end);
-  const present = new Set(dates);
-  return { key, label, start, end, dayCount: dates.length, rangeDays: fullRange.length, gaps: fullRange.filter(date => !present.has(date)).length };
+function coverageFromIntervals(key: string, label: string, intervals: DayInterval[]) {
+  const sorted = intervals
+    .filter(interval => Number.isFinite(interval.start) && Number.isFinite(interval.end) && interval.end >= interval.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  if (!sorted.length) return { key, label, start: '', end: '', dayCount: 0, rangeDays: 0, gaps: 0 };
+
+  const merged: DayInterval[] = [];
+  for (const interval of sorted) {
+    const previous = merged.at(-1);
+    if (previous && interval.start <= previous.end + 1) previous.end = Math.max(previous.end, interval.end);
+    else merged.push({ ...interval });
+  }
+
+  const startDay = merged[0].start;
+  const endDay = merged.at(-1)!.end;
+  const dayCount = merged.reduce((sum, interval) => sum + interval.end - interval.start + 1, 0);
+  const rangeDays = endDay - startDay + 1;
+  return { key, label, start: isoFromDay(startDay), end: isoFromDay(endDay), dayCount, rangeDays, gaps: rangeDays - dayCount };
 }
 
 function coverageFromLogs(source: ImportSource, label: string, logs: ImportFileLog[]) {
-  const dates = new Set<string>();
+  const intervals: DayInterval[] = [];
   for (const log of logs) {
     if (log.source !== source || log.status !== 'success' || !log.dataStart) continue;
-    const end = log.dataEnd || log.dataStart;
-    for (const date of eachDay(log.dataStart, end)) dates.add(date);
+    const start = parseIsoDay(log.dataStart);
+    const end = parseIsoDay(log.dataEnd || log.dataStart);
+    if (start !== null && end !== null) intervals.push({ start, end });
   }
-  return coverage(source, label, dates);
+  return coverageFromIntervals(source, label, intervals);
 }
 
 export default function DataCoverage() {
   const version = useSyncExternalStore(subscribe, getVersion);
   const rows = useMemo(() => {
     const logs = getImportLog();
-    const planDates: string[] = [];
+    const planIntervals: DayInterval[] = [];
     for (const month of new Set(getMonthlyPlans().map(record => record.month))) {
-      const [year, monthNumber] = month.split('-').map(Number);
-      const end = new Date(year, monthNumber, 0).toISOString().slice(0, 10);
-      planDates.push(...eachDay(`${month}-01`, end));
+      const match = month.match(/^(\d{4})-(\d{2})$/);
+      if (!match) continue;
+      const year = Number(match[1]);
+      const monthNumber = Number(match[2]);
+      if (monthNumber < 1 || monthNumber > 12) continue;
+      const start = Math.floor(Date.UTC(year, monthNumber - 1, 1) / DAY_MS);
+      const end = Math.floor(Date.UTC(year, monthNumber, 0) / DAY_MS);
+      planIntervals.push({ start, end });
     }
     return [
       coverageFromLogs('wb_funnel', 'Воронка WB', logs),
@@ -57,7 +79,7 @@ export default function DataCoverage() {
       coverageFromLogs('entry_points', 'Точки входа', logs),
       coverageFromLogs('search_queries', 'Поисковые запросы WB', logs),
       coverageFromLogs('niche_dynamics', 'Динамика ниши', logs),
-      coverage('plan_template', 'План', planDates),
+      coverageFromIntervals('plan_template', 'План', planIntervals),
     ];
   }, [version]);
 
