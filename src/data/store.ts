@@ -17,7 +17,7 @@ let _persistQueue: Promise<void> = Promise.resolve();
 const DEV = import.meta.env.DEV;
 const MONTHLY_PLANS_BACKUP_KEY = 'analytics_monthly_plans_v1';
 type DataStoreName = keyof DataSnapshot;
-const _readCache = new Map<DataStoreName, unknown[]>();
+const _readCache = new Map<DataStoreName, { source: unknown[]; snapshot: unknown[] }>();
 
 function invalidateReadCache(stores: Iterable<DataStoreName>) {
   for (const store of stores) _readCache.delete(store);
@@ -60,10 +60,10 @@ let _lastPersistedSnapshot: DataSnapshot | null = null;
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
 
 function cachedRows<T>(store: DataStoreName, rows: T[], clone: (row: T) => T = row => ({ ...row })) {
-  const cached = _readCache.get(store) as T[] | undefined;
-  if (cached) return cached;
+  const cached = _readCache.get(store);
+  if (cached?.source === rows) return cached.snapshot as T[];
   const snapshot = rows.map(clone);
-  _readCache.set(store, snapshot as unknown[]);
+  _readCache.set(store, { source: rows as unknown[], snapshot: snapshot as unknown[] });
   return snapshot;
 }
 
@@ -1682,6 +1682,7 @@ export async function initStore() {
 
   _suppressPersist = false;
   _initCalled = true;
+  invalidateReadCache(DATA_STORE_NAMES);
 
   if (snapshot.cabinets.length === 0 || needsPersistence) {
     if (DEV) console.log('[diag] persisting initial or migrated data');
