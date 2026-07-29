@@ -59,10 +59,10 @@ let _skuAliases = new Map<string, string>();
 let _lastPersistedSnapshot: DataSnapshot | null = null;
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
 
-function cachedRows<T>(store: DataStoreName, rows: T[], clone: (row: T) => T = row => ({ ...row })) {
+function cachedRows<T>(store: DataStoreName, rows: T[], clone?: (row: T) => T) {
   const cached = _readCache.get(store);
   if (cached?.source === rows) return cached.snapshot as T[];
-  const snapshot = rows.map(clone);
+  const snapshot = clone ? rows.map(clone) : rows;
   _readCache.set(store, { source: rows as unknown[], snapshot: snapshot as unknown[] });
   return snapshot;
 }
@@ -1124,7 +1124,8 @@ export async function importMappedData(
         productIds.add(product.id);
       }
     } else if (source === 'niche_dynamics') {
-      const recordsByKey = new Map(_nicheDynamics.map(record => [`${record.date}|${record.category}|${record.subject}`, record]));
+      const nextRecords = [..._nicheDynamics];
+      const recordIndexByKey = new Map(nextRecords.map((record, index) => [`${record.date}|${record.category}|${record.subject}`, index]));
       for (const row of rows) {
         const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
         const category = String(row.niche_category || '').trim();
@@ -1142,14 +1143,21 @@ export async function importMappedData(
           buyout_rate: toNumber(row.niche_buyout_rate), buyout_rate_previous: toNumber(row.niche_buyout_rate_previous), avg_rating: toNumber(row.niche_avg_rating),
         };
         const key = `${date}|${category}|${subject}`;
-        const existing = recordsByKey.get(key);
-        if (existing) Object.assign(existing, record); else { _nicheDynamics.push(record); recordsByKey.set(key, record); }
+        const existingIndex = recordIndexByKey.get(key);
+        if (existingIndex === undefined) {
+          recordIndexByKey.set(key, nextRecords.length);
+          nextRecords.push(record);
+        } else {
+          nextRecords[existingIndex] = record;
+        }
         parsed++;
         if (!minDate || date < minDate) minDate = date;
         if (!maxDate || date > maxDate) maxDate = date;
       }
+      _nicheDynamics = nextRecords;
     } else if (source === 'search_queries') {
-      const recordsByKey = new Map(_searchQueries.map(record => [`${record.date}|${record.query}|${record.category}`, record]));
+      const nextRecords = [..._searchQueries];
+      const recordIndexByKey = new Map(nextRecords.map((record, index) => [`${record.date}|${record.query}|${record.category}`, index]));
       for (const row of rows) {
         const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
         const query = String(row.search_query || '').trim().toLocaleLowerCase('ru-RU');
@@ -1168,12 +1176,18 @@ export async function importMappedData(
           products: toNumber(row.search_products), products_previous: toNumber(row.search_products_previous),
         };
         const key = `${date}|${query}|${category}`;
-        const existing = recordsByKey.get(key);
-        if (existing) Object.assign(existing, record); else { _searchQueries.push(record); recordsByKey.set(key, record); }
+        const existingIndex = recordIndexByKey.get(key);
+        if (existingIndex === undefined) {
+          recordIndexByKey.set(key, nextRecords.length);
+          nextRecords.push(record);
+        } else {
+          nextRecords[existingIndex] = record;
+        }
         parsed++;
         if (!minDate || date < minDate) minDate = date;
         if (!maxDate || date > maxDate) maxDate = date;
       }
+      _searchQueries = nextRecords;
     } else if (source === 'entry_points') {
       const recordsByKey = new Map(_entryPoints.map(record => [`${record.date}|${record.product_id}|${record.section}|${record.entry_point}`, record]));
       for (const row of rows) {
@@ -1582,30 +1596,14 @@ export async function initStore() {
   if (isCloudStorage && snapshot.cabinets.length === 0) {
     throw new Error('Supabase returned an empty dataset. Local seed data was not created.');
   }
-  _lastPersistedSnapshot = {
-    cabinets: snapshot.cabinets.map(item => ({ ...item })),
-    brands: snapshot.brands.map(item => ({ ...item })),
-    groups: snapshot.groups.map(item => ({ ...item })),
-    products: snapshot.products.map(item => ({ ...item })),
-    memberships: snapshot.memberships.map(item => ({ ...item })),
-    metrics: snapshot.metrics.map(item => ({ ...item })),
-    plans: snapshot.plans.map(item => ({ ...item })),
-    monthlyPlans: snapshot.monthlyPlans.map(item => ({ ...item })),
-    profitability: snapshot.profitability.map(item => ({ ...item })),
-    geography: snapshot.geography.map(item => ({ ...item })),
-    geographyPlans: snapshot.geographyPlans.map(item => ({ ...item })),
-    entryPoints: snapshot.entryPoints.map(item => ({ ...item })),
-    searchQueries: snapshot.searchQueries.map(item => ({ ...item })),
-    nicheDynamics: snapshot.nicheDynamics.map(item => ({ ...item })),
-    importLogs: snapshot.importLogs.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined })),
-  };
+  _lastPersistedSnapshot = snapshot;
   if (snapshot.cabinets.length === 0) {
     seed();
   } else {
-    _cabinets = snapshot.cabinets;
-    _brands = snapshot.brands;
-    _groups = snapshot.groups;
-    _products = snapshot.products;
+    _cabinets = snapshot.cabinets.map(item => ({ ...item }));
+    _brands = snapshot.brands.map(item => ({ ...item }));
+    _groups = snapshot.groups.map(item => ({ ...item }));
+    _products = snapshot.products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
     for (const product of _products) {
       if (!product.aliases) { product.aliases = []; needsPersistence = true; }
       if (!product.status) { product.status = 'active'; needsPersistence = true; }
@@ -1615,22 +1613,22 @@ export async function initStore() {
         needsPersistence = true;
       }
     }
-    _memberships = snapshot.memberships;
-    _metrics = snapshot.metrics;
+    _memberships = snapshot.memberships.map(item => ({ ...item }));
+    _metrics = snapshot.metrics.map(item => ({ ...item }));
     if (DEV) {
       const dates = _metrics.map(m => m.date).filter(Boolean).sort();
       console.log('[initStore] _metrics assigned: rows=' + _metrics.length + ' dateRange=' + (dates.length ? dates[0] + '..' + dates[dates.length-1] : 'empty'));
     }
-    _plans = snapshot.plans;
+    _plans = snapshot.plans.map(item => ({ ...item }));
     const monthlyPlansBackup = isCloudStorage ? [] : loadMonthlyPlansBackup();
-    _monthlyPlans = monthlyPlansBackup.length > 0 ? monthlyPlansBackup : snapshot.monthlyPlans;
-    _profitability = snapshot.profitability;
-    _geography = snapshot.geography;
-    _geographyPlans = snapshot.geographyPlans;
-    _entryPoints = snapshot.entryPoints;
+    _monthlyPlans = monthlyPlansBackup.length > 0 ? monthlyPlansBackup : snapshot.monthlyPlans.map(item => ({ ...item }));
+    _profitability = snapshot.profitability.map(item => ({ ...item }));
+    _geography = snapshot.geography.map(item => ({ ...item }));
+    _geographyPlans = snapshot.geographyPlans.map(item => ({ ...item }));
+    _entryPoints = snapshot.entryPoints.map(item => ({ ...item }));
     _searchQueries = snapshot.searchQueries;
     _nicheDynamics = snapshot.nicheDynamics;
-    _importLog = snapshot.importLogs;
+    _importLog = snapshot.importLogs.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined }));
     restoreNextId();
 
     const MIGRATED_KEY = '_analytics_date_migration_v2';

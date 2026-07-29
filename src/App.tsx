@@ -108,6 +108,7 @@ function App() {
   };
   const [allTimeMaxDate, setAllTimeMaxDate] = useState('');
   const [dataReady, setDataReady] = useState(false);
+  const [dataError, setDataError] = useState('');
   const [adminMeta, setAdminMeta] = useState<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null } | null>(null);
 
   const [adminRefreshKey, setAdminRefreshKey] = useState(0);
@@ -185,6 +186,7 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
+        setDataError('');
         await initStore();
         if (!cancelled) {
           const d = getDefaultPeriods(allTimeMaxDate || undefined);
@@ -198,6 +200,7 @@ function App() {
         }
       } catch (e) {
         console.error('[app] initStore failed', e);
+        if (!cancelled) setDataError(e instanceof Error ? e.message : String(e));
       }
     })();
     return () => { cancelled = true; };
@@ -243,7 +246,11 @@ function App() {
     <div className="dashboard">
       <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={isAdmin} />
 
-      {page === 'dashboard' ? (
+      {!dataReady ? (
+        <div className="page-content"><div className="page-card" style={{ padding: 24 }}>
+          {dataError ? <><strong>Не удалось загрузить локальные данные</strong><p>{dataError}</p></> : 'Загрузка локальных данных...'}
+        </div></div>
+      ) : page === 'dashboard' ? (
         <div className="page-content">
           {dataReady ? (
             <>
