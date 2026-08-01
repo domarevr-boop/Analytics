@@ -6,10 +6,13 @@ import {
   Cell,
   ComposedChart,
   Line,
+  Scatter,
+  ScatterChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
@@ -76,17 +79,19 @@ function median(values: number[]): number {
   return sorted.length % 2 ? (sorted[middle] || 0) : ((sorted[middle - 1] || 0) + (sorted[middle] || 0)) / 2;
 }
 
-function formatMetric(metric: MetricKey, value: number): string {
-  return metric === 'impressions' || metric === 'clicks' || metric === 'carts' || metric === 'orders'
-    ? fmt(value)
-    : `${fmtRelative(metric, value)}%`;
-}
-
 function ProductThumb({ product }: { product?: Product }) {
   const urls = useMemo(() => getWbImageUrls(product?.wb_sku || ''), [product?.wb_sku]);
   const [index, setIndex] = useState(0);
   if (!urls.length || !product || index >= urls.length) return <span className="entry-product-placeholder">Т</span>;
   return <img src={urls[index]} alt="" loading="lazy" onLoad={() => rememberWbImageUrl(product.wb_sku, urls[index])} onError={() => setIndex(current => current + 1)} />;
+}
+
+function Sparkline({ values, color = '#2563EB' }: { values: number[]; color?: string }) {
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const span = max - min || 1;
+  const points = values.map((value, index) => `${index / Math.max(values.length - 1, 1) * 62},${24 - (value - min) / span * 20}`).join(' ');
+  return <svg className="entry-sparkline" viewBox="0 0 62 26" aria-hidden="true"><polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 export default function EntryPointsPage() {
@@ -110,6 +115,7 @@ export default function EntryPointsPage() {
   const [trendMetric, setTrendMetric] = useState<MetricKey>('orders');
   const [topMetric, setTopMetric] = useState<AbsoluteMetric>('orders');
   const [structureLevel, setStructureLevel] = useState<'section' | 'point'>('point');
+  const [structureMetric, setStructureMetric] = useState<'orders' | 'clicks' | 'profit'>('orders');
   const [dayWindow, setDayWindow] = useState<7 | 14 | 30>(30);
 
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
@@ -231,7 +237,7 @@ export default function EntryPointsPage() {
   const trendData = useMemo(() => dates.map(date => {
     const dailyRows = filtered.filter(row => row.date === date);
     const metrics = aggregate(dailyRows);
-    return { date, value: metrics[trendMetric], orderedAmount: dailyRows.reduce((sum, row) => sum + allocatedOrderedAmount(row), 0) };
+    return { date, ...metrics, value: metrics[trendMetric], orderedAmount: dailyRows.reduce((sum, row) => sum + allocatedOrderedAmount(row), 0) };
   }), [filtered, dates, trendMetric]);
 
   const structureData = useMemo(() => {
@@ -240,11 +246,29 @@ export default function EntryPointsPage() {
       const key = structureLevel === 'section' ? row.section : pointName(row);
       appendToMap(grouped, key, row);
     });
-    const sorted = [...grouped.entries()].map(([name, records]) => ({ name, orderedAmount: records.reduce((sum, row) => sum + allocatedOrderedAmount(row), 0) })).sort((left, right) => right.orderedAmount - left.orderedAmount);
+    const sorted = [...grouped.entries()].map(([name, records]) => {
+      const metrics = aggregate(records);
+      return {
+        name,
+        ...metrics,
+        orderedAmount: records.reduce((sum, row) => sum + allocatedOrderedAmount(row), 0),
+        profit: records.reduce((sum, row) => sum + (row.product_orders_total ? (row.product_net_profit || 0) * row.orders / row.product_orders_total : 0), 0),
+      };
+    }).sort((left, right) => right[structureMetric] - left[structureMetric]);
     const top = sorted.slice(0, 10);
-    const other = sorted.slice(10).reduce((sum, row) => sum + row.orderedAmount, 0);
-    return other ? [...top, { name: 'Остальные', orderedAmount: other }] : top;
-  }, [filtered, structureLevel]);
+    const otherRows = sorted.slice(10);
+    if (!otherRows.length) return top;
+    return [...top, {
+      name: 'Остальные',
+      impressions: otherRows.reduce((sum, row) => sum + row.impressions, 0),
+      clicks: otherRows.reduce((sum, row) => sum + row.clicks, 0),
+      carts: otherRows.reduce((sum, row) => sum + row.carts, 0),
+      orders: otherRows.reduce((sum, row) => sum + row.orders, 0),
+      ctr: 0, cartCr: 0, clickOrderCr: 0, impressionOrderCr: 0,
+      orderedAmount: otherRows.reduce((sum, row) => sum + row.orderedAmount, 0),
+      profit: otherRows.reduce((sum, row) => sum + row.profit, 0),
+    }];
+  }, [filtered, structureLevel, structureMetric]);
 
   const finance = useMemo(() => {
     const keyOf = (date: string, productId: string) => `${date}|${canonicalProductId.get(productId) || productId}`;
@@ -311,13 +335,47 @@ export default function EntryPointsPage() {
     };
   }, [financeBaseRows, filtered, productMap, canonicalProductId, start, end]);
 
+  const kpiSparklines = useMemo(() => ({
+    impressions: trendData.map(row => row.impressions),
+    clicks: trendData.map(row => row.clicks),
+    orders: trendData.map(row => row.orders),
+    points: trendData.map(row => filtered.filter(item => item.date === row.date).length),
+  }), [trendData, filtered]);
+
+  const channelSummaries = useMemo(() => {
+    const grouped = new Map<string, EntryPointRecord[]>();
+    filtered.forEach(row => appendToMap(grouped, row.section, row));
+    return [...grouped.entries()].map(([name, records]) => ({ name, ...aggregate(records) })).sort((left, right) => right.orders - left.orders);
+  }, [filtered]);
+
+  const insights = useMemo(() => {
+    const leader = channelSummaries[0];
+    const ctrLeader = [...channelSummaries].sort((left, right) => right.ctr - left.ctr)[0];
+    const conversionLeader = [...channelSummaries].sort((left, right) => right.clickOrderCr - left.clickOrderCr)[0];
+    const growthPoint = [...channelSummaries].filter(row => row.impressions > 0).sort((left, right) => right.impressions * Math.max(0, totals.impressionOrderCr - right.impressionOrderCr) - left.impressions * Math.max(0, totals.impressionOrderCr - left.impressionOrderCr))[0];
+    return [
+      { tone: 'blue', title: leader?.name || 'Лидер не определён', text: leader ? `${fmt(leader.orders)} заказов · ${fmt(leader.orders / Math.max(totals.orders, 1) * 100)}% структуры` : 'Нет данных в выбранном срезе' },
+      { tone: 'orange', title: ctrLeader?.name || 'CTR не определён', text: ctrLeader ? `CTR ${fmt(ctrLeader.ctr)}% · CR заказа ${fmt(ctrLeader.clickOrderCr)}%` : 'Нет данных в выбранном срезе' },
+      { tone: 'violet', title: conversionLeader?.name || 'Конверсия не определена', text: conversionLeader ? `CR переход → заказ ${fmt(conversionLeader.clickOrderCr)}%` : 'Нет данных в выбранном срезе' },
+      { tone: 'yellow', title: 'Потенциал роста', text: growthPoint ? `${growthPoint.name}: высокий трафик при CR ${fmt(growthPoint.impressionOrderCr)}%` : 'Недостаточно данных для оценки' },
+    ];
+  }, [channelSummaries, totals]);
+
+  const efficiencyData = useMemo(() => finance.points.slice(0, 18).map((row, index) => {
+    const metrics = matrixRows.find(item => item.name === row.name)?.total || aggregate([]);
+    return { name: row.entryPoint, section: row.section, ctr: metrics.ctr, profitability: row.profitability, orders: row.orders, fill: chartColors[index % chartColors.length] };
+  }), [finance.points, matrixRows]);
+
+  const structureDataKey = structureMetric;
+  const structureMetricLabel = structureMetric === 'orders' ? 'Заказы' : structureMetric === 'clicks' ? 'Переходы' : 'Чистая прибыль';
+
   if (!rows.length) return <section className="entry-page analytics-empty-page">
     <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></header>
     <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>Точки входа пока недоступны</h2><p>Импортируйте отчёт «Точки входа», чтобы собрать структуру трафика и финансовую аналитику каналов.</p></article>
   </section>;
 
   return (
-    <section className="entry-page">
+    <section className="entry-page entry-page-v2">
       <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></header>
 
       <article className="entry-card entry-filter-card table-toolbar entry-analytics-toolbar">
@@ -326,20 +384,23 @@ export default function EntryPointsPage() {
       </article>
 
       <div className="entry-kpis">
-        <article><span>Показы</span><strong>{fmt(totals.impressions)}</strong><small>CTR {fmt(totals.ctr)}%</small></article>
-        <article><span>Переходы</span><strong>{fmt(totals.clicks)}</strong><small>В корзину {fmt(totals.cartCr)}%</small></article>
-        <article><span>Заказы</span><strong>{fmt(totals.orders)}</strong><small>CR показ → заказ {fmt(totals.impressionOrderCr)}%</small></article>
-        <article><span>Точки входа</span><strong>{matrixRows.length}</strong><small>Активных в выбранном срезе</small></article>
+        <article><div><span>Показы</span><strong>{fmt(totals.impressions)}</strong><small>CTR {fmt(totals.ctr)}%</small></div><Sparkline values={kpiSparklines.impressions} color="#10A778" /></article>
+        <article><div><span>Переходы</span><strong>{fmt(totals.clicks)}</strong><small>В корзину {fmt(totals.cartCr)}%</small></div><Sparkline values={kpiSparklines.clicks} color="#2563EB" /></article>
+        <article><div><span>Заказы</span><strong>{fmt(totals.orders)}</strong><small>CR показ → заказ {fmt(totals.impressionOrderCr)}%</small></div><Sparkline values={kpiSparklines.orders} color="#10A778" /></article>
+        <article><div><span>Точки входа</span><strong>{matrixRows.length}</strong><small>Активных в выбранном срезе</small></div><Sparkline values={kpiSparklines.points} color="#F59E0B" /></article>
       </div>
 
-      <article className="entry-card entry-top-card">
-        <div className="entry-card-head"><div><h2>Топ-5 товаров по каналам</h2><p>Лидеры агрегированы по всем точкам входа внутри раздела.</p></div><label className="entry-inline-control">Метрика<select value={topMetric} onChange={event => setTopMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div>
-        <div className="entry-top-grid">{topProducts.map(channel => <section key={channel.key}><h3>{channel.label}</h3>{channel.items.length ? <ol>{channel.items.map(({ product, metrics, orderedAmount, profitability }, index) => <li key={product?.id || index} onClick={() => product && setQuery(product.sku)}><span className="entry-top-rank">{index + 1}</span><span className="entry-product-thumb"><ProductThumb product={product} /></span><span className="entry-top-product"><strong>{product?.name || product?.sku || 'Неизвестный товар'}</strong><small>SKU {product?.sku || '—'}</small></span><span className="entry-top-value"><strong>{fmt(metrics[topMetric])}</strong><small>{fmt(metrics.orders)} зак. · {fmt(orderedAmount)} ₽</small><em>Рент. {fmt(profitability)}%</em></span></li>)}</ol> : <div className="entry-empty">Нет данных в выбранном срезе</div>}</section>)}</div>
-      </article>
+      <div className="entry-overview-grid">
+        <article className="entry-card entry-insights-card"><div className="entry-card-head"><div><h2>Главные выводы</h2></div></div><div className="entry-insights-list">{insights.map(item => <div key={`${item.title}-${item.tone}`} className={`entry-insight ${item.tone}`}><i aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.text}</small></span></div>)}</div></article>
+        <article className="entry-card entry-top-card">
+          <div className="entry-card-head"><div><h2>Топ-5 по каналам</h2></div><label className="entry-inline-control">Метрика<select value={topMetric} onChange={event => setTopMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div>
+          <div className="entry-top-grid">{topProducts.map(channel => <section key={channel.key}><h3>{channel.label}</h3>{channel.items.length ? <ol>{channel.items.map(({ product, metrics }, index) => <li key={product?.id || index} onClick={() => product && setQuery(product.sku)}><span className="entry-top-rank">{index + 1}</span><span className="entry-product-thumb"><ProductThumb product={product} /></span><span className="entry-top-product"><strong>{product?.sku || product?.name || 'Неизвестный товар'}</strong><small>{product?.name || `SKU ${product?.sku || '—'}`}</small></span><span className="entry-top-value"><strong>{fmt(metrics[topMetric])}</strong><em>{metrics[topMetric] >= median(channel.items.map(item => item.metrics[topMetric])) ? '↑ лидер' : '• стабильно'}</em></span></li>)}</ol> : <div className="entry-empty">Нет данных в выбранном срезе</div>}</section>)}</div>
+        </article>
+      </div>
 
       <article className="entry-card entry-matrix-card">
         <div className="entry-card-head entry-matrix-head"><div><h2>Точки входа по дням</h2></div><div className="entry-matrix-controls"><label>Основная<select value={absoluteMetric} onChange={event => setAbsoluteMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Относительная<select value={relativeMetric} onChange={event => setRelativeMetric(event.target.value as RelativeMetric)}>{(['ctr', 'cartCr', 'clickOrderCr', 'impressionOrderCr'] as RelativeMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Дней<select value={dayWindow} onChange={event => setDayWindow(Number(event.target.value) as 7 | 14 | 30)}><option value={7}>7 дней</option><option value={14}>14 дней</option><option value={30}>30 дней</option></select></label></div></div>
-        <div className="entry-matrix-wrap"><table className="entry-matrix"><thead><tr><th className="entry-matrix-point">Точка входа</th>{visibleDates.map(date => { const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <th key={date} className={`entry-matrix-date${weekend ? ' entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`}><span>{date.slice(5).split('-').reverse().join('.')}</span><small>{dayFormatter.format(new Date(`${date}T00:00:00`)).replace('.', '')}</small></th>; })}</tr></thead>
+        <div className="entry-matrix-wrap"><table className="entry-matrix"><thead><tr><th className="entry-matrix-point">Точка входа</th>{visibleDates.map(date => { const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <th key={date} className={`entry-matrix-date${weekend ? ' entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`}><span>{date.slice(5).split('-').reverse().join('.')}</span><small>{dayFormatter.format(new Date(`${date}T00:00:00`)).replace('.', '')}</small></th>; })}<th className="entry-matrix-summary">Среднее</th><th className="entry-matrix-summary">Тренд</th></tr></thead>
           <tbody>{matrixRows.map(row => {
             const absoluteValues = visibleDates.map(date => (row.daily.get(date) || aggregate([]))[absoluteMetric]);
             const absoluteAverage = absoluteValues.length ? absoluteValues.reduce((sum, value) => sum + value, 0) / absoluteValues.length : 0;
@@ -348,28 +409,28 @@ export default function EntryPointsPage() {
             const latestValue = absoluteValues.at(-1) || 0;
             const change = absoluteAverage ? (latestValue - absoluteAverage) / absoluteAverage * 100 : 0;
             const ranges = rowRanges.get(row.name)!;
-            return <Fragment key={row.name}><tr className="entry-matrix-primary"><td className="entry-matrix-point" rowSpan={2} title={row.name} onClick={() => { setSection(row.section); setEntryPoint(row.entryPoint); }}><div className="entry-point-head"><strong>{row.entryPoint}</strong><span className="entry-section-tag">{row.section}</span></div><div className="entry-point-metrics"><div><span>{metricLabels[relativeMetric]}</span><strong>{fmtRelative(relativeMetric, average)}%</strong><small>мед. {fmtRelative(relativeMetric, median(relativeValues))}%</small></div><div><span>{metricLabels[absoluteMetric]}</span><strong>{fmt(row.total[absoluteMetric])}</strong><small>ср. {fmt(absoluteAverage)} · мед. {fmt(median(absoluteValues))}</small></div></div><em className={`entry-point-change ${change >= 0 ? 'up' : 'down'}`}>посл. {change >= 0 ? '+' : ''}{fmt(change)}%</em></td>{visibleDates.map(date => { const metrics = row.daily.get(date) || aggregate([]); const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <td key={`${date}-${absoluteMetric}`} className={`${weekend ? 'entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`} style={heatStyle(metrics[absoluteMetric], ...ranges.absolute)}>{fmt(metrics[absoluteMetric])}</td>; })}</tr><tr className="entry-matrix-relative">{visibleDates.map(date => { const metrics = row.daily.get(date) || aggregate([]); const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <td key={`${date}-${relativeMetric}`} className={`${weekend ? 'entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`} title={`${metricLabels[relativeMetric]}: ${fmtRelative(relativeMetric, metrics[relativeMetric])}%`}>{fmtRelative(relativeMetric, metrics[relativeMetric])}%</td>; })}</tr></Fragment>;
+             return <Fragment key={row.name}><tr className="entry-matrix-primary"><td className="entry-matrix-point" rowSpan={2} title={row.name} onClick={() => { setSection(row.section); setEntryPoint(row.entryPoint); }}><div className="entry-point-head"><strong>{row.entryPoint}</strong><span className="entry-section-tag">{row.section}</span></div><div className="entry-point-metrics"><div><span>{metricLabels[relativeMetric]}</span><strong>{fmtRelative(relativeMetric, average)}%</strong><small>мед. {fmtRelative(relativeMetric, median(relativeValues))}%</small></div><div><span>{metricLabels[absoluteMetric]}</span><strong>{fmt(row.total[absoluteMetric])}</strong><small>ср. {fmt(absoluteAverage)} · мед. {fmt(median(absoluteValues))}</small></div></div><em className={`entry-point-change ${change >= 0 ? 'up' : 'down'}`}>посл. {change >= 0 ? '+' : ''}{fmt(change)}%</em></td>{visibleDates.map(date => { const metrics = row.daily.get(date) || aggregate([]); const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <td key={`${date}-${absoluteMetric}`} className={`${weekend ? 'entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`} style={heatStyle(metrics[absoluteMetric], ...ranges.absolute)}>{fmt(metrics[absoluteMetric])}</td>; })}<td className="entry-matrix-average" rowSpan={2}><strong>{fmt(absoluteAverage)}</strong><small>{fmtRelative(relativeMetric, average)}%</small></td><td className="entry-matrix-trend" rowSpan={2}><Sparkline values={absoluteValues} color={change >= 0 ? '#10A778' : '#F97316'} /></td></tr><tr className="entry-matrix-relative">{visibleDates.map(date => { const metrics = row.daily.get(date) || aggregate([]); const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <td key={`${date}-${relativeMetric}`} className={`${weekend ? 'entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`} title={`${metricLabels[relativeMetric]}: ${fmtRelative(relativeMetric, metrics[relativeMetric])}%`}>{fmtRelative(relativeMetric, metrics[relativeMetric])}%</td>; })}</tr></Fragment>;
           })}</tbody></table></div>
       </article>
 
       <div className="entry-analysis-grid">
-        <article className="entry-card entry-chart-card"><div className="entry-card-head"><div><h2>Динамика метрик</h2><p>Выбранная метрика и сумма заказов по дням.</p></div><label className="entry-inline-control">Метрика<select value={trendMetric} onChange={event => setTrendMetric(event.target.value as MetricKey)}>{(Object.keys(metricLabels) as MetricKey[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div><div className="entry-chart-area"><ResponsiveContainer width="100%" height={280}><ComposedChart data={trendData} margin={{ top: 16, right: 18, left: 4, bottom: 4 }}><CartesianGrid stroke="#E7ECF2" strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={date => String(date).slice(5)} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} /><YAxis yAxisId="metric" tickFormatter={value => formatMetric(trendMetric, Number(value))} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} width={52} /><YAxis yAxisId="amount" orientation="right" tickFormatter={value => `${fmt(Number(value) / 1_000_000)}M ₽`} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} width={52} /><Tooltip labelFormatter={date => String(date)} formatter={(value, name) => name === 'orderedAmount' ? [`${fmt(Number(value || 0))} ₽`, 'Сумма заказов'] : [formatMetric(trendMetric, Number(value || 0)), metricLabels[trendMetric]]} /><Line yAxisId="metric" type="monotone" dataKey="value" name="value" stroke="#2563EB" strokeWidth={2.4} dot={trendData.length <= 14 ? { r: 2.5 } : false} activeDot={{ r: 4 }} /><Line yAxisId="amount" type="monotone" dataKey="orderedAmount" name="orderedAmount" stroke="#10A778" strokeWidth={2.2} dot={false} /></ComposedChart></ResponsiveContainer></div></article>
+        <article className="entry-card entry-chart-card"><div className="entry-card-head"><div><h2>Динамика по дням</h2></div><label className="entry-inline-control">Фокус<select value={trendMetric} onChange={event => setTrendMetric(event.target.value as MetricKey)}>{(Object.keys(metricLabels) as MetricKey[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div><div className="entry-chart-legend"><span className="blue">Заказы</span><span className="green">Переходы в корзину</span><span className="violet">CR заказа</span></div><div className="entry-chart-area"><ResponsiveContainer width="100%" height={250}><ComposedChart data={trendData} margin={{ top: 12, right: 18, left: 4, bottom: 4 }}><CartesianGrid stroke="#E7ECF2" strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={date => String(date).slice(5)} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} /><YAxis yAxisId="count" tickFormatter={value => fmt(Number(value))} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} width={48} /><YAxis yAxisId="rate" orientation="right" tickFormatter={value => `${fmt(Number(value))}%`} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} width={38} /><Tooltip labelFormatter={date => String(date)} formatter={(value, name) => [name === 'CR заказа' ? `${fmt(Number(value || 0))}%` : fmt(Number(value || 0)), name]} /><Line yAxisId="count" type="monotone" dataKey="orders" name="Заказы" stroke="#2563EB" strokeWidth={2.3} dot={{ r: 2.3 }} /><Line yAxisId="count" type="monotone" dataKey="carts" name="Переходы в корзину" stroke="#10A778" strokeWidth={2.1} dot={{ r: 2 }} /><Line yAxisId="rate" type="monotone" dataKey="impressionOrderCr" name="CR заказа" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 2 }} /></ComposedChart></ResponsiveContainer></div></article>
 
-        <article className="entry-card entry-chart-card"><div className="entry-card-head"><div><h2>Сумма заказов по точкам входа</h2><p>Распределённая сумма в рублях · Top-10 и остаток.</p></div><div className="entry-segmented"><button className={structureLevel === 'section' ? 'active' : ''} onClick={() => setStructureLevel('section')}>Разделы</button><button className={structureLevel === 'point' ? 'active' : ''} onClick={() => setStructureLevel('point')}>Точки</button></div></div><div className="entry-chart-area"><ResponsiveContainer width="100%" height={280}><BarChart data={structureData} layout="vertical" margin={{ top: 8, right: 24, left: 18, bottom: 4 }}><CartesianGrid stroke="#E7ECF2" strokeDasharray="3 3" horizontal={false} /><XAxis type="number" tickFormatter={value => `${fmt(Number(value) / 1_000_000)}M`} tick={{ fontSize: 10, fill: '#7B889B' }} tickLine={false} /><YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 9, fill: '#52647C' }} tickLine={false} tickFormatter={value => String(value).length > 24 ? `${String(value).slice(0, 22)}…` : String(value)} /><Tooltip formatter={value => [`${fmt(Number(value || 0))} ₽`, 'Сумма заказов']} /><Bar dataKey="orderedAmount" radius={[0, 4, 4, 0]} maxBarSize={18}>{structureData.map((item, index) => <Cell key={item.name} fill={item.name === 'Остальные' ? '#CBD5E1' : chartColors[index % chartColors.length]} />)}</Bar></BarChart></ResponsiveContainer></div></article>
+        <article className="entry-card entry-chart-card"><div className="entry-card-head"><div><h2>Структура по источникам</h2></div><div className="entry-chart-head-controls"><div className="entry-segmented"><button className={structureLevel === 'section' ? 'active' : ''} onClick={() => setStructureLevel('section')}>Разделы</button><button className={structureLevel === 'point' ? 'active' : ''} onClick={() => setStructureLevel('point')}>Точки</button></div><div className="entry-segmented"><button className={structureMetric === 'orders' ? 'active' : ''} onClick={() => setStructureMetric('orders')}>Заказы</button><button className={structureMetric === 'clicks' ? 'active' : ''} onClick={() => setStructureMetric('clicks')}>Переходы</button><button className={structureMetric === 'profit' ? 'active' : ''} onClick={() => setStructureMetric('profit')}>Прибыль</button></div></div></div><div className="entry-chart-area"><ResponsiveContainer width="100%" height={250}><BarChart data={structureData} layout="vertical" margin={{ top: 8, right: 48, left: 18, bottom: 4 }}><XAxis type="number" hide /><YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 9, fill: '#52647C' }} tickLine={false} axisLine={false} tickFormatter={value => String(value).length > 22 ? `${String(value).slice(0, 20)}…` : String(value)} /><Tooltip formatter={value => [`${fmt(Number(value || 0))}${structureMetric === 'profit' ? ' ₽' : ''}`, structureMetricLabel]} /><Bar dataKey={structureDataKey} radius={[0, 5, 5, 0]} maxBarSize={16} label={{ position: 'right', fontSize: 9, fill: '#52647C', formatter: (value: unknown) => fmt(Number(value || 0)) }}>{structureData.map((item, index) => <Cell key={item.name} fill={item.name === 'Остальные' ? '#CBD5E1' : chartColors[index % chartColors.length]} />)}</Bar></BarChart></ResponsiveContainer></div></article>
       </div>
 
+      <div className="entry-bottom-grid">
+      <article className="entry-card entry-efficiency-card">
+        <div className="entry-card-head"><div><h2>Эффективность точек входа</h2><p>Размер круга — число заказов, цвет — отдельный источник.</p></div></div>
+        <div className="entry-efficiency-chart"><ResponsiveContainer width="100%" height={330}><ScatterChart margin={{ top: 18, right: 24, bottom: 12, left: 4 }}><CartesianGrid stroke="#E7ECF2" strokeDasharray="3 3" /><XAxis type="number" dataKey="ctr" name="CTR" unit="%" tick={{ fontSize: 10, fill: '#7B889B' }} /><YAxis type="number" dataKey="profitability" name="Рентабельность" unit="%" tick={{ fontSize: 10, fill: '#7B889B' }} width={44} /><ZAxis type="number" dataKey="orders" range={[55, 520]} /><Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value, name) => [`${fmt(Number(value || 0))}${name === 'CTR' || name === 'Рентабельность' ? '%' : ''}`, name]} /><Scatter data={efficiencyData}>{efficiencyData.map(item => <Cell key={`${item.name}-${item.section}`} fill={item.fill} />)}</Scatter></ScatterChart></ResponsiveContainer></div>
+        <div className="entry-efficiency-legend">{efficiencyData.slice(0, 7).map(item => <span key={`${item.name}-${item.section}`}><i style={{ background: item.fill }} />{item.name}</span>)}</div>
+      </article>
       <article className="entry-card entry-finance-card">
         <div className="entry-card-head"><div><h2>Экономика точек входа</h2><p>Суммы распределены по доле заказов каждой точки внутри комбинации «дата + товар».</p></div><div className={`entry-reconciliation${finance.reconciliation.unallocated || finance.reconciliation.excess || finance.reconciliation.matchedKeys < finance.reconciliation.totalKeys ? ' warning' : ''}`}><strong>{finance.reconciliation.funnelOrders ? fmt(finance.reconciliation.entryOrders / finance.reconciliation.funnelOrders * 100) : '0'}%</strong><span>покрытие заказов · сопоставлено {finance.reconciliation.matchedKeys}/{finance.reconciliation.totalKeys} SKU-дней</span>{finance.reconciliation.unallocated > 0 && <small>Нераспределено: {fmt(finance.reconciliation.unallocated)} шт.</small>}{finance.reconciliation.excess > 0 && <small>Сверх воронки: {fmt(finance.reconciliation.excess)} шт.</small>}</div></div>
-        <div className="entry-finance-kpis">
-          <article><span>Сумма заказов</span><strong>{fmt(finance.totals.orderedAmount)} ₽</strong><small>{fmt(finance.totals.orders)} заказов</small></article>
-          <article><span>Чистая прибыль</span><strong>{fmt(finance.totals.profit)} ₽</strong><small>Распределена по заказам</small></article>
-          <article><span>Реклама</span><strong>{fmt(finance.totals.adSpend)} ₽</strong><small>Распределена по заказам</small></article>
-          <article><span>ДРР</span><strong>{fmt(finance.totals.drr)}%</strong><small>Реклама / сумма заказов</small></article>
-          <article><span>Рентабельность</span><strong>{fmt(finance.totals.profitability)}%</strong><small>ЧП / выручка отчёта</small></article>
-        </div>
         <div className="entry-finance-table-wrap"><table className="entry-finance-table"><thead><tr><th>Раздел / точка входа</th><th>Заказы, шт.</th><th>Сумма заказов</th><th>Доля</th><th>Чистая прибыль</th><th>Доля</th><th>Реклама</th><th>Доля</th><th>ДРР</th><th>Рентабельность</th></tr></thead><tbody>{finance.points.map(row => <tr key={row.name}><td><strong>{row.entryPoint}</strong><small>{row.section}</small></td><td>{fmt(row.orders)}</td><td>{fmt(row.orderedAmount)} ₽</td><td className="entry-share-cell">{finance.totals.orderedAmount ? fmt(row.orderedAmount / finance.totals.orderedAmount * 100) : '0'}%</td><td className={row.profit < 0 ? 'negative' : 'positive'}>{fmt(row.profit)} ₽</td><td className="entry-share-cell">{finance.totals.profit ? fmt(row.profit / finance.totals.profit * 100) : '0'}%</td><td>{fmt(row.adSpend)} ₽</td><td className="entry-share-cell">{finance.totals.adSpend ? fmt(row.adSpend / finance.totals.adSpend * 100) : '0'}%</td><td>{fmt(row.drr)}%</td><td className={row.profitability < 0 ? 'negative' : 'positive'}>{fmt(row.profitability)}%</td></tr>)}</tbody></table>{!finance.points.length && <div className="entry-empty">Нет данных для распределения в выбранном срезе</div>}</div>
         <p className="entry-finance-note">Это управленческая пропорциональная модель, а не подтверждённая рекламная атрибуция. Процентные показатели рассчитаны заново из распределённых денежных сумм.</p>
       </article>
+      </div>
     </section>
   );
 }

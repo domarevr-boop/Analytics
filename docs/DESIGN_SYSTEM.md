@@ -307,6 +307,15 @@
 - Regional tables combine exact values with restrained progress bars; detailed `district → area → city` finance remains available below the operational layer.
 - Monthly targets retain independent persistence and show target, fact, completion, and deviation in one compact card.
 
+## Traffic Structure Pattern
+
+- The entry-points page follows a decision sequence: contextual filters, four independent KPI tiles, automated conclusions, channel leaders, daily dynamics, channel structure, heatmap, efficiency matrix, and economics.
+- KPI tiles remain separate cards and use compact daily sparklines; exact totals and conversion context stay primary.
+- Automated conclusions are concise diagnostic signals derived from the active slice: leading channel, CTR quality, order conversion, and growth potential.
+- Top-5 products keep the established restricted filter scope and compare the three strategic channels in one aligned panel.
+- The daily heatmap uses row-local color scaling, fixed date columns, an average column, and a compact trend sparkline so high-volume channels do not suppress smaller ones.
+- The efficiency matrix combines CTR, profitability, and order volume; the economics table keeps exact distributed finance values and the attribution warning visible.
+
 ## Dashboard insight update
 
 - The four primary KPI cards remain the only KPI row; advertising metrics move to analytical charts to avoid overview overload.
