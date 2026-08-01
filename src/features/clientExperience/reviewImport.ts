@@ -302,33 +302,31 @@ export async function importReviewsToSupabase(
       }
     }
 
-    const duplicateKeys = new Set<string>();
-    for (const candidateChunk of chunks(candidates)) {
-      const ids = [...new Set(candidateChunk.map(item => String(item.registry.source_review_id)))];
-      const { data, error } = await supabase.from('review_row_registry')
-        .select('cabinet_name,source_review_id')
-        .eq('source', SOURCE)
-        .in('source_review_id', ids);
-      if (error) throw new Error(`[reviews] duplicate check failed: ${error.message}`);
-      for (const item of data || []) duplicateKeys.add(`${item.cabinet_name}\u0000${item.source_review_id}`);
-    }
-
-    const accepted: ReviewCandidate[] = [];
-    const acceptedKeys = new Set<string>();
+    const uniqueCandidates: ReviewCandidate[] = [];
+    const uniqueKeys = new Set<string>();
     let duplicateRows = 0;
     for (const candidate of candidates) {
-      if (duplicateKeys.has(candidate.key) || acceptedKeys.has(candidate.key)) {
+      if (uniqueKeys.has(candidate.key)) {
         duplicateRows++;
         continue;
       }
-      acceptedKeys.add(candidate.key);
-      accepted.push(candidate);
+      uniqueKeys.add(candidate.key);
+      uniqueCandidates.push(candidate);
     }
 
-    for (const candidateChunk of chunks(accepted)) {
-      const { error } = await supabase.from('review_row_registry').insert(candidateChunk.map(item => item.registry));
-      if (error) throw new Error(`[reviews] registry insert failed: ${error.message}`);
+    const claimedKeys = new Set<string>();
+    for (const candidateChunk of chunks(uniqueCandidates)) {
+      const { data, error } = await supabase.from('review_row_registry')
+        .upsert(candidateChunk.map(item => item.registry), {
+          onConflict: 'source,cabinet_name,source_review_id',
+          ignoreDuplicates: true,
+        })
+        .select('cabinet_name,source_review_id');
+      if (error) throw new Error(`[reviews] registry claim failed: ${error.message}`);
+      for (const item of data || []) claimedKeys.add(`${item.cabinet_name}\u0000${item.source_review_id}`);
     }
+    const accepted = uniqueCandidates.filter(candidate => claimedKeys.has(candidate.key));
+    duplicateRows += uniqueCandidates.length - accepted.length;
 
     const textCandidates = accepted.filter(candidate => candidate.review);
     for (const candidateChunk of chunks(textCandidates)) {

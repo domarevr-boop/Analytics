@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { importMappedData, getImportLog, subscribe, getVersion, deleteImportLogEntry } from '../data/store';
 import { parseFile } from '../data/parseFile';
 import type { ParsedFile } from '../data/parseFile';
@@ -59,6 +59,7 @@ export default function ImportPage() {
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
+  const importRunningRef = useRef(false);
 
   useEffect(() => {
     void getLatestReviewImport().then(setLatestReviewImport);
@@ -92,7 +93,8 @@ export default function ImportPage() {
     dateEndOverride?: string,
     dateYearOverride?: number,
   ) => {
-    if (!parsed) return;
+    if (!parsed || importRunningRef.current) return;
+    importRunningRef.current = true;
     if (DEV) console.log('[import-ui] source:', source, 'remapped rows:', remapped.length, 'dateOverride:', dateOverride);
     if (DEV && remapped.length > 0) console.log('[import-ui] first remapped row:', remapped[0], 'keys:', Object.keys(remapped[0]));
 
@@ -133,6 +135,7 @@ export default function ImportPage() {
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка импорта');
     } finally {
+      importRunningRef.current = false;
       setLoading(false);
       setProgress('');
       setParsed(null);
