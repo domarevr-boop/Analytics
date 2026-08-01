@@ -316,6 +316,14 @@
 - The daily heatmap uses row-local color scaling, fixed date columns, an average column, and a compact trend sparkline so high-volume channels do not suppress smaller ones.
 - The efficiency matrix combines CTR, profitability, and order volume; the economics table keeps exact distributed finance values and the attribution warning visible.
 
+## Search Demand Pattern
+
+- Search analytics follows the sequence: reference filter, five independent KPI tiles, market and selected-query demand, opportunity map, recommendations, short rankings, and the detailed query table.
+- KPI sparklines expose daily direction without replacing exact totals or previous-period deltas.
+- The opportunity map uses query frequency on X, order conversion on Y, estimated order amount as bubble size, and competition tier as color.
+- Recommendations are derived from demand, growth, conversion, and competition rather than manually assigned labels.
+- The query table keeps exact metrics, adds a compact daily sparkline, competition badge, and relative opportunity score; pagination remains mandatory for large imports.
+
 ## Dashboard insight update
 
 - The four primary KPI cards remain the only KPI row; advertising metrics move to analytical charts to avoid overview overload.
