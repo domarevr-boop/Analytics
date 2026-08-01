@@ -172,9 +172,9 @@ set search_path = public
 as $$
 declare
   target public.review_import_batches%rowtype;
-  review_count integer;
-  empty_count integer;
-  registry_count integer;
+  stored_review_count integer;
+  stored_empty_count integer;
+  stored_registry_count integer;
   accounted integer;
   ok boolean;
   result_message text;
@@ -186,29 +186,29 @@ begin
   select * into target from public.review_import_batches where id = batch_uuid for update;
   if not found then raise exception 'review import batch not found'; end if;
 
-  select count(*)::integer into review_count from public.reviews where import_batch_id = batch_uuid;
-  select coalesce(sum(review_count), 0)::integer into empty_count
-  from public.empty_review_stats where import_batch_id = batch_uuid;
-  select count(*)::integer into registry_count
+  select count(*)::integer into stored_review_count from public.reviews where import_batch_id = batch_uuid;
+  select coalesce(sum(stats.review_count), 0)::integer into stored_empty_count
+  from public.empty_review_stats as stats where stats.import_batch_id = batch_uuid;
+  select count(*)::integer into stored_registry_count
   from public.review_row_registry where import_batch_id = batch_uuid;
 
   accounted := target.text_rows + target.empty_rows + target.duplicate_rows + target.rejected_rows;
   ok := accounted = target.total_rows
-    and review_count = target.text_rows
-    and empty_count = target.empty_rows
-    and registry_count = target.text_rows + target.empty_rows;
+    and stored_review_count = target.text_rows
+    and stored_empty_count = target.empty_rows
+    and stored_registry_count = target.text_rows + target.empty_rows;
   result_message := case when ok then 'all rows reconciled' else 'row reconciliation failed' end;
 
   update public.review_import_batches
   set status = case when ok then 'completed' else 'verification_failed' end,
-      inserted_reviews = review_count,
-      inserted_empty_rows = empty_count,
-      inserted_registry_rows = registry_count,
+      inserted_reviews = stored_review_count,
+      inserted_empty_rows = stored_empty_count,
+      inserted_registry_rows = stored_registry_count,
       verified_at = now(),
       error_message = case when ok then null else result_message end
   where id = batch_uuid;
 
-  return query select ok, target.total_rows, accounted, review_count, empty_count, result_message;
+  return query select ok, target.total_rows, accounted, stored_review_count, stored_empty_count, result_message;
 end;
 $$;
 
