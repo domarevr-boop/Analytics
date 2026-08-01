@@ -324,6 +324,15 @@
 - Recommendations are derived from demand, growth, conversion, and competition rather than manually assigned labels.
 - The query table keeps exact metrics, adds a compact daily sparkline, competition badge, and relative opportunity score; pagination remains mandatory for large imports.
 
+## Niche Intelligence Pattern
+
+- Niche analytics follows the sequence: market filters, five independent KPI tiles, structural indicators, indexed market-versus-own dynamics, subject structure, diagnostics, key changes, matrix, and recommended actions.
+- Market and own dynamics use a common base index so growth rates remain comparable despite different absolute scales; absolute market volume stays available as a muted area.
+- The subject structure chart overlays market amount and own amount instead of presenting market volume alone.
+- Diagnostic cards separate relative growth, market-share decomposition, market health, and normalized radar comparison; these are decision aids, not replacements for source values.
+- The metric matrix uses fixed period columns, row-local heat coloring, average and absolute-change summaries, and a sticky metric column.
+- Recommended actions are derived from current leaders, lagging subjects, market growth, competition, average check, and turnover.
+
 ## Dashboard insight update
 
 - The four primary KPI cards remain the only KPI row; advertising metrics move to analytical charts to avoid overview overload.

@@ -6628,3 +6628,103 @@ thead .at-metric:last-child {
   .search-demand-charts,
   .search-recommendation-grid { grid-template-columns: 1fr; }
 }
+
+/* Niche dynamics — market intelligence workspace */
+.niche-page-v2 { gap: 12px; }
+.niche-page-v2 .niche-kpi-sheet { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; border: 0; background: transparent; overflow: visible; }
+.niche-page-v2 .niche-kpi-sheet > article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 102px;
+  padding: 14px;
+  border: 1px solid #dfe6ee !important;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(30, 52, 76, .035);
+}
+.niche-page-v2 .niche-kpi-sheet article > div { display: grid; gap: 4px; min-width: 0; }
+.niche-page-v2 .niche-kpi-sheet span { color: #718198; font-size: 8px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.niche-page-v2 .niche-kpi-sheet strong { color: #102a43; font-size: 20px; white-space: nowrap; }
+.niche-page-v2 .niche-kpi-sheet small { color: #8290a3; font-size: 8px; }
+.niche-page-v2 .niche-kpi-sheet em { font-size: 8px; font-style: normal; font-weight: 700; }
+.niche-page-v2 .niche-chart-grid { grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr); }
+.niche-structure-legend,
+.niche-radar-legend { display: flex; justify-content: center; gap: 16px; color: #66768b; font-size: 8px; }
+.niche-structure-legend span,
+.niche-radar-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.niche-structure-legend i,
+.niche-radar-legend i { width: 9px; height: 9px; border-radius: 50%; background: #75a7f8; }
+.niche-structure-legend span:nth-child(2) i,
+.niche-radar-legend span:nth-child(2) i { background: #12a579; }
+
+.niche-diagnostics-grid { display: grid; grid-template-columns: 1.05fr 1.15fr .75fr .9fr; gap: 10px; }
+.niche-relative-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.niche-relative-metrics > div { display: grid; gap: 8px; min-width: 0; min-height: 120px; padding: 10px; border: 1px solid #e5ebf2; border-radius: 8px; }
+.niche-relative-metrics span { color: #718198; font-size: 8px; }
+.niche-relative-metrics strong { font-size: 18px; }
+.niche-relative-metrics strong.blue { color: #2563eb; }
+.niche-relative-metrics strong.green { color: #10a778; }
+.niche-relative-metrics .niche-sparkline { align-self: end; width: 100%; height: 34px; }
+
+.niche-waterfall { display: flex; align-items: end; justify-content: space-between; gap: 8px; height: 150px; margin-top: 8px; padding: 8px 4px 0; border-bottom: 1px solid #dce4ed; }
+.niche-waterfall > div { display: grid; grid-template-rows: 18px 1fr 24px; align-items: end; justify-items: center; width: 18%; height: 100%; }
+.niche-waterfall b { color: #52647c; font-size: 7px; white-space: nowrap; }
+.niche-waterfall i { width: 65%; height: var(--bar, 35%); min-height: 16px; background: #f28a94; }
+.niche-waterfall .positive i { height: 24%; background: #54c49c; }
+.niche-waterfall .negative i { height: 32%; }
+.niche-waterfall .total i { background: #a7b2c2; }
+.niche-waterfall span { color: #718198; font-size: 7px; text-align: center; }
+
+.niche-health-card dl { display: grid; gap: 0; margin: 10px 0 0; }
+.niche-health-card dl div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid #edf1f5; }
+.niche-health-card dt { color: #68798e; font-size: 8px; }
+.niche-health-card dd { margin: 0; color: #233d59; font-size: 8px; font-weight: 700; }
+.niche-radar-card { min-width: 0; }
+
+.niche-change-card { padding: 12px; }
+.niche-change-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.niche-change-grid article { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 2px 8px; min-width: 0; padding: 10px; border: 1px solid #e5ebf2; border-radius: 8px; }
+.niche-change-grid i { grid-row: 1 / 4; width: 26px; height: 26px; border-radius: 50%; background: #eff6ff; }
+.niche-change-grid span { color: #60738a; font-size: 8px; }
+.niche-change-grid strong { font-size: 12px; }
+.niche-change-grid small { color: #7f8da0; font-size: 8px; }
+
+.niche-page-v2 .niche-matrix-wrap table { width: max-content; min-width: 100%; }
+.niche-page-v2 .niche-matrix-wrap th,
+.niche-page-v2 .niche-matrix-wrap td { min-width: 84px; text-align: center; }
+.niche-page-v2 .niche-matrix-wrap th:first-child,
+.niche-page-v2 .niche-matrix-wrap td:first-child { position: sticky; left: 0; z-index: 2; min-width: 140px; text-align: left; background: #fff; }
+.niche-page-v2 .niche-matrix-group td:first-child { background: #f4f7fa; }
+.niche-page-v2 .niche-matrix-summary { background: #f7f9fc; font-weight: 700; }
+
+.niche-actions-card { padding: 12px; }
+.niche-actions-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.niche-actions-grid article { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 9px; min-height: 110px; padding: 12px; border: 1px solid #e4eaf1; border-radius: 9px; }
+.niche-actions-grid i { grid-row: 1 / 3; width: 28px; height: 28px; border-radius: 50%; background: #ecfdf5; }
+.niche-actions-grid .orange i { background: #fff7ed; }
+.niche-actions-grid .violet i { background: #f5f3ff; }
+.niche-actions-grid .blue i { background: #eff6ff; }
+.niche-actions-grid strong { align-self: center; color: #173450; font-size: 10px; }
+.niche-actions-grid p { grid-column: 1 / -1; min-height: 26px; color: #65758a; font-size: 8px; line-height: 1.45; }
+.niche-actions-grid button { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; color: #2563eb; padding: 0; font-size: 8px; cursor: pointer; }
+
+@media (max-width: 1280px) {
+  .niche-diagnostics-grid { grid-template-columns: 1fr 1fr; }
+  .niche-change-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 980px) {
+  .niche-page-v2 .niche-kpi-sheet { grid-template-columns: 1fr 1fr; }
+  .niche-page-v2 .niche-chart-grid { grid-template-columns: 1fr; }
+  .niche-actions-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 680px) {
+  .niche-page-v2 .niche-kpi-sheet,
+  .niche-diagnostics-grid,
+  .niche-change-grid,
+  .niche-actions-grid { grid-template-columns: 1fr; }
+}
