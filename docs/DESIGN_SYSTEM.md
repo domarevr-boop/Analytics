@@ -296,6 +296,7 @@
 - Traffic sources combine a ranked bar chart and a compact metric table driven by the same selected metric.
 - Geography combines operational KPI, ranked regions, a linked daily chart, and an internal region filter.
 - On narrow screens, paired analytical panels become a single column while keeping filters and exact values available.
+- Shared analytical control contracts are documented in `docs/UI_COMPONENTS.md`; page-specific controls must reuse them instead of defining new visual variants.
 
 ## Dashboard insight update
 

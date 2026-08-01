@@ -67,6 +67,7 @@ Design a modern, dense, decision-oriented analytics interface without copying a 
 - Distinguish selection, weekends, incomplete dates, and performance through separate visual channels.
 - For entity detail pages, combine identity and period context in one header, use comparative KPI tiles, and pair the main trend with a compact conversion panel.
 - Keep entity-versus-group comparisons behind a contextual switch instead of rendering duplicate full-size analytical blocks.
+- Reuse the project's canonical period, select, and segmented-button contracts; do not create page-local variants for equivalent analytical controls.
 
 ## Reference handling
 

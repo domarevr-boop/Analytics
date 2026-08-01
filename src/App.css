@@ -6170,3 +6170,130 @@ thead .at-metric:last-child {
   .navbar-left { gap: 7px; }
   .nav-tab { padding-inline: 8px; }
 }
+
+/* Shared analytical controls and product detail refinements */
+:where(.dashboard) select {
+  min-height: 30px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #d8e1eb;
+  border-radius: 7px;
+  background-color: #fff;
+  color: #263e59;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 500;
+  cursor: pointer;
+}
+:where(.dashboard) select:hover { border-color: #c6d2df; }
+:where(.dashboard) select:focus-visible { outline: 2px solid rgba(79, 142, 247, .24); outline-offset: 1px; }
+
+.product-overview-v2 .product-overview-header { grid-template-columns: minmax(0, 1fr); }
+.product-overview-v2 .product-overview-identity { align-items: flex-start; }
+.product-identity-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 12px; margin-top: 10px; }
+.product-overview-v2 .product-identity-tags { margin-top: 0; }
+.product-header-periods { flex-wrap: wrap; gap: 7px; }
+.product-overview-v2 .product-header-periods .drf-trigger {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #d8e1eb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: none;
+}
+.product-overview-v2 .product-header-periods .drf-trigger-label { color: #8190a3; }
+.product-overview-v2 .product-header-periods .drf-trigger-current { color: #263e59; font-weight: 800; }
+
+.product-overview-v2 .product-kpis {
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.product-overview-v2 .product-kpis > article {
+  min-height: 98px;
+  padding: 13px 14px;
+  border: 1px solid #dfe6ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(23, 52, 80, .035);
+}
+
+.product-overview-v2 .product-chart-toolbar select,
+.product-overview-v2 .product-geo-filter { min-height: 28px; font-size: 8px; }
+.product-overview-v2 .product-metric-chip {
+  min-height: 30px;
+  padding: 0 8px;
+  border-color: #d8e1eb;
+  border-radius: 7px;
+  background: #fff;
+}
+.product-overview-v2 .product-metric-chip select { min-height: 28px; padding: 0 22px 0 0; border: 0; background-color: transparent; }
+
+.product-overview-v2 .product-funnel-steps { min-height: 268px; padding: 3px 0; }
+.product-overview-v2 .product-funnel-stage {
+  grid-template-columns: 82px minmax(160px, 310px) 88px;
+  justify-content: center;
+  justify-items: stretch;
+  gap: 12px;
+  min-height: 58px;
+}
+.product-overview-v2 .product-funnel-label {
+  align-self: center;
+  color: #40556e;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+.product-overview-v2 .product-funnel-stage > .product-funnel-shape {
+  grid-column: 2;
+  display: grid;
+  align-content: center;
+  justify-self: center;
+  justify-items: center;
+  width: var(--step-width);
+  max-width: 310px;
+  min-height: 48px;
+  padding: 7px 20px;
+}
+.product-overview-v2 .product-funnel-stage > .product-funnel-shape strong { color: #183450; font-size: 18px; line-height: 1; }
+.product-overview-v2 .product-funnel-stage > .product-funnel-shape small {
+  position: static;
+  margin-top: 4px;
+  color: #75869a;
+  font-size: 8px;
+  white-space: nowrap;
+}
+.product-overview-v2 .product-funnel-stage > .product-funnel-conversion {
+  grid-column: 3;
+  align-self: center;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  margin: 0;
+  color: #75849a;
+  font-style: normal;
+}
+.product-overview-v2 .product-funnel-stage > .product-funnel-conversion span { font-size: 9px; }
+.product-overview-v2 .product-funnel-stage > .product-funnel-conversion b { color: #334a64; font-size: 13px; }
+.product-overview-v2 .product-funnel-stage > em { left: calc(50% - 6px); bottom: -6px; }
+
+.product-overview-v2 .product-entry-chart { min-width: 0; }
+.product-overview-v2 .product-traffic-tabs { margin: 0 0 7px 90px; padding: 2px; }
+.product-overview-v2 .product-traffic-tabs button { min-width: 54px; min-height: 27px; padding: 0 12px; }
+
+@media (max-width: 1050px) {
+  .product-overview-v2 .product-funnel-stage { grid-template-columns: 74px minmax(150px, 300px) 82px; gap: 9px; }
+}
+
+@media (max-width: 760px) {
+  .product-identity-meta { align-items: flex-start; flex-direction: column; }
+  .product-header-periods { width: 100%; }
+  .product-header-periods .drf { flex: 1 1 210px; }
+  .product-header-periods .drf-trigger { width: 100%; }
+  .product-overview-v2 .product-funnel-stage { grid-template-columns: 65px minmax(120px, 1fr) 72px; gap: 6px; }
+  .product-overview-v2 .product-funnel-label { font-size: 10px; }
+  .product-overview-v2 .product-funnel-stage > .product-funnel-shape strong { font-size: 15px; }
+  .product-overview-v2 .product-traffic-tabs { margin-left: 0; }
+}

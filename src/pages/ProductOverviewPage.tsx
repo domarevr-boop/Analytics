@@ -46,10 +46,6 @@ function displayDate(value: string) {
   return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(parseDate(value)).replace('.', '');
 }
 
-function displayRange(period: DatePeriod) {
-  return `${displayDate(period.start)} — ${displayDate(period.end)}`;
-}
-
 function emptyFunnel(): FunnelTotals {
   return { impressions: 0, clicks: 0, carts: 0, orders: 0, ordered_amount: 0 };
 }
@@ -95,11 +91,12 @@ function FunnelSteps({ totals, productTotals }: { totals: FunnelTotals; productT
   ];
   return <div className="product-funnel-steps">
     {stages.map((stage, index) => <div className="product-funnel-stage" key={stage.label}>
-      <div style={{ '--step-width': funnelWidth(stage.value, totals.impressions) } as React.CSSProperties}>
-        <span>{stage.label}</span><strong>{fmt(stage.value)}</strong>
-        {productTotals && <small>Доля товара {fmt(stage.value ? stage.productValue / stage.value * 100 : 0, 1)}%</small>}
+      <strong className="product-funnel-label">{stage.label}</strong>
+      <div className="product-funnel-shape" style={{ '--step-width': funnelWidth(stage.value, totals.impressions) } as React.CSSProperties}>
+        <strong>{fmt(stage.value)}</strong>
+        {productTotals && <small>товар: {fmt(stage.value ? stage.productValue / stage.value * 100 : 0, 1)}%</small>}
       </div>
-      {index > 0 && <i><span>{stage.conversionLabel}</span><b>{fmt(stage.conversion || 0, index === 3 ? 1 : 1)}%</b></i>}
+      <i className="product-funnel-conversion">{index > 0 ? <><span>{stage.conversionLabel}</span><b>{fmt(stage.conversion || 0, 1)}%</b></> : <span>Абсолют</span>}</i>
       {index < stages.length - 1 && <em aria-hidden="true">↓</em>}
     </div>)}
   </div>;
@@ -226,8 +223,13 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const allGeography = useMemo(() => geographyRows.filter(row => relatedIds.has(row.product_id)), [geographyRows, relatedIds]);
   const allEntryPoints = useMemo(() => entryPointRows.filter(row => relatedIds.has(row.product_id)), [entryPointRows, relatedIds]);
   const maxDate = allMetrics.at(-1)?.date || new Date().toISOString().slice(0, 10);
-  const [period, setPeriod] = useState<DatePeriod>(() => ({ start: `${maxDate.slice(0, 7)}-01`, end: maxDate }));
-  const comparison = useMemo(() => previousPeriod(period), [period]);
+  const initialPeriod = useMemo<DatePeriod>(() => ({ start: `${maxDate.slice(0, 7)}-01`, end: maxDate }), [maxDate]);
+  const [period, setPeriod] = useState<DatePeriod>(initialPeriod);
+  const [comparison, setComparison] = useState<DatePeriod>(() => previousPeriod(initialPeriod));
+  const changePeriod = (nextPeriod: DatePeriod) => {
+    setPeriod(nextPeriod);
+    setComparison(previousPeriod(nextPeriod));
+  };
   const [primaryMetric, setPrimaryMetric] = useState<ProductMetric>('revenue');
   const [secondaryMetric, setSecondaryMetric] = useState<ProductMetric>('profit');
   const [granularity, setGranularity] = useState<'day' | 'week'>('day');
@@ -312,8 +314,7 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   return <section className="product-overview-page product-overview-v2">
     <nav className="product-breadcrumbs" aria-label="Навигация по товару"><button type="button" onClick={onBack}>Главная</button><span>›</span><span>{productGroups[0]?.name || product.category || 'Товары'}</span><span>›</span><b>{product.sku}</b></nav>
     <header className="product-overview-header">
-      <div className="product-overview-identity">{imageUrl ? <img src={imageUrl} alt={productName} /> : <span>Т</span>}<div><div className="product-title-line"><h1>{productName}</h1><span aria-hidden="true">☆</span></div><p>SKU: {product.sku}{product.wb_sku ? ` · WB ID: ${product.wb_sku}` : ''}</p><div className="product-identity-tags"><span>{cabinet?.name || 'Без кабинета'}</span>{productGroups[0] && <span>{productGroups[0].name}</span>}{brand && <span>{brand.name}</span>}<span>{product.category || 'Без категории'}</span></div></div></div>
-      <div className="product-header-period"><DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} /><small>Сравнение: {displayRange(comparison)}</small></div>
+      <div className="product-overview-identity">{imageUrl ? <img src={imageUrl} alt={productName} /> : <span>Т</span>}<div><div className="product-title-line"><h1>{productName}</h1><span aria-hidden="true">☆</span></div><p>SKU: {product.sku}{product.wb_sku ? ` · WB ID: ${product.wb_sku}` : ''}</p><div className="product-identity-meta"><div className="product-identity-tags"><span>{cabinet?.name || 'Без кабинета'}</span>{productGroups[0] && <span>{productGroups[0].name}</span>}{brand && <span>{brand.name}</span>}<span>{product.category || 'Без категории'}</span></div><div className="date-filters product-header-periods"><DateRangeFilter label="Период" value={period} onChange={changePeriod} maxDate={maxDate} /><DateRangeFilter label="Сравнение" value={comparison} onChange={setComparison} maxDate={maxDate} /></div></div></div></div>
     </header>
 
     <div className="product-kpis">{kpis.map(card => <KpiCard key={card.label} {...card} />)}</div>
@@ -324,7 +325,7 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
     </div>
 
     <div className="product-overview-grid product-overview-secondary-row">
-      <article className="product-panel product-entry-panel"><div className="product-panel-head"><h2>Источники трафика</h2></div>{topPoints.length ? <><div className="product-traffic-tabs"><button className={trafficMetric === 'orders' ? 'active' : ''} onClick={() => setTrafficMetric('orders')}>Заказы</button><button className={trafficMetric === 'orderedAmount' ? 'active' : ''} onClick={() => setTrafficMetric('orderedAmount')}>Сумма заказов</button><button className={trafficMetric === 'impressions' ? 'active' : ''} onClick={() => setTrafficMetric('impressions')}>Показы</button></div><div className="product-entry-layout"><ResponsiveContainer width="100%" height={210}><BarChart data={trafficRows} layout="vertical" margin={{ left: 6, right: 18 }}><XAxis type="number" tick={{ fontSize: 8 }} /><YAxis type="category" dataKey="name" width={138} tick={{ fontSize: 8 }} /><Tooltip formatter={(value) => trafficMetric === 'orderedAmount' ? money(Number(value)) : fmt(Number(value))} /><Bar dataKey={trafficMetric} fill="#4F8FF7" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer><div className="product-entry-table"><table><thead><tr><th>Источник</th><th>Показы</th><th>Клики</th><th>CTR</th><th>Корзины</th><th>Заказы</th><th>CR заказа</th></tr></thead><tbody>{trafficRows.map(row => <tr key={row.name}><td title={row.name}>{row.name}</td><td>{fmt(row.impressions)}</td><td>{fmt(row.clicks)}</td><td>{fmt(row.ctr, 1)}%</td><td>{fmt(row.carts)}</td><td>{fmt(row.orders)}</td><td>{fmt(row.cr, 2)}%</td></tr>)}</tbody></table></div></div>{topPoints.length > 6 && <button className="product-show-all" type="button" onClick={() => setShowAllTraffic(value => !value)}>{showAllTraffic ? 'Свернуть' : 'Показать все источники'}</button>}</> : <div className="product-empty-state">Нет точек входа в выбранном периоде.</div>}</article>
+      <article className="product-panel product-entry-panel"><div className="product-panel-head"><h2>Источники трафика</h2></div>{topPoints.length ? <><div className="product-entry-layout"><div className="product-entry-chart"><div className="product-traffic-tabs"><button className={trafficMetric === 'orders' ? 'active' : ''} onClick={() => setTrafficMetric('orders')}>Заказы</button><button className={trafficMetric === 'orderedAmount' ? 'active' : ''} onClick={() => setTrafficMetric('orderedAmount')}>Сумма заказов</button><button className={trafficMetric === 'impressions' ? 'active' : ''} onClick={() => setTrafficMetric('impressions')}>Показы</button></div><ResponsiveContainer width="100%" height={210}><BarChart data={trafficRows} layout="vertical" margin={{ left: 6, right: 18 }}><XAxis type="number" tick={{ fontSize: 8 }} /><YAxis type="category" dataKey="name" width={138} tick={{ fontSize: 8 }} /><Tooltip formatter={(value) => trafficMetric === 'orderedAmount' ? money(Number(value)) : fmt(Number(value))} /><Bar dataKey={trafficMetric} fill="#4F8FF7" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div><div className="product-entry-table"><table><thead><tr><th>Источник</th><th>Показы</th><th>Клики</th><th>CTR</th><th>Корзины</th><th>Заказы</th><th>CR заказа</th></tr></thead><tbody>{trafficRows.map(row => <tr key={row.name}><td title={row.name}>{row.name}</td><td>{fmt(row.impressions)}</td><td>{fmt(row.clicks)}</td><td>{fmt(row.ctr, 1)}%</td><td>{fmt(row.carts)}</td><td>{fmt(row.orders)}</td><td>{fmt(row.cr, 2)}%</td></tr>)}</tbody></table></div></div>{topPoints.length > 6 && <button className="product-show-all" type="button" onClick={() => setShowAllTraffic(value => !value)}>{showAllTraffic ? 'Свернуть' : 'Показать все источники'}</button>}</> : <div className="product-empty-state">Нет точек входа в выбранном периоде.</div>}</article>
       <article className="product-panel product-geo-summary"><div className="product-panel-head"><h2>География и доставка</h2></div>{geoSummary.regions.length ? <><div className="product-geo-kpis"><span>Локальность<strong>{fmt(geoSummary.localShare, 1)}%</strong></span><span>Среднее время<strong>{fmt(geoSummary.delivery, 1)} ч</strong></span><span>Заказы<strong>{fmt(geoSummary.orders)}</strong></span></div><div className="product-geo-layout"><div className="product-region-list">{geoSummary.regions.slice(0, 8).map(row => <div className="product-region-row" key={row.name}><span title={row.name}>{row.name}</span><b>{fmt(row.value)}</b></div>)}</div><ResponsiveContainer width="100%" height={190}><LineChart data={geoTrend} margin={{ top: 8, right: 4, left: -16, bottom: 0 }}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 8 }} /><YAxis yAxisId="orders" tick={{ fontSize: 8 }} /><YAxis yAxisId="amount" orientation="right" tick={{ fontSize: 8 }} /><Tooltip /><Legend wrapperStyle={{ fontSize: 8 }} /><Line yAxisId="orders" dataKey="orders" name="Заказы" stroke="#3B82F6" strokeWidth={2} dot={false} /><Line yAxisId="amount" dataKey="orderedAmount" name="Сумма заказов" stroke="#10B981" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div><select className="product-geo-filter" value={geoRegion} onChange={event => setGeoRegion(event.target.value)}><option value="">Все ФО</option>{geoSummary.regions.map(row => <option key={row.name}>{row.name}</option>)}</select></> : <div className="product-empty-state">Нет географических данных в выбранном периоде.</div>}</article>
     </div>
   </section>;
