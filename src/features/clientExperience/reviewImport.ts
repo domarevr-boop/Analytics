@@ -70,7 +70,8 @@ function parseRating(value: unknown): number {
 }
 
 function safeFileName(name: string): string {
-  return name.replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(-180) || 'reviews.xlsx';
+  const extension = name.split('.').pop()?.toLocaleLowerCase('en-US').replace(/[^a-z0-9]/g, '');
+  return extension ? `reviews.${extension}` : 'reviews.xlsx';
 }
 
 async function sha256(value: string | ArrayBuffer): Promise<string> {
