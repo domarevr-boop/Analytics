@@ -162,6 +162,7 @@ export function getLocalDataVolumes(): Record<ImportSource, LocalDataVolume> {
     entry_points: estimateRowBytes(_entryPoints, () => true, row => row),
     search_queries: estimateRowBytes(_searchQueries, () => true, row => row),
     niche_dynamics: estimateRowBytes(_nicheDynamics, () => true, row => row),
+    reviews: { bytes: 0, estimated: false },
     plan_template: estimateRowBytes(_monthlyPlans, () => true, row => row),
   };
 }
@@ -745,6 +746,7 @@ const METRIC_FIELD_MAP: Record<string, keyof DailyMetrics> = {
 
 export function detectSourceFromFilename(fileName: string): ImportSource {
   const normalizedName = fileName.toLocaleLowerCase('ru-RU');
+  if (normalizedName.includes('отзыв') || normalizedName.includes('review')) return 'reviews';
   if (normalizedName.includes('поисков') || normalizedName.includes('search quer')) return 'search_queries';
   if (normalizedName.includes('динамик') && normalizedName.includes('ниш')) return 'niche_dynamics';
   const n = fileName.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
@@ -774,6 +776,7 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   entry_points: new Set([]),
   search_queries: new Set([]),
   niche_dynamics: new Set([]),
+  reviews: new Set([]),
   plan_template: new Set([]),
 };
 

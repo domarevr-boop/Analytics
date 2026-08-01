@@ -7,6 +7,7 @@ import { detectSourceFromFilename } from '../data/store';
 import { normalizeImportDate } from '../data/dateUtils';
 
 const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
+  { value: 'reviews', label: 'Отзывы WB (Клиентский опыт)' },
   { value: 'niche_dynamics', label: 'Динамика ниши' },
   { value: 'search_queries', label: 'Поисковые запросы WB' },
   { value: 'entry_points', label: 'Точки входа' },
@@ -71,6 +72,8 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
     ? ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_active_sellers', 'niche_revenue', 'niche_avg_check']
     : source === 'search_queries'
     ? ['date', 'search_query', 'search_category', 'search_requests', 'search_card_clicks', 'search_carts', 'search_orders']
+    : source === 'reviews'
+    ? ['review_cabinet', 'review_id', 'date', 'sku', 'wb_sku', 'review_rating', 'review_text']
     : source === 'profitability'
     ? ['sku', ...(!hasSourceDate ? [] : mappedFields.filter(field => ['date', 'period_start', 'period_end'].includes(field))), 'profit_revenue', 'actual_profit', 'actual_margin'].filter((field, index, fields) => mappedFields.includes(field) && fields.indexOf(field) === index)
     : [
@@ -86,7 +89,13 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
     let datedRows = 0;
 
     for (const row of remapped) {
-      if (source === 'search_queries' ? !row.search_query : source === 'niche_dynamics' ? !row.niche_subject : !(row.sku || row.wb_sku)) continue;
+      if (source === 'search_queries'
+        ? !row.search_query
+        : source === 'niche_dynamics'
+          ? !row.niche_subject
+          : source === 'reviews'
+            ? !row.review_id
+            : !(row.sku || row.wb_sku)) continue;
       const rowStart = source === 'profitability'
         ? normalizeImportDate(hasSourceDate ? (row.date || row.period_start || '') : manualDateStart, reportYear)
         : normalizeImportDate(hasSourceDate ? row.date : manualDateStart, reportYear);
@@ -167,7 +176,9 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
               </div>
               <div className="map-section-body">
                 <p className="map-error-desc">
-                  {source === 'xway'
+                  {source === 'reviews'
+                    ? 'Импорт невозможен без кабинета, ID отзыва, даты и количества звёзд.'
+                    : source === 'xway'
                     ? 'Импорт невозможен без колонки, содержащей артикул (SKU).'
                     : 'Импорт невозможен без колонок, содержащих артикул (SKU) и дату.'}
                   Убедитесь, что в файле есть соответствующие колонки.

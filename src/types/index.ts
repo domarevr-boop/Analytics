@@ -240,7 +240,7 @@ export interface NicheDynamicsRecord {
   avg_rating: number;
 }
 
-export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'plan_template';
+export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'reviews' | 'plan_template';
 
 export interface ImportFileLog {
   id: string;

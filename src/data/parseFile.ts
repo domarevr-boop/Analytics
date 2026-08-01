@@ -30,6 +30,7 @@ function detectDelimiter(text: string): string {
 
 // All known column keywords for header scoring
 const ALL_KEY_COLUMNS = [
+  'id отзыва', 'количество звезд', 'текст отзыва', 'достоинства', 'недостатки',
   'артикул', 'sku', 'nm_id', 'показы', 'impressions',
   'клики', 'clicks', 'ctr', 'корзины', 'carts',
   'заказы', 'orders', 'выкупы', 'buyouts',

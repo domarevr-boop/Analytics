@@ -223,6 +223,11 @@ const XWAY_OVERRIDES: Record<string, string> = {
 };
 
 export const FIELD_LABELS: Record<string, string> = {
+  review_cabinet: 'Кабинет', review_id: 'ID отзыва', review_rating: 'Количество звёзд', review_brand: 'Бренд из отчёта',
+  review_text: 'Текст отзыва', review_advantages: 'Достоинства', review_disadvantages: 'Недостатки', review_author: 'Имя',
+  review_country: 'Страна / регион', review_color: 'Цвет', review_size: 'Размер', review_helpful_down: 'Минусы полезности',
+  review_helpful_up: 'Плюсы полезности', review_barcode: 'Штрихкод', review_response: 'Ответ продавца',
+  review_initial_id: 'ID начального отзыва', review_additional_id: 'ID дополнительного отзыва',
   sku: 'Артикул (SKU)',
   date: 'Дата',
   period_start: 'Начало периода',
@@ -290,7 +295,31 @@ const NICHE_OVERRIDES: Record<string, string> = {
   'предмет': 'niche_subject',
 };
 
+const REVIEW_OVERRIDES: Record<string, string> = {
+  'кабинет': 'review_cabinet',
+  'id отзыва': 'review_id',
+  'дата': 'date',
+  'артикул продавца': 'sku',
+  'артикул wb': 'wb_sku',
+  'количество звезд': 'review_rating',
+  'бренд': 'review_brand',
+  'текст отзыва': 'review_text',
+  'достоинства': 'review_advantages',
+  'недостатки': 'review_disadvantages',
+  'имя': 'review_author',
+  'регион': 'review_country',
+  'цвет': 'review_color',
+  'размер': 'review_size',
+  'полезность (количество минусов)': 'review_helpful_down',
+  'полезность (количество плюсов)': 'review_helpful_up',
+  'штрихкод': 'review_barcode',
+  'ответ': 'review_response',
+  'id начального отзыва': 'review_initial_id',
+  'id дополнительного отзыва': 'review_additional_id',
+};
+
 export function getRequiredFields(source?: ImportSource): string[] {
+  if (source === 'reviews') return ['review_cabinet', 'review_id', 'date', 'review_rating'];
   if (source === 'niche_dynamics') return ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_revenue'];
   if (source === 'search_queries') return ['date', 'search_query', 'search_requests', 'search_category', 'search_card_clicks', 'search_carts', 'search_orders'];
   if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total', 'geo_product_local_orders', 'geo_product_nonlocal_orders'];
@@ -308,6 +337,8 @@ export interface ColumnMapping {
 
 export function detectSourceFromHeaders(headers: string[]): ImportSource | null {
   const nhs = headers.map(h => normHeader(h));
+
+  if (nhs.includes('id отзыва') && nhs.includes('количество звезд')) return 'reviews';
 
   if (nhs.includes('поисковый запрос') && nhs.includes('количество запросов')) return 'search_queries';
   if (nhs.includes('продавцы') && nhs.some(header => header.includes('монополизация')) && nhs.some(header => header.includes('карточек товара'))) return 'niche_dynamics';
@@ -355,6 +386,8 @@ export function autoDetectMapping(headers: string[], source?: ImportSource): Col
       : DICT[nh] || COMPACT_DICT[compactHeader(h)];
     const override = source === 'niche_dynamics'
       ? NICHE_OVERRIDES[nh]
+      : source === 'reviews'
+      ? REVIEW_OVERRIDES[nh]
       : source === 'xway'
       ? XWAY_OVERRIDES[nh]
       : source === 'wb_funnel'
