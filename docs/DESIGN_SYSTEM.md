@@ -298,6 +298,15 @@
 - On narrow screens, paired analytical panels become a single column while keeping filters and exact values available.
 - Shared analytical control contracts are documented in `docs/UI_COMPONENTS.md`; page-specific controls must reuse them instead of defining new visual variants.
 
+## Geography Analytics Pattern
+
+- Geography pages follow the sequence: context filters, four operational KPI tiles, main conclusions, daily/weekly dynamics, locality landscape, monthly plan, regional operations, finance, and diagnostic comparison.
+- KPI tiles compare the selected period with the immediately preceding equal-length period and keep exact operational coverage visible.
+- The main dynamics chart shows total and local orders together by default; other metrics use the same selector and day/week control contract.
+- The locality landscape is driven by filtered region data and opens the existing geographic detail drawer. It is an analytical navigation surface, not a decorative illustration.
+- Regional tables combine exact values with restrained progress bars; detailed `district → area → city` finance remains available below the operational layer.
+- Monthly targets retain independent persistence and show target, fact, completion, and deviation in one compact card.
+
 ## Dashboard insight update
 
 - The four primary KPI cards remain the only KPI row; advertising metrics move to analytical charts to avoid overview overload.
