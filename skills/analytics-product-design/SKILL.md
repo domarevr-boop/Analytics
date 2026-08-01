@@ -65,6 +65,8 @@ Design a modern, dense, decision-oriented analytics interface without copying a 
 - Use compact analytical radii: 10px KPI, 12px section, 6–8px control, 2–4px heatmap cell.
 - Use the spacing scale 4/6/8/12/16/20/24 and tabular numerals for dense analytical values.
 - Distinguish selection, weekends, incomplete dates, and performance through separate visual channels.
+- For entity detail pages, combine identity and period context in one header, use comparative KPI tiles, and pair the main trend with a compact conversion panel.
+- Keep entity-versus-group comparisons behind a contextual switch instead of rendering duplicate full-size analytical blocks.
 
 ## Reference handling
 

@@ -5484,6 +5484,119 @@ thead .at-metric:last-child {
   .niche-context-line { align-items: flex-start; flex-direction: column; }
 }
 
+/* Product detail reference adaptation */
+.product-overview-v2 {
+  gap: 14px;
+  padding: 18px 22px 24px;
+  background: #f7f9fc;
+  color: #142c47;
+}
+.product-breadcrumbs { display: flex; align-items: center; gap: 9px; min-height: 20px; color: #8794a6; font-size: 9px; }
+.product-breadcrumbs button { padding: 0; border: 0; background: transparent; color: #61748b; font: inherit; cursor: pointer; }
+.product-breadcrumbs button:hover { color: #2563eb; }
+.product-breadcrumbs b { color: #5c7088; font-weight: 700; }
+.product-overview-v2 .product-overview-header { min-height: 96px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.product-overview-v2 .product-overview-identity { gap: 16px; }
+.product-overview-v2 .product-overview-identity > img,
+.product-overview-v2 .product-overview-identity > span { width: 88px; height: 88px; flex-basis: 88px; border-radius: 10px; box-shadow: 0 3px 10px rgba(24, 47, 74, .08); }
+.product-title-line { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.product-title-line h1 { max-width: 720px; margin: 0 0 7px; font-size: 22px; }
+.product-title-line > span { color: #7c8da2; font-size: 23px; line-height: 1; }
+.product-overview-v2 .product-overview-identity p { font-size: 10px; }
+.product-overview-v2 .product-identity-tags { margin-top: 10px; }
+.product-overview-v2 .product-identity-tags span { min-height: 26px; padding: 6px 12px; border-radius: 8px; background: #fff; font-size: 9px; }
+.product-overview-v2 .product-header-period { display: grid; gap: 7px; min-width: 230px; padding: 11px 13px; border: 1px solid #dfe6ee; border-radius: 10px; background: #fff; }
+.product-overview-v2 .product-header-period .drf-trigger { width: 100%; min-height: 30px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.product-overview-v2 .product-header-period .drf-trigger-label { color: #8996a8; }
+.product-overview-v2 .product-header-period .drf-trigger-current { color: #29425e; font-weight: 800; }
+.product-overview-v2 .product-header-period > small { padding-left: 22px; color: #8b98a9; font-size: 8px; }
+.product-overview-v2 .product-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.product-overview-v2 .product-kpi-card { display: grid; grid-template-columns: minmax(0, 1fr) 76px; align-items: center; gap: 8px; min-height: 98px; padding: 13px 14px; border: 1px solid #dfe6ee; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(23, 52, 80, .035); }
+.product-overview-v2 .product-kpi-card::after { display: none; }
+.product-kpi-card > div { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 5px; min-width: 0; }
+.product-kpi-card > div > span { grid-column: 1 / -1; color: #40556e; font-size: 9px; font-weight: 700; text-transform: none; }
+.product-kpi-card > div > strong { grid-column: 1 / -1; overflow: hidden; color: #102b49; font-size: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.product-kpi-card > div > small { color: #8a97a8; font-size: 7px; white-space: nowrap; }
+.product-kpi-card > div > small.positive { color: #0a9f72; font-weight: 800; }
+.product-kpi-card > div > small.negative { color: #ef4444; font-weight: 800; }
+.product-kpi-spark { width: 76px; height: 34px; overflow: visible; }
+.product-kpi-spark polyline { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.3; vector-effect: non-scaling-stroke; }
+.product-kpi-spark-empty { width: 76px; height: 1px; background: #e7edf4; }
+.product-overview-v2 .product-panel { padding: 14px; border-color: #dfe6ee; border-radius: 12px; box-shadow: 0 2px 10px rgba(23, 52, 80, .03); }
+.product-overview-v2 .product-panel-head { align-items: center; min-height: 28px; margin-bottom: 7px; }
+.product-overview-v2 .product-panel-head h2 { margin: 0; color: #142c47; font-size: 14px; }
+.product-overview-v2 .product-overview-main-row,
+.product-overview-v2 .product-overview-secondary-row { grid-template-columns: minmax(0, 1.7fr) minmax(390px, 1fr); gap: 14px; }
+.product-granularity,
+.product-funnel-toggle,
+.product-traffic-tabs { display: inline-flex; align-items: center; padding: 2px; border: 1px solid #dce4ed; border-radius: 7px; background: #f8fafc; }
+.product-granularity button,
+.product-funnel-toggle button,
+.product-traffic-tabs button { min-height: 26px; padding: 0 13px; border: 0; border-radius: 5px; background: transparent; color: #667991; font: inherit; font-size: 8px; cursor: pointer; }
+.product-granularity button.active,
+.product-funnel-toggle button.active,
+.product-traffic-tabs button.active { background: #ffe7a1; color: #453811; font-weight: 800; box-shadow: 0 1px 2px rgba(83, 65, 14, .08); }
+.product-chart-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 34px; margin-bottom: 4px; }
+.product-metric-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 9px; border: 1px solid #dfe6ee; border-radius: 6px; background: #f8fafc; }
+.product-metric-chip > i { width: 7px; height: 7px; border-radius: 50%; background: #3b82f6; }
+.product-metric-chip.secondary > i { background: #10b981; }
+.product-metric-chip select { max-width: 150px; border: 0; outline: 0; background: transparent; color: #51647c; font-size: 8px; }
+.product-chart-toolbar .product-source-filter { min-height: 28px; border: 1px solid #dfe6ee; border-radius: 6px; background: #fff; color: #60738a; padding: 0 8px; font-size: 8px; }
+.product-overview-v2 .product-funnel { min-height: 342px; }
+.product-overview-v2 .product-funnel-steps { align-content: center; gap: 0; min-height: 260px; padding: 2px 8px; }
+.product-overview-v2 .product-funnel-stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 94px; align-items: center; justify-items: center; min-height: 54px; }
+.product-overview-v2 .product-funnel-stage > div { grid-column: 1; width: var(--step-width); max-width: 310px; min-height: 44px; padding: 8px 24px; border: 0; border-radius: 0; clip-path: polygon(4% 0, 96% 0, 92% 100%, 8% 100%); background: linear-gradient(90deg, #edf4ff, #e7f0ff); }
+.product-overview-v2 .product-funnel-stage:nth-child(2) > div { background: linear-gradient(90deg, #f4f7fb, #edf2f8); }
+.product-overview-v2 .product-funnel-stage:nth-child(3) > div { background: linear-gradient(90deg, #fff8e3, #fff2cb); }
+.product-overview-v2 .product-funnel-stage:nth-child(4) > div { background: linear-gradient(90deg, #eefbf5, #e2f7ed); }
+.product-overview-v2 .product-funnel-stage > div span { color: #62758c; font-size: 8px; }
+.product-overview-v2 .product-funnel-stage > div strong { color: #183450; font-size: 15px; }
+.product-overview-v2 .product-funnel-stage > div small { right: 20px; bottom: 3px; color: #8492a4; }
+.product-overview-v2 .product-funnel-stage > i { grid-column: 2; display: grid; justify-items: start; gap: 3px; color: #75849a; font-style: normal; }
+.product-overview-v2 .product-funnel-stage > i span { font-size: 8px; }
+.product-overview-v2 .product-funnel-stage > i b { color: #334a64; font-size: 12px; }
+.product-overview-v2 .product-funnel-stage > em { position: absolute; left: calc(50% - 47px); bottom: -5px; z-index: 1; color: #8fa0b3; font-size: 13px; font-style: normal; }
+.product-funnel-share { margin: 2px 0 0; color: #75869a; font-size: 8px; text-align: center; }
+.product-overview-v2 .product-entry-panel,
+.product-overview-v2 .product-geo-summary { grid-column: auto; }
+.product-traffic-tabs { margin: 0 0 8px 90px; }
+.product-overview-v2 .product-entry-layout { grid-template-columns: minmax(285px, .8fr) minmax(420px, 1.5fr); gap: 10px; min-height: 210px; }
+.product-overview-v2 .product-entry-table { max-height: 210px; }
+.product-overview-v2 .product-entry-table table { font-size: 8px; }
+.product-overview-v2 .product-entry-table th,
+.product-overview-v2 .product-entry-table td { height: 28px; padding: 4px 6px; }
+.product-show-all { width: 100%; min-height: 27px; margin-top: 7px; border: 1px solid #e3e9f0; border-radius: 6px; background: #f9fbfd; color: #4f8ff7; font-size: 8px; cursor: pointer; }
+.product-overview-v2 .product-geo-kpis { width: max-content; grid-template-columns: repeat(3, 86px); gap: 7px; margin-bottom: 8px; }
+.product-overview-v2 .product-geo-kpis span { min-height: 50px; padding: 7px 8px; border-radius: 7px; font-size: 7px; }
+.product-overview-v2 .product-geo-kpis strong { font-size: 12px; }
+.product-overview-v2 .product-geo-layout { grid-template-columns: minmax(170px, .55fr) minmax(0, 1.45fr); gap: 10px; align-items: stretch; }
+.product-overview-v2 .product-region-list { max-height: 190px; margin: 0; overflow: hidden; }
+.product-overview-v2 .product-region-row { min-height: 23px; padding: 4px 0; font-size: 8px; }
+.product-geo-filter { min-height: 30px; margin-top: 6px; border: 1px solid #dce4ed; border-radius: 6px; background: #fff; color: #60738a; padding: 0 8px; font-size: 8px; }
+
+@media (max-width: 1450px) {
+  .product-overview-v2 .product-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .product-overview-v2 .product-overview-main-row,
+  .product-overview-v2 .product-overview-secondary-row { grid-template-columns: minmax(0, 1.45fr) minmax(360px, 1fr); }
+  .product-overview-v2 .product-entry-layout { grid-template-columns: 1fr; }
+  .product-traffic-tabs { margin-left: 0; }
+}
+@media (max-width: 1050px) {
+  .product-overview-v2 .product-overview-main-row,
+  .product-overview-v2 .product-overview-secondary-row { grid-template-columns: 1fr; }
+  .product-overview-v2 .product-entry-layout { grid-template-columns: minmax(280px, .8fr) minmax(390px, 1.4fr); }
+}
+@media (max-width: 760px) {
+  .product-overview-v2 { padding: 12px; }
+  .product-overview-v2 .product-overview-header { grid-template-columns: 1fr; }
+  .product-overview-v2 .product-header-period { justify-self: stretch; width: auto; }
+  .product-overview-v2 .product-kpis { grid-template-columns: 1fr 1fr; }
+  .product-overview-v2 .product-kpi-card { grid-template-columns: 1fr; }
+  .product-kpi-spark { width: 100%; }
+  .product-overview-v2 .product-entry-layout,
+  .product-overview-v2 .product-geo-layout { grid-template-columns: 1fr; }
+}
+
 /* ── Unified analytical sheet rollout ── */
 .dashboard {
   background: var(--color-bg);

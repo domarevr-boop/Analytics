@@ -287,6 +287,16 @@
 
 ## Правило обновления
 
+## Product Detail Pattern
+
+- The header combines breadcrumbs, product identity, image, identifiers, category tags, and a compact period/comparison control without stretching the period across the page.
+- Six equal KPI tiles show the current value, change versus the previous equal-length period, and a compact sparkline. Semantic green/red is reserved for directional meaning; DRR uses inverse direction.
+- The primary analytical row pairs a configurable current-versus-previous trend chart with a compact sales funnel.
+- Product and group funnel context switch through one control instead of duplicating two large funnels.
+- Traffic sources combine a ranked bar chart and a compact metric table driven by the same selected metric.
+- Geography combines operational KPI, ranked regions, a linked daily chart, and an internal region filter.
+- On narrow screens, paired analytical panels become a single column while keeping filters and exact values available.
+
 ## Dashboard insight update
 
 - The four primary KPI cards remain the only KPI row; advertising metrics move to analytical charts to avoid overview overload.
