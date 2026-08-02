@@ -143,17 +143,38 @@ async function analysisRpc(name: string, args: Record<string, unknown> = {}) {
   return mapAnalysisRun((data || {}) as Row);
 }
 
+const INITIAL_ANALYSIS_BATCH = 75;
+const MINIMUM_ANALYSIS_BATCH = 10;
+
+function isStatementTimeout(reason: unknown) {
+  return reason instanceof Error && reason.message.toLowerCase().includes('statement timeout');
+}
+
 export async function publishCxDictionary(
   onProgress?: (run: CxAnalysisRun) => void,
   resumeRunId?: string,
 ) {
+  let batchSize = INITIAL_ANALYSIS_BATCH;
+  const processBatch = async (runId: string): Promise<CxAnalysisRun> => {
+    for (;;) {
+      try {
+        return await analysisRpc('process_cx_analysis_batch', { p_run_id: runId, p_limit: batchSize });
+      } catch (reason) {
+        if (isStatementTimeout(reason) && batchSize > MINIMUM_ANALYSIS_BATCH) {
+          batchSize = Math.max(MINIMUM_ANALYSIS_BATCH, Math.floor(batchSize / 2));
+          continue;
+        }
+        throw reason;
+      }
+    }
+  };
   let run = resumeRunId
-    ? await analysisRpc('process_cx_analysis_batch', { p_run_id: resumeRunId, p_limit: 250 })
+    ? await processBatch(resumeRunId)
     : await analysisRpc('start_cx_dictionary_publication');
   onProgress?.(run);
   while (run.processedReviews < run.totalReviews) {
     const processedBefore = run.processedReviews;
-    run = await analysisRpc('process_cx_analysis_batch', { p_run_id: run.id, p_limit: 250 });
+    run = await processBatch(run.id);
     onProgress?.(run);
     if (run.processedReviews <= processedBefore) {
       throw new Error(`Перерасчёт остановился на ${run.processedReviews} из ${run.totalReviews} отзывов`);
