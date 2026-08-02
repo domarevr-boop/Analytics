@@ -148,6 +148,20 @@ function number(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function sentiment(row: RpcRow) {
+  const positiveShare = number(row.positive_share);
+  const negativeShare = number(row.negative_share);
+  const topicScore = number(row.topic_score);
+  const explicitNeutral = number(row.neutral_share);
+  const inferredNeutral = topicScore > 0 ? Math.max(0, Math.min(100, (topicScore - positiveShare) * 2)) : 0;
+  return {
+    positiveShare,
+    negativeShare,
+    neutralShare: explicitNeutral || inferredNeutral,
+    topicScore,
+  };
+}
+
 function errorMessage(error: { message: string } | null, context: string) {
   return error ? new Error(`[CX] ${context}: ${error.message}`) : null;
 }
@@ -211,6 +225,7 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
   const payload = (data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
   const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
+  const summarySentiment = sentiment(summary);
   return {
     version: number(payload.version),
     selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
@@ -220,21 +235,16 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
       topicMentions: number(summary.topic_mentions),
       coverage: number(summary.coverage),
       averageRating: number(summary.average_rating),
-      negativeShare: number(summary.negative_share),
-      neutralShare: number(summary.neutral_share),
-      positiveShare: number(summary.positive_share),
-      topicScore: number(summary.topic_score),
+      ...summarySentiment,
     },
     topics: rows(payload.topics).map(row => ({
       id: String(row.id || ''), name: String(row.name || ''), groupName: String(row.group_name || ''),
       reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches), share: number(row.share),
-      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), neutralShare: number(row.neutral_share),
-      positiveShare: number(row.positive_share), topicScore: number(row.topic_score),
+      averageRating: number(row.average_rating), ...sentiment(row),
     })),
     trend: rows(payload.trend).map(row => ({
       date: String(row.date || ''), mentions: number(row.mentions), reviews: number(row.reviews),
-      averageRating: number(row.average_rating), negativeShare: number(row.negative_share),
-      neutralShare: number(row.neutral_share), positiveShare: number(row.positive_share),
+      averageRating: number(row.average_rating), ...sentiment(row),
     })),
     products: rows(payload.products).map(row => ({
       entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,

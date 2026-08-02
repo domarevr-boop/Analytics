@@ -20,7 +20,6 @@ export default function ClientExperienceSettings() {
   const [ruleType, setRuleType] = useState<CxRuleType>('exact_keyword');
   const [rulePattern, setRulePattern] = useState('');
   const [ruleComment, setRuleComment] = useState('');
-  const [ruleSentiment, setRuleSentiment] = useState<CxSentiment>('neutral');
   const [contextRequired, setContextRequired] = useState('');
   const [contextAnyOf, setContextAnyOf] = useState('');
   const [contextDistance, setContextDistance] = useState(4);
@@ -162,17 +161,7 @@ export default function ClientExperienceSettings() {
                   ? `${(rule.ruleConfig.required as string[] | undefined)?.join(', ') || '—'} → ${(rule.ruleConfig.anyOf as string[] | undefined)?.join(', ') || '—'}`
                   : rule.pattern}</strong>
                 <small>{rule.comment || `Приоритет ${rule.priority}`}</small>
-                {draft ? <select className={`cx-sentiment-select cx-sentiment-${rule.sentiment}`} value={rule.sentiment} onChange={event => {
-                  const sentiment = event.target.value as CxSentiment;
-                  void run(() => saveCxTopicRule({
-                    id: rule.id, topicId: rule.topicId, ruleType: rule.ruleType, pattern: rule.pattern,
-                    ruleConfig: rule.ruleConfig, sentiment, priority: rule.priority, isActive: rule.isActive, comment: rule.comment,
-                  }));
-                }}>
-                  <option value="positive">Позитив</option>
-                  <option value="neutral">Нейтрально</option>
-                  <option value="negative">Негатив</option>
-                </select> : <span className={`cx-sentiment cx-sentiment-${rule.sentiment}`}>{sentimentLabel(rule.sentiment)}</span>}
+                <span className="cx-sentiment cx-sentiment-auto">Авто</span>
                 {draft && <button disabled={saving} onClick={() => void run(() => deleteCxTopicRule(rule.id))}>Удалить</button>}
               </div>
             ))}
@@ -186,7 +175,7 @@ export default function ClientExperienceSettings() {
               const anyOf = contextAnyOf.split(',').map(value => value.trim()).filter(Boolean);
               const ruleConfig = ruleType === 'context' ? { required, anyOf, maxDistance: contextDistance } : {};
               const pattern = ruleType === 'context' ? `${required.join('+')} → ${anyOf.join('|')}` : rulePattern;
-              void run(() => saveCxTopicRule({ id: null, topicId: selectedTopicId, ruleType, pattern, ruleConfig, sentiment: ruleSentiment, priority: 100, isActive: true, comment: ruleComment }))
+              void run(() => saveCxTopicRule({ id: null, topicId: selectedTopicId, ruleType, pattern, ruleConfig, priority: 100, isActive: true, comment: ruleComment }))
                 .then(() => { setRulePattern(''); setRuleComment(''); setContextRequired(''); setContextAnyOf(''); });
             }}>
               <select value={ruleType} onChange={event => setRuleType(event.target.value as CxRuleType)}>
@@ -203,11 +192,6 @@ export default function ClientExperienceSettings() {
                 <input value={contextAnyOf} onChange={event => setContextAnyOf(event.target.value)} placeholder="Любое: мало, хватать, достаточно" required />
                 <input type="number" min={1} max={20} value={contextDistance} onChange={event => setContextDistance(Number(event.target.value) || 4)} title="Максимальное расстояние между словами" />
               </> : <input value={rulePattern} onChange={event => setRulePattern(event.target.value)} placeholder="Шаблон правила" required />}
-              <select value={ruleType === 'exclusion' ? 'neutral' : ruleSentiment} disabled={ruleType === 'exclusion'} onChange={event => setRuleSentiment(event.target.value as CxSentiment)}>
-                <option value="positive">Позитив</option>
-                <option value="neutral">Нейтрально</option>
-                <option value="negative">Негатив</option>
-              </select>
               <input value={ruleComment} onChange={event => setRuleComment(event.target.value)} placeholder="Комментарий" />
               <button disabled={saving}>Добавить</button>
             </form>
@@ -259,6 +243,6 @@ function ruleTypeLabel(type: CxRuleType) {
   } satisfies Record<CxRuleType, string>)[type];
 }
 
-function sentimentLabel(sentiment: CxSentiment) {
+function sentimentLabel(sentiment: import('./analysisSettingsApi').CxSentiment) {
   return ({ positive: 'Позитив', neutral: 'Нейтрально', negative: 'Негатив' } satisfies Record<CxSentiment, string>)[sentiment];
 }

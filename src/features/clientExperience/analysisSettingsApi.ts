@@ -43,7 +43,7 @@ export interface CxTopicRule {
   isActive: boolean;
   comment: string;
   ruleConfig: Record<string, unknown>;
-  sentiment: CxSentiment;
+  sentimentOverride: CxSentiment | null;
 }
 
 export interface CxMethodology {
@@ -117,7 +117,7 @@ export async function getCxAnalysisSettings(): Promise<CxAnalysisSettings> {
       ruleType: String(row.rule_type || 'exact_keyword') as CxRuleType, pattern: String(row.pattern || ''),
       priority: Number(row.priority) || 100, isActive: row.is_active !== false, comment: String(row.comment || ''),
       ruleConfig: row.rule_config && typeof row.rule_config === 'object' ? row.rule_config as Record<string, unknown> : {},
-      sentiment: String(row.sentiment || 'neutral') as CxSentiment,
+      sentimentOverride: row.sentiment ? String(row.sentiment) as CxSentiment : null,
     })),
     methodologies: array(payload.methodologies).map(row => ({
       dictionaryVersionId: String(row.dictionary_version_id || ''),
@@ -191,7 +191,7 @@ export async function saveCxTopic(input: { id: string | null; groupId: string; n
 
 export async function saveCxTopicRule(input: {
   id: string | null; topicId: string; ruleType: CxRuleType; pattern: string;
-  ruleConfig: Record<string, unknown>; sentiment: CxSentiment; priority: number; isActive: boolean; comment: string;
+  ruleConfig: Record<string, unknown>; priority: number; isActive: boolean; comment: string;
 }) {
   let pattern = input.pattern;
   let ruleConfig = input.ruleConfig;
@@ -208,7 +208,7 @@ export async function saveCxTopicRule(input: {
   const { data, error } = await supabase.rpc('save_cx_topic_rule', {
     p_id: input.id, p_topic_id: input.topicId, p_rule_type: input.ruleType, p_pattern: pattern,
     p_rule_config: ruleConfig,
-    p_sentiment: input.ruleType === 'exclusion' ? 'neutral' : input.sentiment,
+    p_sentiment: null,
     p_priority: input.priority, p_is_active: input.isActive, p_comment: input.comment,
   });
   apiError('сохранение правила', error);

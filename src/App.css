@@ -167,6 +167,7 @@
 .cx-sentiment-positive { background: #e8f8f1; color: #087d58 !important; }
 .cx-sentiment-neutral { background: #eef2f6; color: #65778d !important; }
 .cx-sentiment-negative { background: #fff0f2; color: #c94553 !important; }
+.cx-sentiment-auto { background: #eef4ff; color: #4774bb !important; }
 .cx-sentiment-select { width: 92px; height: 25px; border: 1px solid transparent; border-radius: 999px; padding: 0 7px; font: inherit; font-size: 8px; font-weight: 800; cursor: pointer; }
 .cx-topic-dashboard { display: flex; flex-direction: column; gap: 12px; }
 .cx-topic-dashboard.loading { opacity: .66; pointer-events: none; }

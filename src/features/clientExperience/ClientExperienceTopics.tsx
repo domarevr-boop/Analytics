@@ -54,6 +54,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
     () => dashboard.topics.find(topic => topic.id === selectedTopicId) || dashboard.topics[0],
     [dashboard.topics, selectedTopicId],
   );
+  const hasSentiment = dashboard.summary.positiveShare > 0 || dashboard.summary.negativeShare > 0;
 
   if (error) return <div className="cx-error">{error}</div>;
   if (!loading && dashboard.version === 0) {
@@ -80,7 +81,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <TopicKpi title="Отзывы с текстом" value={integer.format(dashboard.summary.textReviews)} note="В выбранном срезе" tone="blue" />
         <TopicKpi title="Классифицировано" value={integer.format(dashboard.summary.classifiedReviews)} note={`${decimal.format(dashboard.summary.coverage)}% покрытия`} tone="green" />
         <TopicKpi title="Упоминания темы" value={integer.format(selectedTopic?.reviewCount || dashboard.summary.topicMentions)} note={`${decimal.format(selectedTopic?.share || 0)}% отзывов`} tone="violet" />
-        <TopicKpi title="Индекс темы" value={decimal.format(dashboard.summary.topicScore)} note="0 — негатив · 100 — позитив" tone="yellow" />
+        <TopicKpi title="Сантимент" value={hasSentiment ? decimal.format(dashboard.summary.topicScore) : '—'} note={hasSentiment ? '0 — негатив · 100 — позитив' : 'Нет окрашенных совпадений'} tone="yellow" />
         <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note="Негативные совпадения темы" tone="red" />
       </section>
 
@@ -93,7 +94,9 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
           <b className="neutral" style={{ width: `${dashboard.summary.neutralShare}%` }} />
           <b className="negative" style={{ width: `${dashboard.summary.negativeShare}%` }} />
         </i>
-        <small>Тональность определяется правилами конкретной темы, а не общей оценкой отзыва.</small>
+        <small>{hasSentiment
+          ? 'Сантимент определяется автоматически по тональным словам рядом с упоминанием темы; отрицания меняют полярность.'
+          : 'В контексте найденных тем пока нет слов из тонального словаря. Сантимент не рассчитывается как условные 50 баллов.'}</small>
       </section>
 
       <section className="cx-topic-analytics-grid">
@@ -103,7 +106,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
             {dashboard.topics.map(topic => (
               <button key={topic.id} type="button" className={topic.id === selectedTopic?.id ? 'active' : ''} onClick={() => { setLoading(true); setSelectedTopicId(topic.id); }}>
                 <span><small>{topic.groupName}</small><strong>{topic.name}</strong></span>
-                <span><strong>{integer.format(topic.reviewCount)}</strong><small>нег. {decimal.format(topic.negativeShare)}%</small></span>
+                <span><strong>{integer.format(topic.reviewCount)}</strong><small>{topic.positiveShare > 0 || topic.negativeShare > 0 ? `нег. ${decimal.format(topic.negativeShare)}%` : 'сант. —'}</small></span>
                 <i><b style={{ width: `${Math.min(100, topic.share)}%` }} /></i>
               </button>
             ))}
@@ -146,8 +149,8 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
                   <td>{product.cabinetName}</td>
                   <td><strong>{integer.format(product.mentions)}</strong></td>
                   <td>{decimal.format(product.averageRating)} ★</td>
-                  <td><span className="cx-positive-pill">{decimal.format(product.positiveShare)}%</span></td>
-                  <td><span className="cx-negative-pill">{decimal.format(product.negativeShare)}%</span></td>
+                  <td>{hasSentiment ? <span className="cx-positive-pill">{decimal.format(product.positiveShare)}%</span> : '—'}</td>
+                  <td>{hasSentiment ? <span className="cx-negative-pill">{decimal.format(product.negativeShare)}%</span> : '—'}</td>
                 </tr>
               ))}
               {!loading && dashboard.products.length === 0 && <tr><td colSpan={6} className="cx-empty">По выбранной теме пока нет совпадений</td></tr>}
