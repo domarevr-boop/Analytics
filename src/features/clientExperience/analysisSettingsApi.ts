@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { cleanReviewText, lemmatizeRussianText } from './russianMorphology';
 
 export type CxRuleType = 'exact_keyword' | 'exact_phrase' | 'lemma' | 'lemma_phrase' | 'context' | 'regex' | 'exclusion';
+export type CxSentiment = 'positive' | 'neutral' | 'negative';
 
 export interface CxTopicGroup {
   id: string;
@@ -42,6 +43,7 @@ export interface CxTopicRule {
   isActive: boolean;
   comment: string;
   ruleConfig: Record<string, unknown>;
+  sentiment: CxSentiment;
 }
 
 export interface CxMethodology {
@@ -74,8 +76,9 @@ export interface CxRuleTestResult {
   topicId: string;
   topicName: string;
   groupName: string;
-  matchedRules: Array<{ id: string; type: CxRuleType; pattern: string }>;
+  matchedRules: Array<{ id: string; type: CxRuleType; pattern: string; sentiment: CxSentiment }>;
   excluded: boolean;
+  sentiment: CxSentiment;
 }
 
 type Row = Record<string, unknown>;
@@ -114,6 +117,7 @@ export async function getCxAnalysisSettings(): Promise<CxAnalysisSettings> {
       ruleType: String(row.rule_type || 'exact_keyword') as CxRuleType, pattern: String(row.pattern || ''),
       priority: Number(row.priority) || 100, isActive: row.is_active !== false, comment: String(row.comment || ''),
       ruleConfig: row.rule_config && typeof row.rule_config === 'object' ? row.rule_config as Record<string, unknown> : {},
+      sentiment: String(row.sentiment || 'neutral') as CxSentiment,
     })),
     methodologies: array(payload.methodologies).map(row => ({
       dictionaryVersionId: String(row.dictionary_version_id || ''),
@@ -187,7 +191,7 @@ export async function saveCxTopic(input: { id: string | null; groupId: string; n
 
 export async function saveCxTopicRule(input: {
   id: string | null; topicId: string; ruleType: CxRuleType; pattern: string;
-  ruleConfig: Record<string, unknown>; priority: number; isActive: boolean; comment: string;
+  ruleConfig: Record<string, unknown>; sentiment: CxSentiment; priority: number; isActive: boolean; comment: string;
 }) {
   let pattern = input.pattern;
   let ruleConfig = input.ruleConfig;
@@ -204,6 +208,7 @@ export async function saveCxTopicRule(input: {
   const { data, error } = await supabase.rpc('save_cx_topic_rule', {
     p_id: input.id, p_topic_id: input.topicId, p_rule_type: input.ruleType, p_pattern: pattern,
     p_rule_config: ruleConfig,
+    p_sentiment: input.ruleType === 'exclusion' ? 'neutral' : input.sentiment,
     p_priority: input.priority, p_is_active: input.isActive, p_comment: input.comment,
   });
   apiError('сохранение правила', error);
@@ -227,7 +232,9 @@ export async function testCxDictionaryRules(text: string): Promise<CxRuleTestRes
     topicId: String(row.topic_id || ''), topicName: String(row.topic_name || ''), groupName: String(row.group_name || ''),
     matchedRules: array(row.matched_rules).map(rule => ({
       id: String(rule.id || ''), type: String(rule.type || 'keyword') as CxRuleType, pattern: String(rule.pattern || ''),
+      sentiment: String(rule.sentiment || 'neutral') as CxSentiment,
     })),
     excluded: Boolean(row.excluded),
+    sentiment: String(row.sentiment || 'neutral') as CxSentiment,
   }));
 }

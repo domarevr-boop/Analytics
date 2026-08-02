@@ -11,7 +11,10 @@ import {
 const EMPTY: CxTopicDashboard = {
   version: 0,
   selectedTopicId: null,
-  summary: { textReviews: 0, classifiedReviews: 0, topicMentions: 0, coverage: 0, averageRating: 0, negativeShare: 0 },
+  summary: {
+    textReviews: 0, classifiedReviews: 0, topicMentions: 0, coverage: 0, averageRating: 0,
+    negativeShare: 0, neutralShare: 0, positiveShare: 0, topicScore: 0,
+  },
   topics: [], trend: [], products: [],
 };
 
@@ -77,8 +80,20 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <TopicKpi title="Отзывы с текстом" value={integer.format(dashboard.summary.textReviews)} note="В выбранном срезе" tone="blue" />
         <TopicKpi title="Классифицировано" value={integer.format(dashboard.summary.classifiedReviews)} note={`${decimal.format(dashboard.summary.coverage)}% покрытия`} tone="green" />
         <TopicKpi title="Упоминания темы" value={integer.format(selectedTopic?.reviewCount || dashboard.summary.topicMentions)} note={`${decimal.format(selectedTopic?.share || 0)}% отзывов`} tone="violet" />
-        <TopicKpi title="Средняя оценка" value={`${decimal.format(dashboard.summary.averageRating)} ★`} note="По выбранной теме" tone="yellow" />
-        <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note="Оценки 1–3★" tone="red" />
+        <TopicKpi title="Индекс темы" value={decimal.format(dashboard.summary.topicScore)} note="0 — негатив · 100 — позитив" tone="yellow" />
+        <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note="Негативные совпадения темы" tone="red" />
+      </section>
+
+      <section className="page-card cx-sentiment-overview">
+        <div><span>Позитив</span><strong>{decimal.format(dashboard.summary.positiveShare)}%</strong></div>
+        <div><span>Нейтрально</span><strong>{decimal.format(dashboard.summary.neutralShare)}%</strong></div>
+        <div><span>Негатив</span><strong>{decimal.format(dashboard.summary.negativeShare)}%</strong></div>
+        <i aria-label="Распределение тональности">
+          <b className="positive" style={{ width: `${dashboard.summary.positiveShare}%` }} />
+          <b className="neutral" style={{ width: `${dashboard.summary.neutralShare}%` }} />
+          <b className="negative" style={{ width: `${dashboard.summary.negativeShare}%` }} />
+        </i>
+        <small>Тональность определяется правилами конкретной темы, а не общей оценкой отзыва.</small>
       </section>
 
       <section className="cx-topic-analytics-grid">
@@ -88,7 +103,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
             {dashboard.topics.map(topic => (
               <button key={topic.id} type="button" className={topic.id === selectedTopic?.id ? 'active' : ''} onClick={() => { setLoading(true); setSelectedTopicId(topic.id); }}>
                 <span><small>{topic.groupName}</small><strong>{topic.name}</strong></span>
-                <span><strong>{integer.format(topic.reviewCount)}</strong><small>{decimal.format(topic.share)}%</small></span>
+                <span><strong>{integer.format(topic.reviewCount)}</strong><small>нег. {decimal.format(topic.negativeShare)}%</small></span>
                 <i><b style={{ width: `${Math.min(100, topic.share)}%` }} /></i>
               </button>
             ))}
@@ -98,7 +113,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
 
         <article className="page-card cx-section cx-topic-trend">
           <div className="cx-section-head">
-            <div><span>ДИНАМИКА</span><h2>Упоминания и негатив по дням</h2><p>{selectedTopic?.name || 'Все темы'}</p></div>
+            <div><span>ДИНАМИКА</span><h2>Упоминания и тональность по дням</h2><p>{selectedTopic?.name || 'Все темы'}</p></div>
           </div>
           <div className="cx-chart">
             <ResponsiveContainer width="100%" height="100%">
@@ -107,8 +122,9 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
                 <XAxis dataKey="date" tickFormatter={day} tick={{ fontSize: 10, fill: '#7D8DA3' }} />
                 <YAxis yAxisId="mentions" tick={{ fontSize: 10, fill: '#7D8DA3' }} width={40} />
                 <YAxis yAxisId="negative" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: '#7D8DA3' }} width={38} />
-                <Tooltip labelFormatter={value => day(String(value))} formatter={(value, name) => name === 'Доля негатива' ? `${decimal.format(Number(value))}%` : integer.format(Number(value))} />
+                <Tooltip labelFormatter={value => day(String(value))} formatter={(value, name) => name === 'Упоминания' ? integer.format(Number(value)) : `${decimal.format(Number(value))}%`} />
                 <Bar yAxisId="mentions" dataKey="mentions" name="Упоминания" fill="#78A8F5" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                <Line yAxisId="negative" dataKey="positiveShare" name="Доля позитива" stroke="#0DA878" strokeWidth={2.2} dot={false} />
                 <Line yAxisId="negative" dataKey="negativeShare" name="Доля негатива" stroke="#E45D68" strokeWidth={2.2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -122,7 +138,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         </div>
         <div className="cx-table-wrap">
           <table>
-            <thead><tr><th>Товар</th><th>Кабинет</th><th>Упоминания</th><th>Средняя оценка</th><th>Доля негатива</th></tr></thead>
+            <thead><tr><th>Товар</th><th>Кабинет</th><th>Упоминания</th><th>Средняя оценка</th><th>Позитив</th><th>Негатив</th></tr></thead>
             <tbody>
               {dashboard.products.map(product => (
                 <tr key={product.entityKey}>
@@ -130,10 +146,11 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
                   <td>{product.cabinetName}</td>
                   <td><strong>{integer.format(product.mentions)}</strong></td>
                   <td>{decimal.format(product.averageRating)} ★</td>
+                  <td><span className="cx-positive-pill">{decimal.format(product.positiveShare)}%</span></td>
                   <td><span className="cx-negative-pill">{decimal.format(product.negativeShare)}%</span></td>
                 </tr>
               ))}
-              {!loading && dashboard.products.length === 0 && <tr><td colSpan={5} className="cx-empty">По выбранной теме пока нет совпадений</td></tr>}
+              {!loading && dashboard.products.length === 0 && <tr><td colSpan={6} className="cx-empty">По выбранной теме пока нет совпадений</td></tr>}
             </tbody>
           </table>
         </div>

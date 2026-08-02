@@ -82,6 +82,9 @@ export interface CxTopicSummary {
   coverage: number;
   averageRating: number;
   negativeShare: number;
+  neutralShare: number;
+  positiveShare: number;
+  topicScore: number;
 }
 
 export interface CxTopicMetric {
@@ -93,7 +96,9 @@ export interface CxTopicMetric {
   share: number;
   averageRating: number;
   negativeShare: number;
+  neutralShare: number;
   positiveShare: number;
+  topicScore: number;
 }
 
 export interface CxTopicTrendPoint {
@@ -102,6 +107,8 @@ export interface CxTopicTrendPoint {
   reviews: number;
   averageRating: number;
   negativeShare: number;
+  neutralShare: number;
+  positiveShare: number;
 }
 
 export interface CxTopicProduct {
@@ -114,6 +121,7 @@ export interface CxTopicProduct {
   mentions: number;
   averageRating: number;
   negativeShare: number;
+  positiveShare: number;
 }
 
 export interface CxTopicDashboard {
@@ -213,21 +221,26 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
       coverage: number(summary.coverage),
       averageRating: number(summary.average_rating),
       negativeShare: number(summary.negative_share),
+      neutralShare: number(summary.neutral_share),
+      positiveShare: number(summary.positive_share),
+      topicScore: number(summary.topic_score),
     },
     topics: rows(payload.topics).map(row => ({
       id: String(row.id || ''), name: String(row.name || ''), groupName: String(row.group_name || ''),
       reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches), share: number(row.share),
-      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), positiveShare: number(row.positive_share),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), neutralShare: number(row.neutral_share),
+      positiveShare: number(row.positive_share), topicScore: number(row.topic_score),
     })),
     trend: rows(payload.trend).map(row => ({
       date: String(row.date || ''), mentions: number(row.mentions), reviews: number(row.reviews),
       averageRating: number(row.average_rating), negativeShare: number(row.negative_share),
+      neutralShare: number(row.neutral_share), positiveShare: number(row.positive_share),
     })),
     products: rows(payload.products).map(row => ({
       entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,
       sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''), productName: String(row.product_name || ''),
       cabinetName: String(row.cabinet_name || ''), mentions: number(row.mentions),
-      averageRating: number(row.average_rating), negativeShare: number(row.negative_share),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), positiveShare: number(row.positive_share),
     })),
   };
 }
