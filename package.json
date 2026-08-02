@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:cx": "node --test src/features/clientExperience/cxCalculations.test.ts",
     "preview": "vite preview",
     "deploy": "vite build && npx gh-pages -d dist -b gh-pages"
   },

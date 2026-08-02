@@ -12,8 +12,9 @@ import {
   getCxDashboard, getCxDateBounds, getCxReviewsPage,
   type CxDashboard, type CxFilters, type CxReviewRow,
 } from '../../features/clientExperience/clientExperienceApi';
+import ClientExperienceSettings from '../../features/clientExperience/ClientExperienceSettings';
 
-type ActiveTab = 'overview' | 'reviews';
+type ActiveTab = 'overview' | 'reviews' | 'settings';
 
 const EMPTY_DASHBOARD: CxDashboard = {
   summary: {
@@ -167,6 +168,7 @@ export default function ClientExperiencePage() {
         <div className="cx-tabs" role="tablist">
           <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Обзор</button>
           <button className={tab === 'reviews' ? 'active' : ''} onClick={() => setTab('reviews')}>Отзывы</button>
+          <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Настройки анализа</button>
         </div>
       </header>
 
@@ -199,7 +201,7 @@ export default function ClientExperiencePage() {
       {error && <div className="cx-error">{error}</div>}
       <div className="cx-scope-note">Оценочный обзор без тематической классификации. Темы и CXI появятся после публикации управляемого словаря.</div>
 
-      {tab === 'overview' ? (
+      {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'overview' ? (
         <>
           <section className={`cx-kpis${dashboardLoading ? ' loading' : ''}`}>
             <Kpi title="Всего отзывов" value={numberFormatter.format(summary.totalReviews)} note={`${numberFormatter.format(summary.textReviews)} с текстом`} tone="blue" />
