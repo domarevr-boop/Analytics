@@ -97,15 +97,61 @@ export interface CxTopicSummary {
 export interface CxTopicMetric {
   id: string;
   name: string;
+  groupCode: string;
   groupName: string;
   reviewCount: number;
   ruleMatches: number;
   share: number;
+  weight: number;
   averageRating: number;
   negativeShare: number;
   neutralShare: number;
   positiveShare: number;
   topicScore: number;
+  negativeDelta: number;
+  cxiContribution: number;
+  problemIndex: number;
+  risk: 'low' | 'medium' | 'high';
+}
+
+export interface CxTopicGroupSummary {
+  code: string;
+  name: string;
+  activeTopics: number;
+  mentions: number;
+  cxi: number;
+  delta: number;
+  strongestTopic: string;
+  problemTopic: string;
+}
+
+export interface CxTopicAttention {
+  id: string;
+  name: string;
+  groupName: string;
+  reviewCount: number;
+  negativeShare: number;
+  negativeDelta: number;
+  problemIndex: number;
+  risk: 'low' | 'medium' | 'high';
+}
+
+export interface CxTopicReason {
+  pattern: string;
+  mentions: number;
+}
+
+export interface CxTopicExample {
+  sentiment: CxTopicSentiment;
+  reviewId: string;
+  reviewDate: string;
+  sellerSku: string;
+  wbSku: string;
+  productName: string;
+  rating: number;
+  reviewText: string;
+  advantages: string;
+  disadvantages: string;
 }
 
 export interface CxTopicTrendPoint {
@@ -126,18 +172,24 @@ export interface CxTopicProduct {
   productName: string;
   cabinetName: string;
   mentions: number;
+  mentionShare: number;
   averageRating: number;
   negativeShare: number;
   positiveShare: number;
 }
 
 export interface CxTopicDashboard {
+  workspaceVersion: number;
   version: number;
   selectedTopicId: string | null;
   summary: CxTopicSummary;
+  groups: CxTopicGroupSummary[];
+  attention: CxTopicAttention[];
   topics: CxTopicMetric[];
   trend: CxTopicTrendPoint[];
   products: CxTopicProduct[];
+  negativeReasons: CxTopicReason[];
+  examples: CxTopicExample[];
 }
 
 function params(filters: CxFilters) {
@@ -237,16 +289,21 @@ export async function getCxDashboard(filters: CxFilters): Promise<CxDashboard> {
 }
 
 export async function getCxTopicDashboard(filters: CxFilters, topicId: string | null): Promise<CxTopicDashboard> {
-  const { data, error } = await supabase.rpc('get_cx_topic_dashboard', {
+  const rpcParams = {
     ...params(filters),
     p_topic_id: topicId,
-  });
+  };
+  let { data, error } = await supabase.rpc('get_cx_topics_workspace', rpcParams);
+  if (error && (error.code === 'PGRST202' || error.message.includes('get_cx_topics_workspace'))) {
+    ({ data, error } = await supabase.rpc('get_cx_topic_dashboard', rpcParams));
+  }
   if (error) throw errorMessage(error, 'дашборд тем')!;
   const payload = (data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
   const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
   const summarySentiment = sentiment(summary);
   return {
+    workspaceVersion: number(payload.workspace_version),
     version: number(payload.version),
     selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
     summary: {
@@ -257,10 +314,22 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
       averageRating: number(summary.average_rating),
       ...summarySentiment,
     },
-    topics: rows(payload.topics).map(row => ({
+    groups: rows(payload.groups).map(row => ({
+      code: String(row.code || ''), name: String(row.name || ''), activeTopics: number(row.active_topics),
+      mentions: number(row.mentions), cxi: number(row.cxi), delta: number(row.delta),
+      strongestTopic: String(row.strongest_topic || '—'), problemTopic: String(row.problem_topic || '—'),
+    })),
+    attention: rows(payload.attention).map(row => ({
       id: String(row.id || ''), name: String(row.name || ''), groupName: String(row.group_name || ''),
-      reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches), share: number(row.share),
-      averageRating: number(row.average_rating), ...sentiment(row),
+      reviewCount: number(row.review_count), negativeShare: number(row.negative_share), negativeDelta: number(row.negative_delta),
+      problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicAttention['risk'],
+    })),
+    topics: rows(payload.topics).map(row => ({
+      id: String(row.id || ''), name: String(row.name || ''), groupCode: String(row.group_code || ''),
+      groupName: String(row.group_name || ''), reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches),
+      share: number(row.share), weight: number(row.weight), averageRating: number(row.average_rating), ...sentiment(row),
+      negativeDelta: number(row.negative_delta), cxiContribution: number(row.cxi_contribution),
+      problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicMetric['risk'],
     })),
     trend: rows(payload.trend).map(row => ({
       date: String(row.date || ''), mentions: number(row.mentions), reviews: number(row.reviews),
@@ -269,8 +338,18 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
     products: rows(payload.products).map(row => ({
       entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,
       sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''), productName: String(row.product_name || ''),
-      cabinetName: String(row.cabinet_name || ''), mentions: number(row.mentions),
+      cabinetName: String(row.cabinet_name || ''), mentions: number(row.mentions), mentionShare: number(row.mention_share),
       averageRating: number(row.average_rating), negativeShare: number(row.negative_share), positiveShare: number(row.positive_share),
+    })),
+    negativeReasons: rows(payload.negative_reasons).map(row => ({
+      pattern: String(row.pattern || ''), mentions: number(row.mentions),
+    })),
+    examples: rows(payload.examples).map(row => ({
+      sentiment: String(row.sentiment || 'neutral') as CxTopicSentiment,
+      reviewId: String(row.review_id || ''), reviewDate: String(row.review_date || ''),
+      sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''), productName: String(row.product_name || ''),
+      rating: number(row.rating), reviewText: String(row.review_text || ''), advantages: String(row.advantages || ''),
+      disadvantages: String(row.disadvantages || ''),
     })),
   };
 }
