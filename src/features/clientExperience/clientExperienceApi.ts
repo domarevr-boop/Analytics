@@ -75,6 +75,56 @@ export interface CxDashboard {
   problems: CxProblemProduct[];
 }
 
+export interface CxTopicSummary {
+  textReviews: number;
+  classifiedReviews: number;
+  topicMentions: number;
+  coverage: number;
+  averageRating: number;
+  negativeShare: number;
+}
+
+export interface CxTopicMetric {
+  id: string;
+  name: string;
+  groupName: string;
+  reviewCount: number;
+  ruleMatches: number;
+  share: number;
+  averageRating: number;
+  negativeShare: number;
+  positiveShare: number;
+}
+
+export interface CxTopicTrendPoint {
+  date: string;
+  mentions: number;
+  reviews: number;
+  averageRating: number;
+  negativeShare: number;
+}
+
+export interface CxTopicProduct {
+  entityKey: string;
+  localProductId: string | null;
+  sellerSku: string;
+  wbSku: string;
+  productName: string;
+  cabinetName: string;
+  mentions: number;
+  averageRating: number;
+  negativeShare: number;
+}
+
+export interface CxTopicDashboard {
+  version: number;
+  selectedTopicId: string | null;
+  summary: CxTopicSummary;
+  topics: CxTopicMetric[];
+  trend: CxTopicTrendPoint[];
+  products: CxTopicProduct[];
+}
+
 function params(filters: CxFilters) {
   return {
     p_date_from: filters.start || null,
@@ -140,6 +190,44 @@ export async function getCxDashboard(filters: CxFilters): Promise<CxDashboard> {
       sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''),
       productName: String(row.product_name || ''), cabinetName: String(row.cabinet_name || ''), reviewCount: number(row.review_count),
       averageRating: number(row.average_rating), negativeReviews: number(row.negative_reviews), negativeShare: number(row.negative_share),
+    })),
+  };
+}
+
+export async function getCxTopicDashboard(filters: CxFilters, topicId: string | null): Promise<CxTopicDashboard> {
+  const { data, error } = await supabase.rpc('get_cx_topic_dashboard', {
+    ...params(filters),
+    p_topic_id: topicId,
+  });
+  if (error) throw errorMessage(error, 'дашборд тем')!;
+  const payload = (data || {}) as RpcRow;
+  const summary = (payload.summary || {}) as RpcRow;
+  const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
+  return {
+    version: number(payload.version),
+    selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
+    summary: {
+      textReviews: number(summary.text_reviews),
+      classifiedReviews: number(summary.classified_reviews),
+      topicMentions: number(summary.topic_mentions),
+      coverage: number(summary.coverage),
+      averageRating: number(summary.average_rating),
+      negativeShare: number(summary.negative_share),
+    },
+    topics: rows(payload.topics).map(row => ({
+      id: String(row.id || ''), name: String(row.name || ''), groupName: String(row.group_name || ''),
+      reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches), share: number(row.share),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), positiveShare: number(row.positive_share),
+    })),
+    trend: rows(payload.trend).map(row => ({
+      date: String(row.date || ''), mentions: number(row.mentions), reviews: number(row.reviews),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share),
+    })),
+    products: rows(payload.products).map(row => ({
+      entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,
+      sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''), productName: String(row.product_name || ''),
+      cabinetName: String(row.cabinet_name || ''), mentions: number(row.mentions),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share),
     })),
   };
 }

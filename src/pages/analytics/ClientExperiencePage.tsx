@@ -13,8 +13,9 @@ import {
   type CxDashboard, type CxFilters, type CxReviewRow,
 } from '../../features/clientExperience/clientExperienceApi';
 import ClientExperienceSettings from '../../features/clientExperience/ClientExperienceSettings';
+import ClientExperienceTopics from '../../features/clientExperience/ClientExperienceTopics';
 
-type ActiveTab = 'overview' | 'reviews' | 'settings';
+type ActiveTab = 'overview' | 'topics' | 'reviews' | 'settings';
 
 const EMPTY_DASHBOARD: CxDashboard = {
   summary: {
@@ -167,6 +168,7 @@ export default function ClientExperiencePage() {
         </div>
         <div className="cx-tabs" role="tablist">
           <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Обзор</button>
+          <button className={tab === 'topics' ? 'active' : ''} onClick={() => setTab('topics')}>Темы</button>
           <button className={tab === 'reviews' ? 'active' : ''} onClick={() => setTab('reviews')}>Отзывы</button>
           <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Настройки анализа</button>
         </div>
@@ -199,9 +201,13 @@ export default function ClientExperiencePage() {
       </section>
 
       {error && <div className="cx-error">{error}</div>}
-      <div className="cx-scope-note">Оценочный обзор без тематической классификации. Темы и CXI появятся после публикации управляемого словаря.</div>
+      <div className="cx-scope-note">
+        {tab === 'topics'
+          ? 'Дашборд использует последнюю опубликованную и полностью рассчитанную версию словаря.'
+          : 'Оценочный обзор и исходные отзывы. Тематическая аналитика доступна на вкладке «Темы» после публикации словаря.'}
+      </div>
 
-      {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'overview' ? (
+      {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'topics' ? <ClientExperienceTopics filters={filters} /> : tab === 'overview' ? (
         <>
           <section className={`cx-kpis${dashboardLoading ? ' loading' : ''}`}>
             <Kpi title="Всего отзывов" value={numberFormatter.format(summary.totalReviews)} note={`${numberFormatter.format(summary.textReviews)} с текстом`} tone="blue" />
