@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabaseClient';
+import { cleanReviewText, lemmatizeRussianText } from './russianMorphology';
 
-export type CxRuleType = 'keyword' | 'phrase' | 'regex' | 'exclusion';
+export type CxRuleType = 'exact_keyword' | 'exact_phrase' | 'lemma' | 'lemma_phrase' | 'context' | 'regex' | 'exclusion';
 
 export interface CxTopicGroup {
   id: string;
@@ -40,6 +41,7 @@ export interface CxTopicRule {
   priority: number;
   isActive: boolean;
   comment: string;
+  ruleConfig: Record<string, unknown>;
 }
 
 export interface CxMethodology {
@@ -96,8 +98,9 @@ export async function getCxAnalysisSettings(): Promise<CxAnalysisSettings> {
     })),
     rules: array(payload.rules).map(row => ({
       id: String(row.id || ''), topicId: String(row.topic_id || ''), dictionaryVersionId: String(row.dictionary_version_id || ''),
-      ruleType: String(row.rule_type || 'keyword') as CxRuleType, pattern: String(row.pattern || ''),
+      ruleType: String(row.rule_type || 'exact_keyword') as CxRuleType, pattern: String(row.pattern || ''),
       priority: Number(row.priority) || 100, isActive: row.is_active !== false, comment: String(row.comment || ''),
+      ruleConfig: row.rule_config && typeof row.rule_config === 'object' ? row.rule_config as Record<string, unknown> : {},
     })),
     methodologies: array(payload.methodologies).map(row => ({
       dictionaryVersionId: String(row.dictionary_version_id || ''),
@@ -123,10 +126,23 @@ export async function saveCxTopic(input: { id: string | null; groupId: string; n
 
 export async function saveCxTopicRule(input: {
   id: string | null; topicId: string; ruleType: CxRuleType; pattern: string;
-  priority: number; isActive: boolean; comment: string;
+  ruleConfig: Record<string, unknown>; priority: number; isActive: boolean; comment: string;
 }) {
+  let pattern = input.pattern;
+  let ruleConfig = input.ruleConfig;
+  if (input.ruleType === 'lemma' || input.ruleType === 'lemma_phrase') {
+    pattern = await lemmatizeRussianText(pattern);
+  } else if (input.ruleType === 'context') {
+    const required = Array.isArray(ruleConfig.required) ? await Promise.all(ruleConfig.required.map(value => lemmatizeRussianText(String(value)))) : [];
+    const anyOf = Array.isArray(ruleConfig.anyOf) ? await Promise.all(ruleConfig.anyOf.map(value => lemmatizeRussianText(String(value)))) : [];
+    ruleConfig = { ...ruleConfig, required, anyOf };
+    pattern = `${required.join('+')} → ${anyOf.join('|')}`;
+  } else if (input.ruleType !== 'regex') {
+    pattern = cleanReviewText(pattern);
+  }
   const { data, error } = await supabase.rpc('save_cx_topic_rule', {
-    p_id: input.id, p_topic_id: input.topicId, p_rule_type: input.ruleType, p_pattern: input.pattern,
+    p_id: input.id, p_topic_id: input.topicId, p_rule_type: input.ruleType, p_pattern: pattern,
+    p_rule_config: ruleConfig,
     p_priority: input.priority, p_is_active: input.isActive, p_comment: input.comment,
   });
   apiError('сохранение правила', error);
@@ -140,7 +156,11 @@ export async function deleteCxTopicRule(id: string) {
 }
 
 export async function testCxDictionaryRules(text: string): Promise<CxRuleTestResult[]> {
-  const { data, error } = await supabase.rpc('test_cx_dictionary_rules', { p_text: text });
+  const cleaned = cleanReviewText(text);
+  const lemmatized = await lemmatizeRussianText(text);
+  const { data, error } = await supabase.rpc('test_cx_dictionary_rules', {
+    p_text: text, p_cleaned_text: cleaned, p_lemmatized_text: lemmatized,
+  });
   apiError('тестирование правил', error);
   return (data || []).map((row: Row) => ({
     topicId: String(row.topic_id || ''), topicName: String(row.topic_name || ''), groupName: String(row.group_name || ''),

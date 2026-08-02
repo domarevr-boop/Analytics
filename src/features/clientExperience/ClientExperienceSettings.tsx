@@ -3,6 +3,7 @@ import {
   createCxDictionaryDraft, deleteCxTopicRule, getCxAnalysisSettings, saveCxTopic, saveCxTopicRule,
   testCxDictionaryRules, type CxAnalysisSettings, type CxRuleTestResult, type CxRuleType,
 } from './analysisSettingsApi';
+import { backfillReviewLemmas, getLemmaBackfillPending } from './lemmaBackfill';
 
 const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [] };
 
@@ -15,12 +16,18 @@ export default function ClientExperienceSettings() {
   const [topicName, setTopicName] = useState('');
   const [topicDescription, setTopicDescription] = useState('');
   const [topicGroupId, setTopicGroupId] = useState('');
-  const [ruleType, setRuleType] = useState<CxRuleType>('keyword');
+  const [ruleType, setRuleType] = useState<CxRuleType>('exact_keyword');
   const [rulePattern, setRulePattern] = useState('');
   const [ruleComment, setRuleComment] = useState('');
+  const [contextRequired, setContextRequired] = useState('');
+  const [contextAnyOf, setContextAnyOf] = useState('');
+  const [contextDistance, setContextDistance] = useState(4);
   const [testText, setTestText] = useState('');
   const [testResults, setTestResults] = useState<CxRuleTestResult[]>([]);
   const [testing, setTesting] = useState(false);
+  const [lemmaPending, setLemmaPending] = useState({ reviews: 0, fragments: 0 });
+  const [lemmaProgress, setLemmaProgress] = useState({ reviews: 0, fragments: 0 });
+  const [lemmatizing, setLemmatizing] = useState(false);
 
   const load = async () => {
     const data = await getCxAnalysisSettings();
@@ -30,9 +37,10 @@ export default function ClientExperienceSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    void getCxAnalysisSettings().then(data => {
+    void Promise.all([getCxAnalysisSettings(), getLemmaBackfillPending()]).then(([data, pending]) => {
       if (cancelled) return;
       setSettings(data);
+      setLemmaPending(pending);
       setSelectedTopicId(data.topics[0]?.id || '');
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
@@ -83,7 +91,14 @@ export default function ClientExperienceSettings() {
           <p>{draft ? 'Изменения изолированы и не влияют на рабочие метрики.' : 'Для редактирования создайте новый черновик.'}</p>
         </div>
         {!draft && <button disabled={saving} onClick={() => void run(() => createCxDictionaryDraft('Рабочий черновик'))}>Создать черновик</button>}
-        {draft && <span className="cx-draft-badge">Черновик · не опубликован</span>}
+        <div className="cx-settings-actions">
+          {(lemmaPending.reviews > 0 || lemmaPending.fragments > 0) && <button disabled={lemmatizing} onClick={() => {
+            setLemmatizing(true); setError('');
+            void backfillReviewLemmas(progress => setLemmaProgress(progress)).then(() => getLemmaBackfillPending()).then(setLemmaPending)
+              .catch(reason => setError(reason instanceof Error ? reason.message : String(reason))).finally(() => setLemmatizing(false));
+          }}>{lemmatizing ? `Лемматизация ${lemmaProgress.reviews} / ${lemmaPending.reviews}` : `Подготовить леммы · ${lemmaPending.reviews}`}</button>}
+          {draft && <span className="cx-draft-badge">Черновик · не опубликован</span>}
+        </div>
       </section>
 
       <div className="cx-settings-grid">
@@ -126,8 +141,10 @@ export default function ClientExperienceSettings() {
           <div className="cx-rules-table">
             {rules.map(rule => (
               <div key={rule.id}>
-                <span className={`cx-rule-type ${rule.ruleType}`}>{rule.ruleType}</span>
-                <strong>{rule.pattern}</strong>
+                <span className={`cx-rule-type ${rule.ruleType}`}>{ruleTypeLabel(rule.ruleType)}</span>
+                <strong>{rule.ruleType === 'context'
+                  ? `${(rule.ruleConfig.required as string[] | undefined)?.join(', ') || '—'} → ${(rule.ruleConfig.anyOf as string[] | undefined)?.join(', ') || '—'}`
+                  : rule.pattern}</strong>
                 <small>{rule.comment || `Приоритет ${rule.priority}`}</small>
                 {draft && <button disabled={saving} onClick={() => void run(() => deleteCxTopicRule(rule.id))}>Удалить</button>}
               </div>
@@ -136,15 +153,29 @@ export default function ClientExperienceSettings() {
           </div>
 
           {draft && selectedTopic && (
-            <form className="cx-rule-form" onSubmit={event => {
+            <form className={`cx-rule-form${ruleType === 'context' ? ' context' : ''}`} onSubmit={event => {
               event.preventDefault();
-              void run(() => saveCxTopicRule({ id: null, topicId: selectedTopicId, ruleType, pattern: rulePattern, priority: 100, isActive: true, comment: ruleComment }))
-                .then(() => { setRulePattern(''); setRuleComment(''); });
+              const required = contextRequired.split(',').map(value => value.trim()).filter(Boolean);
+              const anyOf = contextAnyOf.split(',').map(value => value.trim()).filter(Boolean);
+              const ruleConfig = ruleType === 'context' ? { required, anyOf, maxDistance: contextDistance } : {};
+              const pattern = ruleType === 'context' ? `${required.join('+')} → ${anyOf.join('|')}` : rulePattern;
+              void run(() => saveCxTopicRule({ id: null, topicId: selectedTopicId, ruleType, pattern, ruleConfig, priority: 100, isActive: true, comment: ruleComment }))
+                .then(() => { setRulePattern(''); setRuleComment(''); setContextRequired(''); setContextAnyOf(''); });
             }}>
               <select value={ruleType} onChange={event => setRuleType(event.target.value as CxRuleType)}>
-                <option value="keyword">Слово</option><option value="phrase">Фраза</option><option value="regex">Регулярное выражение</option><option value="exclusion">Исключение</option>
+                <option value="exact_keyword">Точное слово</option>
+                <option value="exact_phrase">Точная фраза</option>
+                <option value="lemma">Лемма</option>
+                <option value="lemma_phrase">Фраза по леммам</option>
+                <option value="context">Контекст</option>
+                <option value="regex">Регулярное выражение</option>
+                <option value="exclusion">Исключение</option>
               </select>
-              <input value={rulePattern} onChange={event => setRulePattern(event.target.value)} placeholder="Шаблон правила" required />
+              {ruleType === 'context' ? <>
+                <input value={contextRequired} onChange={event => setContextRequired(event.target.value)} placeholder="Обязательно: свет, яркость" required />
+                <input value={contextAnyOf} onChange={event => setContextAnyOf(event.target.value)} placeholder="Любое: мало, хватать, достаточно" required />
+                <input type="number" min={1} max={20} value={contextDistance} onChange={event => setContextDistance(Number(event.target.value) || 4)} title="Максимальное расстояние между словами" />
+              </> : <input value={rulePattern} onChange={event => setRulePattern(event.target.value)} placeholder="Шаблон правила" required />}
               <input value={ruleComment} onChange={event => setRuleComment(event.target.value)} placeholder="Комментарий" />
               <button disabled={saving}>Добавить</button>
             </form>
@@ -187,4 +218,11 @@ export default function ClientExperienceSettings() {
 
 function MethodRow({ label, value }: { label: string; value: unknown }) {
   return <div className="cx-method-row"><span>{label}</span><strong>{value === undefined ? '—' : String(value)}</strong></div>;
+}
+
+function ruleTypeLabel(type: CxRuleType) {
+  return ({
+    exact_keyword: 'точное', exact_phrase: 'фраза', lemma: 'лемма', lemma_phrase: 'лемма-фраза',
+    context: 'контекст', regex: 'regex', exclusion: 'исключение',
+  } satisfies Record<CxRuleType, string>)[type];
 }

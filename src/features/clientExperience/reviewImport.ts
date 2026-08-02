@@ -1,10 +1,11 @@
 import { getBrands, getCabinets, getGroups, getMemberships, getProducts } from '../../data/store';
 import { normalizeImportDate } from '../../data/dateUtils';
 import { supabase } from '../../lib/supabaseClient';
+import { cleanReviewText, lemmatizeRussianText } from './russianMorphology';
 
 const SOURCE = 'wb_reviews';
 const BUCKET = 'cx-review-imports';
-const PARSER_VERSION = 'reviews-v1';
+const PARSER_VERSION = 'reviews-v2-lemmas';
 const CHUNK_SIZE = 500;
 
 export interface ReviewImportProgress {
@@ -42,17 +43,13 @@ interface ReviewCandidate {
   key: string;
   registry: Record<string, unknown>;
   review?: Record<string, unknown>;
-  fragments: Array<{ fragment_type: string; fragment_text: string; normalized_text: string }>;
+  fragments: Array<{ fragment_type: string; fragment_text: string; normalized_text: string; lemmatized_text: string }>;
   emptyKey?: string;
   emptyStat?: Record<string, unknown>;
 }
 
 function clean(value: unknown): string {
   return String(value ?? '').split('\u0000').join('').replace(/\r\n/g, '\n').trim();
-}
-
-function normalizeText(value: string): string {
-  return value.toLocaleLowerCase('ru-RU').replace(/\s+/g, ' ').trim();
 }
 
 function hasMeaningfulText(value: string): boolean {
@@ -230,13 +227,18 @@ export async function importReviewsToSupabase(
       const reviewText = clean(row.review_text);
       const advantages = clean(row.review_advantages);
       const disadvantages = clean(row.review_disadvantages);
-      const fragments = [
+      const sourceFragments = [
         { fragment_type: 'text', fragment_text: reviewText },
         { fragment_type: 'advantage', fragment_text: advantages },
         { fragment_type: 'disadvantage', fragment_text: disadvantages },
-      ].filter(fragment => hasMeaningfulText(fragment.fragment_text))
-        .map(fragment => ({ ...fragment, normalized_text: normalizeText(fragment.fragment_text) }));
+      ].filter(fragment => hasMeaningfulText(fragment.fragment_text));
+      const fragments = await Promise.all(sourceFragments.map(async fragment => ({
+        ...fragment,
+        normalized_text: cleanReviewText(fragment.fragment_text),
+        lemmatized_text: await lemmatizeRussianText(fragment.fragment_text),
+      })));
       const normalized = fragments.map(fragment => fragment.normalized_text).join('\n');
+      const lemmatized = fragments.map(fragment => fragment.lemmatized_text).join('\n');
       const key = `${cabinetName}\u0000${sourceReviewId}`;
       const common = {
         import_batch_id: batchId,
@@ -267,6 +269,8 @@ export async function importReviewsToSupabase(
           advantages: advantages || null,
           disadvantages: disadvantages || null,
           normalized_text: normalized,
+          lemmatized_text: lemmatized,
+          lemmatization_version: 'az-opencorpora-0.2.3',
           text_hash: textHash(normalized),
           author_name: clean(row.review_author) || null,
           country_code: clean(row.review_country).toLocaleLowerCase('ru-RU') || null,
