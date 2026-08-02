@@ -3,9 +3,9 @@ import {
   Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  getCxTopicDashboard,
+  getCxTopicDashboard, getCxTopicReviewsPage,
   type CxFilters,
-  type CxTopicDashboard,
+  type CxTopicDashboard, type CxTopicReviewRow, type CxTopicSentiment,
 } from './clientExperienceApi';
 
 const EMPTY: CxTopicDashboard = {
@@ -20,6 +20,11 @@ const EMPTY: CxTopicDashboard = {
 
 const integer = new Intl.NumberFormat('ru-RU');
 const decimal = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
+const DRILLDOWN_PAGE_SIZE = 20;
+
+const sentimentLabels: Record<CxTopicSentiment, string> = {
+  positive: 'Позитивные отзывы', neutral: 'Нейтральные отзывы', negative: 'Негативные отзывы',
+};
 
 function day(value: string) {
   return value.slice(5).split('-').reverse().join('.');
@@ -30,6 +35,12 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const [dashboard, setDashboard] = useState<CxTopicDashboard>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [drilldownSentiment, setDrilldownSentiment] = useState<CxTopicSentiment | null>(null);
+  const [drilldownRows, setDrilldownRows] = useState<CxTopicReviewRow[]>([]);
+  const [drilldownTotal, setDrilldownTotal] = useState(0);
+  const [drilldownPage, setDrilldownPage] = useState(0);
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drilldownError, setDrilldownError] = useState('');
 
   useEffect(() => {
     if (!filters.start || !filters.end) return;
@@ -50,11 +61,41 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
     return () => { cancelled = true; };
   }, [filters, selectedTopicId]);
 
+  useEffect(() => {
+    if (!drilldownSentiment || !selectedTopicId) return;
+    let cancelled = false;
+    setDrilldownLoading(true);
+    setDrilldownError('');
+    void getCxTopicReviewsPage(filters, selectedTopicId, drilldownSentiment, drilldownPage, DRILLDOWN_PAGE_SIZE).then(result => {
+      if (cancelled) return;
+      setDrilldownRows(result.rows);
+      setDrilldownTotal(result.total);
+    }).catch(reason => {
+      if (!cancelled) setDrilldownError(reason instanceof Error ? reason.message : String(reason));
+    }).finally(() => {
+      if (!cancelled) setDrilldownLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [drilldownPage, drilldownSentiment, filters, selectedTopicId]);
+
+  useEffect(() => {
+    if (!drilldownSentiment) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setDrilldownSentiment(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [drilldownSentiment]);
+
   const selectedTopic = useMemo(
     () => dashboard.topics.find(topic => topic.id === selectedTopicId) || dashboard.topics[0],
     [dashboard.topics, selectedTopicId],
   );
   const hasSentiment = dashboard.summary.positiveShare > 0 || dashboard.summary.negativeShare > 0;
+  const openDrilldown = (value: CxTopicSentiment) => {
+    setDrilldownRows([]);
+    setDrilldownTotal(0);
+    setDrilldownPage(0);
+    setDrilldownSentiment(value);
+  };
 
   if (error) return <div className="cx-error">{error}</div>;
   if (!loading && dashboard.version === 0) {
@@ -86,9 +127,9 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
       </section>
 
       <section className="page-card cx-sentiment-overview">
-        <div><span>Позитив</span><strong>{decimal.format(dashboard.summary.positiveShare)}%</strong></div>
-        <div><span>Нейтрально</span><strong>{decimal.format(dashboard.summary.neutralShare)}%</strong></div>
-        <div><span>Негатив</span><strong>{decimal.format(dashboard.summary.negativeShare)}%</strong></div>
+        <button type="button" onClick={() => openDrilldown('positive')}><span>Позитив</span><strong>{decimal.format(dashboard.summary.positiveShare)}%</strong><small>Показать отзывы</small></button>
+        <button type="button" onClick={() => openDrilldown('neutral')}><span>Нейтрально</span><strong>{decimal.format(dashboard.summary.neutralShare)}%</strong><small>Показать отзывы</small></button>
+        <button type="button" onClick={() => openDrilldown('negative')}><span>Негатив</span><strong>{decimal.format(dashboard.summary.negativeShare)}%</strong><small>Показать отзывы</small></button>
         <i aria-label="Распределение тональности">
           <b className="positive" style={{ width: `${dashboard.summary.positiveShare}%` }} />
           <b className="neutral" style={{ width: `${dashboard.summary.neutralShare}%` }} />
@@ -158,8 +199,45 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
           </table>
         </div>
       </section>
+
+      {drilldownSentiment && (
+        <div className="cx-drilldown-backdrop" role="presentation" onMouseDown={event => {
+          if (event.target === event.currentTarget) setDrilldownSentiment(null);
+        }}>
+          <aside className="cx-drilldown" role="dialog" aria-modal="true" aria-label={sentimentLabels[drilldownSentiment]}>
+            <header>
+              <div><span>ДЕТАЛИЗАЦИЯ САНТИМЕНТА</span><h2>{sentimentLabels[drilldownSentiment]}</h2><p>{selectedTopic?.name || 'Выбранная тема'} · {integer.format(drilldownTotal)} отзывов</p></div>
+              <button type="button" aria-label="Закрыть" onClick={() => setDrilldownSentiment(null)}>×</button>
+            </header>
+            {drilldownError && <div className="cx-error">{drilldownError}</div>}
+            <div className={`cx-drilldown-list${drilldownLoading ? ' loading' : ''}`}>
+              {drilldownRows.map(review => <TopicReviewCard key={review.id} review={review} />)}
+              {!drilldownLoading && !drilldownError && drilldownRows.length === 0 && <div className="cx-drilldown-empty">Отзывов с таким сантиментом в выбранном срезе нет</div>}
+            </div>
+            <footer>
+              <span>{drilldownTotal > 0 ? `${drilldownPage * DRILLDOWN_PAGE_SIZE + 1}–${Math.min(drilldownTotal, (drilldownPage + 1) * DRILLDOWN_PAGE_SIZE)} из ${integer.format(drilldownTotal)}` : '0 отзывов'}</span>
+              <div><button type="button" disabled={drilldownPage === 0 || drilldownLoading} onClick={() => setDrilldownPage(value => Math.max(0, value - 1))}>Назад</button><button type="button" disabled={(drilldownPage + 1) * DRILLDOWN_PAGE_SIZE >= drilldownTotal || drilldownLoading} onClick={() => setDrilldownPage(value => value + 1)}>Далее</button></div>
+            </footer>
+          </aside>
+        </div>
+      )}
     </div>
   );
+}
+
+function TopicReviewCard({ review }: { review: CxTopicReviewRow }) {
+  return <article className="cx-drilldown-review">
+    <div className="cx-drilldown-review-head">
+      <div><strong>{review.productName || review.sellerSku || 'Без названия'}</strong><span>SKU {review.sellerSku || '—'} · WB {review.wbSku || '—'} · {review.cabinetName}</span></div>
+      <div><span className={`cx-rating-pill rating-${review.rating}`}>{review.rating} ★</span><time>{day(review.reviewDate)}</time></div>
+    </div>
+    <p>{review.reviewText || 'Основной текст отсутствует'}</p>
+    {(review.advantages || review.disadvantages) && <div className="cx-drilldown-fragments">
+      {review.advantages && <span><b>Достоинства</b>{review.advantages}</span>}
+      {review.disadvantages && <span><b>Недостатки</b>{review.disadvantages}</span>}
+    </div>}
+    <div className="cx-drilldown-rules"><span>Сработали:</span>{review.matchedRules.map(rule => <b key={rule.id}>{rule.pattern}</b>)}</div>
+  </article>;
 }
 
 function TopicKpi({ title, value, note, tone }: { title: string; value: string; note: string; tone: string }) {

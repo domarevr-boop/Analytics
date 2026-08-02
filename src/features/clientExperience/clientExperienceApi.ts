@@ -68,6 +68,13 @@ export interface CxReviewRow {
   productMatchStatus: string;
 }
 
+export type CxTopicSentiment = 'positive' | 'neutral' | 'negative';
+
+export interface CxTopicReviewRow extends CxReviewRow {
+  sentiment: CxTopicSentiment;
+  matchedRules: Array<{ id: string; type: string; pattern: string }>;
+}
+
 export interface CxDashboard {
   summary: CxSummary;
   trend: CxTrendPoint[];
@@ -164,6 +171,19 @@ function sentiment(row: RpcRow) {
 
 function errorMessage(error: { message: string } | null, context: string) {
   return error ? new Error(`[CX] ${context}: ${error.message}`) : null;
+}
+
+function mapReviewRow(row: RpcRow): CxReviewRow {
+  return {
+    id: String(row.id || ''), reviewDate: String(row.review_date || ''),
+    localProductId: row.local_product_id ? String(row.local_product_id) : null,
+    cabinetName: String(row.cabinet_name || ''), sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''),
+    productName: String(row.product_name || ''), productCategory: String(row.product_category || ''),
+    productGroupNames: Array.isArray(row.product_group_names) ? row.product_group_names.map(String) : [],
+    reportedBrand: String(row.reported_brand || ''), rating: number(row.rating), reviewText: String(row.review_text || ''),
+    advantages: String(row.advantages || ''), disadvantages: String(row.disadvantages || ''), sellerResponse: String(row.seller_response || ''),
+    helpfulUp: number(row.helpful_up), helpfulDown: number(row.helpful_down), productMatchStatus: String(row.product_match_status || 'unmatched'),
+  };
 }
 
 export async function getCxDateBounds(): Promise<{ start: string; end: string }> {
@@ -272,15 +292,36 @@ export async function getCxReviewsPage(
   const sourceRows = data || [];
   return {
     total: number(sourceRows[0]?.total_count),
+    rows: sourceRows.map((row: RpcRow) => mapReviewRow(row)),
+  };
+}
+
+export async function getCxTopicReviewsPage(
+  filters: CxFilters,
+  topicId: string,
+  sentimentFilter: CxTopicSentiment,
+  page: number,
+  pageSize = 20,
+): Promise<{ rows: CxTopicReviewRow[]; total: number }> {
+  if (filters.productIds && filters.productIds.length === 0) return { rows: [], total: 0 };
+  const { data, error } = await supabase.rpc('get_cx_topic_reviews_page', {
+    ...params(filters),
+    p_topic_id: topicId,
+    p_sentiment: sentimentFilter,
+    p_limit: pageSize,
+    p_offset: Math.max(0, page) * pageSize,
+  });
+  if (error) throw errorMessage(error, 'детализация сантимента')!;
+  const sourceRows = data || [];
+  return {
+    total: number(sourceRows[0]?.total_count),
     rows: sourceRows.map((row: RpcRow) => ({
-      id: String(row.id || ''), reviewDate: String(row.review_date || ''),
-      localProductId: row.local_product_id ? String(row.local_product_id) : null,
-      cabinetName: String(row.cabinet_name || ''), sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''),
-      productName: String(row.product_name || ''), productCategory: String(row.product_category || ''),
-      productGroupNames: Array.isArray(row.product_group_names) ? row.product_group_names.map(String) : [],
-      reportedBrand: String(row.reported_brand || ''), rating: number(row.rating), reviewText: String(row.review_text || ''),
-      advantages: String(row.advantages || ''), disadvantages: String(row.disadvantages || ''), sellerResponse: String(row.seller_response || ''),
-      helpfulUp: number(row.helpful_up), helpfulDown: number(row.helpful_down), productMatchStatus: String(row.product_match_status || 'unmatched'),
+      ...mapReviewRow(row),
+      sentiment: String(row.sentiment || 'neutral') as CxTopicSentiment,
+      matchedRules: Array.isArray(row.matched_rules) ? row.matched_rules.map(rule => {
+        const source = rule && typeof rule === 'object' ? rule as RpcRow : {};
+        return { id: String(source.id || ''), type: String(source.type || ''), pattern: String(source.pattern || '') };
+      }) : [],
     })),
   };
 }
