@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   createCxDictionaryDraft, deleteCxTopicRule, getCxAnalysisSettings, saveCxTopic, saveCxTopicRule,
-  testCxDictionaryRules, type CxAnalysisSettings, type CxRuleTestResult, type CxRuleType,
+  cancelCxAnalysis, publishCxDictionary, testCxDictionaryRules, type CxAnalysisRun, type CxAnalysisSettings,
+  type CxRuleTestResult, type CxRuleType,
 } from './analysisSettingsApi';
 import { backfillReviewLemmas, getLemmaBackfillPending } from './lemmaBackfill';
 
-const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [] };
+const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [], analysisRuns: [] };
 
 export default function ClientExperienceSettings() {
   const [settings, setSettings] = useState(EMPTY);
@@ -28,6 +29,8 @@ export default function ClientExperienceSettings() {
   const [lemmaPending, setLemmaPending] = useState({ reviews: 0, fragments: 0 });
   const [lemmaProgress, setLemmaProgress] = useState({ reviews: 0, fragments: 0 });
   const [lemmatizing, setLemmatizing] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<CxAnalysisRun | null>(null);
 
   const load = async () => {
     const data = await getCxAnalysisSettings();
@@ -58,6 +61,7 @@ export default function ClientExperienceSettings() {
     rule.topicId === selectedTopicId && rule.dictionaryVersionId === activeVersion?.id
   )), [activeVersion?.id, selectedTopicId, settings.rules]);
   const methodology = settings.methodologies.find(item => item.dictionaryVersionId === activeVersion?.id)?.config || {};
+  const activeRun = settings.analysisRuns.find(run => run.status === 'processing' && run.dictionaryVersionId === draft?.id);
 
   const run = async (action: () => Promise<unknown>) => {
     setSaving(true);
@@ -97,6 +101,17 @@ export default function ClientExperienceSettings() {
             void backfillReviewLemmas(progress => setLemmaProgress(progress)).then(() => getLemmaBackfillPending()).then(setLemmaPending)
               .catch(reason => setError(reason instanceof Error ? reason.message : String(reason))).finally(() => setLemmatizing(false));
           }}>{lemmatizing ? `Лемматизация ${lemmaProgress.reviews} / ${lemmaPending.reviews}` : `Подготовить леммы · ${lemmaPending.reviews}`}</button>}
+          {draft && <button disabled={publishing || lemmatizing || lemmaPending.reviews > 0} onClick={() => {
+            setPublishing(true); setError('');
+            void publishCxDictionary(setPublishProgress, activeRun?.id).then(load)
+              .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+              .finally(() => setPublishing(false));
+          }}>{publishing
+            ? `Перерасчёт ${publishProgress?.processedReviews || 0} / ${publishProgress?.totalReviews || activeRun?.totalReviews || 0}`
+            : activeRun ? `Продолжить перерасчёт · ${activeRun.processedReviews}/${activeRun.totalReviews}` : 'Опубликовать словарь'}</button>}
+          {activeRun && !publishing && <button className="cx-secondary-action" onClick={() => {
+            void run(() => cancelCxAnalysis(activeRun.id));
+          }}>Остановить</button>}
           {draft && <span className="cx-draft-badge">Черновик · не опубликован</span>}
         </div>
       </section>
@@ -209,7 +224,7 @@ export default function ClientExperienceSettings() {
         <section className="page-card cx-version-history">
           <div className="cx-section-head"><div><span>ИСТОРИЯ</span><h2>Версии словаря</h2></div></div>
           {settings.versions.map(version => <div key={version.id}><strong>v{version.versionNumber}</strong><span className={`cx-version-status ${version.status}`}>{version.status}</span><small>{version.description || 'Без описания'}</small></div>)}
-          {draft && <p>Публикация появится после подключения очереди перерасчёта. До этого рабочая версия остаётся неизменной.</p>}
+          {draft && <p>При публикации новая версия сначала полностью пересчитывается. Рабочий словарь переключается только после сверки всех отзывов.</p>}
         </section>
       </div>
     </div>

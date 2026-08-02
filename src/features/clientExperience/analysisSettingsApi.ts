@@ -49,12 +49,25 @@ export interface CxMethodology {
   config: Record<string, unknown>;
 }
 
+export interface CxAnalysisRun {
+  id: string;
+  dictionaryVersionId: string;
+  status: 'processing' | 'completed' | 'failed';
+  totalReviews: number;
+  processedReviews: number;
+  matchedReviews: number;
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string;
+}
+
 export interface CxAnalysisSettings {
   groups: CxTopicGroup[];
   topics: CxTopic[];
   versions: CxDictionaryVersion[];
   rules: CxTopicRule[];
   methodologies: CxMethodology[];
+  analysisRuns: CxAnalysisRun[];
 }
 
 export interface CxRuleTestResult {
@@ -106,7 +119,55 @@ export async function getCxAnalysisSettings(): Promise<CxAnalysisSettings> {
       dictionaryVersionId: String(row.dictionary_version_id || ''),
       config: row.config && typeof row.config === 'object' ? row.config as Record<string, unknown> : {},
     })),
+    analysisRuns: array(payload.analysis_runs).map(mapAnalysisRun),
   };
+}
+
+function mapAnalysisRun(row: Row): CxAnalysisRun {
+  return {
+    id: String(row.id || ''), dictionaryVersionId: String(row.dictionary_version_id || ''),
+    status: String(row.status || 'failed') as CxAnalysisRun['status'],
+    totalReviews: Number(row.total_reviews) || 0, processedReviews: Number(row.processed_reviews) || 0,
+    matchedReviews: Number(row.matched_reviews) || 0, startedAt: String(row.started_at || ''),
+    completedAt: row.completed_at ? String(row.completed_at) : null, errorMessage: String(row.error_message || ''),
+  };
+}
+
+async function analysisRpc(name: string, args: Record<string, unknown> = {}) {
+  const { data, error } = await supabase.rpc(name, args);
+  apiError('пакетный анализ', error);
+  return mapAnalysisRun((data || {}) as Row);
+}
+
+export async function publishCxDictionary(
+  onProgress?: (run: CxAnalysisRun) => void,
+  resumeRunId?: string,
+) {
+  let run = resumeRunId
+    ? await analysisRpc('process_cx_analysis_batch', { p_run_id: resumeRunId, p_limit: 250 })
+    : await analysisRpc('start_cx_dictionary_publication');
+  onProgress?.(run);
+  while (run.processedReviews < run.totalReviews) {
+    const processedBefore = run.processedReviews;
+    run = await analysisRpc('process_cx_analysis_batch', { p_run_id: run.id, p_limit: 250 });
+    onProgress?.(run);
+    if (run.processedReviews <= processedBefore) {
+      throw new Error(`Перерасчёт остановился на ${run.processedReviews} из ${run.totalReviews} отзывов`);
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+  }
+  run = await analysisRpc('finalize_cx_dictionary_publication', { p_run_id: run.id });
+  onProgress?.(run);
+  return run;
+}
+
+export async function cancelCxAnalysis(runId: string) {
+  const { data, error } = await supabase.rpc('fail_cx_analysis_run', {
+    p_run_id: runId,
+    p_error: 'Остановлено пользователем',
+  });
+  apiError('остановка анализа', error);
+  return Boolean(data);
 }
 
 export async function createCxDictionaryDraft(description: string) {
