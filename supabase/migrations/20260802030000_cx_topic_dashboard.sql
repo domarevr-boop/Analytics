@@ -106,7 +106,8 @@ as $$
       'average_rating', daily_rows.average_rating, 'negative_share', daily_rows.negative_share
     ) order by daily_rows.review_date) from daily_rows), '[]'::jsonb),
     'products', coalesce((select jsonb_agg(to_jsonb(product_rows) order by product_rows.mentions desc) from product_rows), '[]'::jsonb)
-  ) from totals end;
+  ) end
+  from totals;
 $$;
 
 revoke all on function public.get_cx_topic_dashboard(date, date, text[], text[], smallint, uuid) from public;
