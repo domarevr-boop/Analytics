@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Bar, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Scatter, ScatterChart,
-  Tooltip, XAxis, YAxis, ZAxis,
+  Bar, CartesianGrid, Cell, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer,
+  Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts';
 import {
   getCxTopicDashboard, getCxTopicReviewsPage,
   type CxFilters, type CxTopicDashboard, type CxTopicExample, type CxTopicMetric,
-  type CxTopicReviewRow, type CxTopicSentiment,
+  type CxTopicGranularity, type CxTopicReviewRow, type CxTopicSentiment, type CxTopicTrendPoint,
 } from './clientExperienceApi';
 
 const EMPTY: CxTopicDashboard = {
   workspaceVersion: 0, version: 0, selectedTopicId: null,
+  granularity: 'day', mapMedians: { share: 0, topicScore: 50 },
+  comparisons: {
+    textReviews: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+    classifiedReviews: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+    mentions: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+    topicScore: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+    negativeShare: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+    averageRating: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
+  },
   summary: {
     textReviews: 0, classifiedReviews: 0, topicMentions: 0, coverage: 0, averageRating: 0,
     negativeShare: 0, neutralShare: 0, positiveShare: 0, topicScore: 0,
@@ -24,6 +33,17 @@ const DRILLDOWN_PAGE_SIZE = 20;
 const riskColors = { low: '#18A979', medium: '#F29F24', high: '#E45562' } as const;
 const groupTitles: Record<string, string> = {
   product: 'Продуктовый опыт', service: 'Сервисный опыт', outcomes: 'Результат опыта',
+};
+const groupColors: Record<string, string> = { product: '#3F82F7', service: '#13A878', outcomes: '#8A68DF' };
+
+type TrendMetric = 'topicScore' | 'mentions' | 'negativeShare' | 'positiveShare' | 'topicShare' | 'averageRating';
+const trendMetrics: Record<TrendMetric, { label: string; color: string; unit: string; domain: [number | 'auto', number | 'auto']; type: 'bar' | 'line' }> = {
+  topicScore: { label: 'Сантимент', color: '#13A878', unit: '', domain: [0, 100], type: 'line' },
+  mentions: { label: 'Упоминания', color: '#4E8DF5', unit: '', domain: [0, 'auto'], type: 'bar' },
+  negativeShare: { label: 'Доля негатива', color: '#E45562', unit: '%', domain: [0, 100], type: 'line' },
+  positiveShare: { label: 'Доля позитива', color: '#12A873', unit: '%', domain: [0, 100], type: 'line' },
+  topicShare: { label: 'Доля отзывов с темой', color: '#826FE8', unit: '%', domain: [0, 100], type: 'line' },
+  averageRating: { label: 'Средняя оценка', color: '#E7A719', unit: '', domain: [0, 5], type: 'line' },
 };
 
 const sentimentLabels: Record<CxTopicSentiment, string> = {
@@ -43,8 +63,15 @@ function riskLabel(value: CxTopicMetric['risk']) {
   return value === 'high' ? 'Высокий' : value === 'medium' ? 'Средний' : 'Низкий';
 }
 
+function suggestedGranularity(start: string, end: string): CxTopicGranularity {
+  const days = Math.max(1, Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1);
+  return days <= 45 ? 'day' : days <= 180 ? 'week' : 'month';
+}
+
 export default function ClientExperienceTopics({ filters }: { filters: CxFilters }) {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [granularityOverride, setGranularityOverride] = useState<{ period: string; value: CxTopicGranularity } | null>(null);
+  const [visibleMetrics, setVisibleMetrics] = useState<[TrendMetric, TrendMetric | '']>(['topicScore', '']);
   const [dashboard, setDashboard] = useState<CxTopicDashboard>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,11 +81,15 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const [drilldownPage, setDrilldownPage] = useState(0);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldownError, setDrilldownError] = useState('');
+  const periodKey = `${filters.start}:${filters.end}`;
+  const granularity = granularityOverride?.period === periodKey
+    ? granularityOverride.value
+    : suggestedGranularity(filters.start, filters.end);
 
   useEffect(() => {
     if (!filters.start || !filters.end) return;
     let cancelled = false;
-    void getCxTopicDashboard(filters, selectedTopicId).then(result => {
+    void getCxTopicDashboard(filters, selectedTopicId, granularity).then(result => {
       if (cancelled) return;
       setDashboard(result);
       setError('');
@@ -70,7 +101,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [filters, selectedTopicId]);
+  }, [filters, selectedTopicId, granularity]);
 
   useEffect(() => {
     if (!drilldownSentiment || !selectedTopicId) return;
@@ -119,6 +150,15 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
     setDrilldownError('');
     setDrilldownPage(value);
   };
+  const setTrendMetric = (index: 0 | 1, value: TrendMetric | '') => {
+    setVisibleMetrics(current => {
+      if (index === 0) {
+        if (!value) return current;
+        return [value, current[1] === value ? '' : current[1]];
+      }
+      return [current[0], value === current[0] ? '' : value];
+    });
+  };
 
   if (error) return <div className="cx-error">{error}</div>;
   if (!loading && dashboard.version === 0) {
@@ -156,20 +196,23 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <article className="page-card cx-section cx-topic-map">
           <div className="cx-section-head"><div><span>ПОЗИЦИОНИРОВАНИЕ</span><h2>Карта тем</h2><p>X — доля отзывов · Y — сантимент · размер — упоминания</p></div></div>
           <div className="cx-topic-map-chart">
+            <div className="cx-topic-quadrants" aria-hidden="true"><span>Скрытые преимущества</span><span>Сильные стороны</span><span>Точечные проблемы</span><span>Приоритет улучшения</span></div>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 16, right: 20, bottom: 8, left: 0 }}>
                 <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" />
                 <XAxis type="number" dataKey="share" name="Доля" unit="%" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#7D8DA3' }} />
                 <YAxis type="number" dataKey="topicScore" name="Сантимент" domain={[0, 100]} tick={{ fontSize: 9, fill: '#7D8DA3' }} width={32} />
                 <ZAxis type="number" dataKey="reviewCount" range={[70, 850]} />
+                <ReferenceLine x={dashboard.mapMedians.share} stroke="#9AA8B8" strokeDasharray="5 4" />
+                <ReferenceLine y={dashboard.mapMedians.topicScore} stroke="#9AA8B8" strokeDasharray="5 4" />
                 <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<TopicMapTooltip />} />
                 <Scatter data={dashboard.topics.filter(topic => topic.reviewCount > 0)} onClick={point => selectTopic((point as unknown as CxTopicMetric).id)}>
-                  {dashboard.topics.filter(topic => topic.reviewCount > 0).map(topic => <Cell key={topic.id} fill={riskColors[topic.risk]} fillOpacity={0.86} stroke="#fff" strokeWidth={2} />)}
+                  {dashboard.topics.filter(topic => topic.reviewCount > 0).map(topic => <Cell key={topic.id} fill={groupColors[topic.groupCode] || '#8B99AB'} fillOpacity={0.88} stroke={topic.id === selectedTopic?.id ? '#142A45' : '#fff'} strokeWidth={topic.id === selectedTopic?.id ? 3 : 2} />)}
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
-          <div className="cx-risk-legend"><span><i className="low" />Низкий риск</span><span><i className="medium" />Средний</span><span><i className="high" />Высокий</span></div>
+          <div className="cx-group-legend"><span><i className="product" />Продукт</span><span><i className="service" />Сервис</span><span><i className="outcomes" />Результат опыта</span></div>
         </article>
 
         <article className="page-card cx-section cx-all-topics">
@@ -190,11 +233,11 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <div className="cx-topic-dashboard-head"><div><span>ДЕТАЛИЗАЦИЯ ТЕМЫ</span><h2>{selectedTopic?.name || 'Тема не выбрана'}</h2><p>{selectedTopic?.groupName || 'Выберите тему в сводке'}</p></div></div>
 
         <section className="cx-topic-kpis">
-          <TopicKpi title="Отзывы с текстом" value={integer.format(dashboard.summary.textReviews)} note="В выбранном срезе" tone="blue" />
-          <TopicKpi title="Классифицировано" value={integer.format(dashboard.summary.classifiedReviews)} note={`${decimal.format(dashboard.summary.coverage)}% покрытия`} tone="green" />
-          <TopicKpi title="Упоминания темы" value={integer.format(selectedTopic?.reviewCount || 0)} note={`${decimal.format(selectedTopic?.share || 0)}% отзывов`} tone="violet" />
-          <TopicKpi title="Сантимент" value={hasSentiment ? decimal.format(dashboard.summary.topicScore) : '—'} note={hasSentiment ? '0 — негатив · 100 — позитив' : 'Нет окрашенных совпадений'} tone="yellow" />
-          <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note={`${signed(selectedTopic?.negativeDelta || 0)} к прошлому периоду`} tone="red" />
+          <TopicKpi title="Отзывы с текстом" value={integer.format(dashboard.summary.textReviews)} note="В выбранном срезе" tone="blue" trend={dashboard.trend.map(point => point.textReviews)} delta={signed(dashboard.comparisons.textReviews.deltaPercent, '%')} deltaValue={dashboard.comparisons.textReviews.deltaPercent} />
+          <TopicKpi title="Классифицировано" value={integer.format(dashboard.summary.classifiedReviews)} note={`${decimal.format(dashboard.summary.coverage)}% покрытия`} tone="green" trend={dashboard.trend.map(point => point.classifiedReviews)} delta={signed(dashboard.comparisons.classifiedReviews.deltaPercent, '%')} deltaValue={dashboard.comparisons.classifiedReviews.deltaPercent} />
+          <TopicKpi title="Упоминания темы" value={integer.format(selectedTopic?.reviewCount || 0)} note={`${decimal.format(selectedTopic?.share || 0)}% отзывов`} tone="violet" trend={dashboard.trend.map(point => point.mentions)} delta={signed(dashboard.comparisons.mentions.deltaPercent, '%')} deltaValue={dashboard.comparisons.mentions.deltaPercent} />
+          <TopicKpi title="Сантимент" value={hasSentiment ? decimal.format(dashboard.summary.topicScore) : '—'} note={hasSentiment ? '0 — негатив · 100 — позитив' : 'Нет окрашенных совпадений'} tone="yellow" trend={dashboard.trend.map(point => point.topicScore)} delta={signed(dashboard.comparisons.topicScore.delta)} deltaValue={dashboard.comparisons.topicScore.delta} />
+          <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note="Негативные совпадения темы" tone="red" trend={dashboard.trend.map(point => point.negativeShare)} delta={signed(dashboard.comparisons.negativeShare.delta)} deltaValue={dashboard.comparisons.negativeShare.delta} inverseDelta />
         </section>
 
         <section className="page-card cx-sentiment-overview">
@@ -211,11 +254,8 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
           </article>
 
           <article className="page-card cx-section cx-topic-trend">
-            <div className="cx-section-head"><div><span>ДИНАМИКА</span><h2>Упоминания и тональность по дням</h2><p>{selectedTopic?.name || 'Все темы'}</p></div></div>
-            <div className="cx-chart"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={dashboard.trend} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" tickFormatter={day} tick={{ fontSize: 10, fill: '#7D8DA3' }} /><YAxis yAxisId="mentions" tick={{ fontSize: 10, fill: '#7D8DA3' }} width={40} /><YAxis yAxisId="sentiment" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: '#7D8DA3' }} width={38} />
-              <Tooltip labelFormatter={value => day(String(value))} formatter={(value, name) => name === 'Упоминания' ? integer.format(Number(value)) : `${decimal.format(Number(value))}%`} /><Bar yAxisId="mentions" dataKey="mentions" name="Упоминания" fill="#78A8F5" radius={[4, 4, 0, 0]} maxBarSize={28} /><Line yAxisId="sentiment" dataKey="positiveShare" name="Доля позитива" stroke="#0DA878" strokeWidth={2.2} dot={false} /><Line yAxisId="sentiment" dataKey="negativeShare" name="Доля негатива" stroke="#E45D68" strokeWidth={2.2} dot={false} />
-            </ComposedChart></ResponsiveContainer></div>
+            <div className="cx-section-head cx-topic-trend-head"><div><span>ДИНАМИКА</span><h2>Динамика темы</h2><p>{selectedTopic?.name || 'Все темы'} · серверная агрегация</p></div><div className="cx-topic-trend-controls"><div className="cx-granularity-switch">{(['day', 'week', 'month'] as CxTopicGranularity[]).map(value => <button key={value} type="button" className={granularity === value ? 'active' : ''} onClick={() => setGranularityOverride({ period: periodKey, value })}>{value === 'day' ? 'День' : value === 'week' ? 'Неделя' : 'Месяц'}</button>)}</div><select value={visibleMetrics[0]} onChange={event => setTrendMetric(0, event.target.value as TrendMetric)}>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select><select value={visibleMetrics[1]} onChange={event => setTrendMetric(1, event.target.value as TrendMetric | '')}><option value="">Без второй метрики</option>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select></div></div>
+            <TopicTrendChart data={dashboard.trend} metrics={visibleMetrics.filter(Boolean) as TrendMetric[]} />
           </article>
 
           <article className="page-card cx-section cx-topic-reasons">
@@ -247,7 +287,29 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
 function TopicMapTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: CxTopicMetric }> }) {
   const topic = payload?.[0]?.payload;
   if (!active || !topic) return null;
-  return <div className="cx-topic-map-tooltip"><strong>{topic.name}</strong><span>{topic.groupName}</span><dl><div><dt>Доля</dt><dd>{decimal.format(topic.share)}%</dd></div><div><dt>Сантимент</dt><dd>{decimal.format(topic.topicScore)}</dd></div><div><dt>Упоминания</dt><dd>{integer.format(topic.reviewCount)}</dd></div><div><dt>Problem Index</dt><dd>{decimal.format(topic.problemIndex)}</dd></div></dl></div>;
+  return <div className="cx-topic-map-tooltip"><strong>{topic.name}</strong><span>{topic.groupName}</span><dl><div><dt>Доля</dt><dd>{decimal.format(topic.share)}%</dd></div><div><dt>Сантимент</dt><dd>{decimal.format(topic.topicScore)}</dd></div><div><dt>Упоминания</dt><dd>{integer.format(topic.reviewCount)}</dd></div><div><dt>Негатив</dt><dd>{decimal.format(topic.negativeShare)}%</dd></div><div><dt>Оценка</dt><dd>{decimal.format(topic.averageRating)} ★</dd></div></dl></div>;
+}
+
+function TopicTrendChart({ data, metrics }: { data: CxTopicTrendPoint[]; metrics: TrendMetric[] }) {
+  const primary = trendMetrics[metrics[0] || 'topicScore'];
+  const secondary = metrics[1] ? trendMetrics[metrics[1]] : null;
+  return <div className="cx-chart cx-topic-trend-chart"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={data} margin={{ top: 8, right: secondary ? 8 : 0, bottom: 0, left: 0 }}>
+    <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" vertical={false} />
+    <XAxis dataKey="date" tickFormatter={day} tick={{ fontSize: 10, fill: '#7D8DA3' }} />
+    <YAxis yAxisId="primary" domain={primary.domain} unit={primary.unit} tick={{ fontSize: 10, fill: '#7D8DA3' }} width={42} />
+    {secondary && <YAxis yAxisId="secondary" orientation="right" domain={secondary.domain} unit={secondary.unit} tick={{ fontSize: 10, fill: '#7D8DA3' }} width={42} />}
+    <Tooltip labelFormatter={value => day(String(value))} formatter={(value, name) => {
+      const metric = Object.values(trendMetrics).find(item => item.label === name);
+      return metric?.unit === '%' ? `${decimal.format(Number(value))}%` : decimal.format(Number(value));
+    }} />
+    {metrics.map((metricKey, index) => {
+      const metric = trendMetrics[metricKey];
+      const axis = index === 0 ? 'primary' : 'secondary';
+      return metric.type === 'bar'
+        ? <Bar key={metricKey} yAxisId={axis} dataKey={metricKey} name={metric.label} fill={metric.color} fillOpacity={0.82} radius={[4, 4, 0, 0]} maxBarSize={30} />
+        : <Line key={metricKey} yAxisId={axis} type="monotone" dataKey={metricKey} name={metric.label} stroke={metric.color} strokeWidth={2.2} dot={{ r: 2 }} activeDot={{ r: 4 }} />;
+    })}
+  </ComposedChart></ResponsiveContainer></div>;
 }
 
 function ExampleColumn({ title, tone, rows }: { title: string; tone: 'positive' | 'negative'; rows: CxTopicExample[] }) {
@@ -262,6 +324,8 @@ function TopicReviewCard({ review }: { review: CxTopicReviewRow }) {
   return <article className="cx-drilldown-review"><div className="cx-drilldown-review-head"><div><strong>{review.productName || review.sellerSku || 'Без названия'}</strong><span>SKU {review.sellerSku || '—'} · WB {review.wbSku || '—'} · {review.cabinetName}</span></div><div><span className={`cx-rating-pill rating-${review.rating}`}>{review.rating} ★</span><time>{day(review.reviewDate)}</time></div></div><p>{review.reviewText || 'Основной текст отсутствует'}</p>{(review.advantages || review.disadvantages) && <div className="cx-drilldown-fragments">{review.advantages && <span><b>Достоинства</b>{review.advantages}</span>}{review.disadvantages && <span><b>Недостатки</b>{review.disadvantages}</span>}</div>}<div className="cx-drilldown-rules"><span>Сработали:</span>{review.matchedRules.map(rule => <b key={rule.id}>{rule.pattern}</b>)}</div></article>;
 }
 
-function TopicKpi({ title, value, note, tone }: { title: string; value: string; note: string; tone: string }) {
-  return <article className={`page-card cx-topic-kpi cx-tone-${tone}`}><span>{title}</span><strong>{value}</strong><small>{note}</small><i /></article>;
+function TopicKpi({ title, value, note, tone, trend, delta, deltaValue, inverseDelta = false }: { title: string; value: string; note: string; tone: string; trend: number[]; delta: string; deltaValue: number; inverseDelta?: boolean }) {
+  const positive = inverseDelta ? deltaValue <= 0 : deltaValue >= 0;
+  const sparkData = trend.map((point, index) => ({ index, value: point }));
+  return <article className={`page-card cx-topic-kpi cx-tone-${tone}`}><span>{title}</span><div className="cx-topic-kpi-main"><strong>{value}</strong><div className="cx-topic-kpi-spark"><ResponsiveContainer width="100%" height="100%"><LineChart data={sparkData}><Line type="monotone" dataKey="value" stroke="var(--cx-tone)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div></div><div className="cx-topic-kpi-meta"><small>{note}</small><b className={positive ? 'good' : 'bad'}>{delta}</b></div><i /></article>;
 }

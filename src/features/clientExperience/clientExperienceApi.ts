@@ -69,6 +69,7 @@ export interface CxReviewRow {
 }
 
 export type CxTopicSentiment = 'positive' | 'neutral' | 'negative';
+export type CxTopicGranularity = 'day' | 'week' | 'month';
 
 export interface CxTopicReviewRow extends CxReviewRow {
   sentiment: CxTopicSentiment;
@@ -156,12 +157,32 @@ export interface CxTopicExample {
 
 export interface CxTopicTrendPoint {
   date: string;
+  textReviews: number;
+  classifiedReviews: number;
   mentions: number;
   reviews: number;
+  topicShare: number;
   averageRating: number;
   negativeShare: number;
   neutralShare: number;
   positiveShare: number;
+  topicScore: number;
+}
+
+export interface CxTopicComparison {
+  current: number;
+  previous: number;
+  delta: number;
+  deltaPercent: number;
+}
+
+export interface CxTopicComparisons {
+  textReviews: CxTopicComparison;
+  classifiedReviews: CxTopicComparison;
+  mentions: CxTopicComparison;
+  topicScore: CxTopicComparison;
+  negativeShare: CxTopicComparison;
+  averageRating: CxTopicComparison;
 }
 
 export interface CxTopicProduct {
@@ -182,6 +203,9 @@ export interface CxTopicDashboard {
   workspaceVersion: number;
   version: number;
   selectedTopicId: string | null;
+  granularity: CxTopicGranularity;
+  mapMedians: { share: number; topicScore: number };
+  comparisons: CxTopicComparisons;
   summary: CxTopicSummary;
   groups: CxTopicGroupSummary[];
   attention: CxTopicAttention[];
@@ -288,7 +312,11 @@ export async function getCxDashboard(filters: CxFilters): Promise<CxDashboard> {
   };
 }
 
-export async function getCxTopicDashboard(filters: CxFilters, topicId: string | null): Promise<CxTopicDashboard> {
+export async function getCxTopicDashboard(
+  filters: CxFilters,
+  topicId: string | null,
+  granularity: CxTopicGranularity,
+): Promise<CxTopicDashboard> {
   const rpcParams = {
     ...params(filters),
     p_topic_id: topicId,
@@ -299,13 +327,37 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
   }
   if (error) throw errorMessage(error, 'дашборд тем')!;
   const payload = (data || {}) as RpcRow;
+  const timeseriesResult = await supabase.rpc('get_cx_topic_timeseries', {
+    ...rpcParams,
+    p_granularity: granularity,
+  });
+  const timeseriesMissing = timeseriesResult.error
+    && (timeseriesResult.error.code === 'PGRST202' || timeseriesResult.error.message.includes('get_cx_topic_timeseries'));
+  if (timeseriesResult.error && !timeseriesMissing) throw errorMessage(timeseriesResult.error, 'динамика тем')!;
+  const timeseries = (timeseriesResult.data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
   const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
   const summarySentiment = sentiment(summary);
+  const comparison = (value: unknown): CxTopicComparison => {
+    const row = value && typeof value === 'object' ? value as RpcRow : {};
+    return {
+      current: number(row.current), previous: number(row.previous), delta: number(row.delta), deltaPercent: number(row.delta_percent),
+    };
+  };
+  const comparisons = (timeseries.comparisons || {}) as RpcRow;
+  const medians = (timeseries.medians || {}) as RpcRow;
+  const trendSource = rows(timeseries.trend).length ? rows(timeseries.trend) : rows(payload.trend);
   return {
     workspaceVersion: number(payload.workspace_version),
     version: number(payload.version),
     selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
+    granularity: String(timeseries.granularity || granularity) as CxTopicGranularity,
+    mapMedians: { share: number(medians.share), topicScore: number(medians.topic_score) || 50 },
+    comparisons: {
+      textReviews: comparison(comparisons.text_reviews), classifiedReviews: comparison(comparisons.classified_reviews),
+      mentions: comparison(comparisons.mentions), topicScore: comparison(comparisons.topic_score),
+      negativeShare: comparison(comparisons.negative_share), averageRating: comparison(comparisons.average_rating),
+    },
     summary: {
       textReviews: number(summary.text_reviews),
       classifiedReviews: number(summary.classified_reviews),
@@ -331,9 +383,10 @@ export async function getCxTopicDashboard(filters: CxFilters, topicId: string | 
       negativeDelta: number(row.negative_delta), cxiContribution: number(row.cxi_contribution),
       problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicMetric['risk'],
     })),
-    trend: rows(payload.trend).map(row => ({
-      date: String(row.date || ''), mentions: number(row.mentions), reviews: number(row.reviews),
-      averageRating: number(row.average_rating), ...sentiment(row),
+    trend: trendSource.map(row => ({
+      date: String(row.date || ''), textReviews: number(row.text_reviews), classifiedReviews: number(row.classified_reviews),
+      mentions: number(row.mentions), reviews: number(row.reviews), topicShare: number(row.topic_share),
+      averageRating: number(row.average_rating), ...sentiment(row), topicScore: number(row.topic_score),
     })),
     products: rows(payload.products).map(row => ({
       entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,
