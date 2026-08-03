@@ -2,12 +2,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  calculateCxi, calculateProblemIndex, calculateTopicContribution, calculateTopicScore, calculateTopicWeight,
+  calculateCxi, calculateEvaluativeShare, calculateProblemIndex, calculateTopicContribution, calculateTopicScore, calculateTopicWeight,
 } from './cxCalculations.ts';
 
-test('topic score uses aspect sentiment balance', () => {
-  assert.equal(calculateTopicScore({ positive: 6, neutral: 2, negative: 2 }), 70);
-  assert.equal(calculateTopicScore({ positive: 0, neutral: 0, negative: 0 }), 50);
+test('tonality excludes neutral mentions', () => {
+  assert.equal(calculateTopicScore({ positive: 6, neutral: 20, negative: 2 }), 75);
+  assert.equal(calculateTopicScore({ positive: 0, neutral: 4, negative: 0 }), null);
+  assert.equal(calculateEvaluativeShare({ positive: 6, neutral: 2, negative: 2 }), 80);
 });
 
 test('topic contribution combines dynamic weight and score', () => {
@@ -24,7 +25,8 @@ test('CXI is recalculated when topic weights change', () => {
     { mentions: 80, positive: 64, neutral: 8, negative: 8 },
     { mentions: 20, positive: 4, neutral: 4, negative: 12 },
   ]);
-  assert.ok(shifted > baseline);
+  assert.ok(baseline !== null && shifted !== null && shifted > baseline);
+  assert.equal(calculateCxi([{ mentions: 10, positive: 0, neutral: 10, negative: 0 }]), null);
 });
 
 test('Problem Index uses centralized configurable weights', () => {

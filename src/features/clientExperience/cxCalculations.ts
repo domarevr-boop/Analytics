@@ -22,26 +22,32 @@ function clamp(value: number, minimum = 0, maximum = 1) {
 }
 
 export function calculateTopicScore(counts: TopicCounts) {
+  const evaluativeMentions = counts.positive + counts.negative;
+  if (evaluativeMentions <= 0) return null;
+  return 100 * counts.positive / evaluativeMentions;
+}
+
+export function calculateEvaluativeShare(counts: TopicCounts) {
   const mentions = counts.positive + counts.neutral + counts.negative;
-  if (mentions <= 0) return 50;
-  const rawScore = (counts.positive - counts.negative) / mentions;
-  return 50 * (rawScore + 1);
+  return mentions > 0 ? 100 * (counts.positive + counts.negative) / mentions : 0;
 }
 
 export function calculateTopicWeight(topicMentions: number, allTopicMentions: number) {
   return allTopicMentions > 0 ? clamp(topicMentions / allTopicMentions) : 0;
 }
 
-export function calculateTopicContribution(topicScore: number, topicWeight: number) {
+export function calculateTopicContribution(topicScore: number | null, topicWeight: number) {
+  if (topicScore === null) return 0;
   return clamp(topicWeight) * clamp(topicScore, 0, 100);
 }
 
 export function calculateCxi(topics: CxiTopicInput[]) {
-  const allMentions = topics.reduce((sum, topic) => sum + Math.max(0, topic.mentions), 0);
-  if (allMentions <= 0) return 0;
+  const evaluativeMentions = topics.map(topic => Math.max(0, topic.positive + topic.negative));
+  const allMentions = evaluativeMentions.reduce((sum, mentions) => sum + mentions, 0);
+  if (allMentions <= 0) return null;
   return topics.reduce((sum, topic) => {
     const score = calculateTopicScore(topic);
-    const weight = calculateTopicWeight(topic.mentions, allMentions);
+    const weight = calculateTopicWeight(topic.positive + topic.negative, allMentions);
     return sum + calculateTopicContribution(score, weight);
   }, 0);
 }

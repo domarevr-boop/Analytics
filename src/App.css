@@ -231,7 +231,7 @@
 .cx-topic-kpi-meta small { overflow: hidden; color: #8290a2; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .cx-topic-kpi-meta b { flex: 0 0 auto; font-size: 8px; font-variant-numeric: tabular-nums; }
 .cx-topic-kpi > i { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--cx-tone, #4e8df5); }
-.cx-sentiment-overview.page-card { display: grid; grid-template-columns: repeat(3, minmax(90px, auto)) minmax(180px, 1fr); gap: 8px 18px; align-items: center; padding: 10px 14px; }
+.cx-sentiment-overview.page-card { display: grid; grid-template-columns: repeat(4, minmax(90px, auto)) minmax(180px, 1fr); gap: 8px 18px; align-items: center; padding: 10px 14px; }
 .cx-sentiment-overview > button { min-width: 0; border: 0; border-radius: 7px; background: transparent; padding: 5px 7px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cx-sentiment-overview > button:hover { background: #f3f7fb; }
 .cx-sentiment-overview > button:focus-visible { outline: 2px solid #8bb6f3; outline-offset: 1px; }
@@ -239,6 +239,10 @@
 .cx-sentiment-overview > button span { color: #8492a4; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .cx-sentiment-overview > button strong { margin-top: 2px; color: #19334f; font-size: 14px; }
 .cx-sentiment-overview > button small { margin-top: 1px; color: #6e87a4; font-size: 8px; }
+.cx-sentiment-overview > div span, .cx-sentiment-overview > div strong, .cx-sentiment-overview > div small { display: block; }
+.cx-sentiment-overview > div span { color: #8492a4; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.cx-sentiment-overview > div strong { margin-top: 2px; color: #19334f; font-size: 14px; }
+.cx-sentiment-overview > div small { margin-top: 1px; color: #6e87a4; font-size: 8px; }
 .cx-sentiment-overview > i { display: flex; height: 7px; overflow: hidden; border-radius: 999px; background: #edf1f5; }
 .cx-sentiment-overview > i b { display: block; height: 100%; }
 .cx-sentiment-overview > i .positive { background: #16ad7b; }.cx-sentiment-overview > i .neutral { background: #aeb9c7; }.cx-sentiment-overview > i .negative { background: #e45d68; }

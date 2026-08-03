@@ -92,7 +92,8 @@ export interface CxTopicSummary {
   negativeShare: number;
   neutralShare: number;
   positiveShare: number;
-  topicScore: number;
+  evaluativeShare: number;
+  topicScore: number | null;
 }
 
 export interface CxTopicMetric {
@@ -108,9 +109,10 @@ export interface CxTopicMetric {
   negativeShare: number;
   neutralShare: number;
   positiveShare: number;
-  topicScore: number;
+  evaluativeShare: number;
+  topicScore: number | null;
   negativeDelta: number;
-  cxiContribution: number;
+  cxiContribution: number | null;
   problemIndex: number;
   risk: 'low' | 'medium' | 'high';
 }
@@ -120,8 +122,8 @@ export interface CxTopicGroupSummary {
   name: string;
   activeTopics: number;
   mentions: number;
-  cxi: number;
-  delta: number;
+  cxi: number | null;
+  delta: number | null;
   strongestTopic: string;
   problemTopic: string;
 }
@@ -166,13 +168,14 @@ export interface CxTopicTrendPoint {
   negativeShare: number;
   neutralShare: number;
   positiveShare: number;
-  topicScore: number;
+  evaluativeShare: number;
+  topicScore: number | null;
 }
 
 export interface CxTopicComparison {
-  current: number;
-  previous: number;
-  delta: number;
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
   deltaPercent: number;
 }
 
@@ -181,6 +184,7 @@ export interface CxTopicComparisons {
   classifiedReviews: CxTopicComparison;
   mentions: CxTopicComparison;
   topicScore: CxTopicComparison;
+  evaluativeShare: CxTopicComparison;
   negativeShare: CxTopicComparison;
   averageRating: CxTopicComparison;
 }
@@ -196,6 +200,7 @@ export interface CxTopicProduct {
   mentionShare: number;
   averageRating: number;
   negativeShare: number;
+  neutralShare: number;
   positiveShare: number;
 }
 
@@ -204,7 +209,7 @@ export interface CxTopicDashboard {
   version: number;
   selectedTopicId: string | null;
   granularity: CxTopicGranularity;
-  mapMedians: { share: number; topicScore: number };
+  mapMedians: { share: number; topicScore: number | null };
   comparisons: CxTopicComparisons;
   summary: CxTopicSummary;
   groups: CxTopicGroupSummary[];
@@ -231,16 +236,22 @@ function number(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function nullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function sentiment(row: RpcRow) {
   const positiveShare = number(row.positive_share);
   const negativeShare = number(row.negative_share);
-  const topicScore = number(row.topic_score);
+  const topicScore = nullableNumber(row.topic_score);
   const explicitNeutral = number(row.neutral_share);
-  const inferredNeutral = topicScore > 0 ? Math.max(0, Math.min(100, (topicScore - positiveShare) * 2)) : 0;
   return {
     positiveShare,
     negativeShare,
-    neutralShare: explicitNeutral || inferredNeutral,
+    neutralShare: explicitNeutral,
+    evaluativeShare: number(row.evaluative_share),
     topicScore,
   };
 }
@@ -321,22 +332,26 @@ export async function getCxTopicDashboard(
     ...params(filters),
     p_topic_id: topicId,
   };
-  const [workspaceResult, timeseriesResult] = await Promise.all([
-    supabase.rpc('get_cx_topics_workspace', rpcParams),
-    supabase.rpc('get_cx_topic_timeseries', {
+  const [workspaceResult, initialTimeseriesResult] = await Promise.all([
+    supabase.rpc('get_cx_topics_workspace_v2', rpcParams),
+    supabase.rpc('get_cx_topic_timeseries_v2', {
       ...rpcParams,
       p_granularity: granularity,
     }),
   ]);
+  let timeseriesResult = initialTimeseriesResult;
   let { data, error } = workspaceResult;
-  if (error && (error.code === 'PGRST202' || error.message.includes('get_cx_topics_workspace'))) {
-    ({ data, error } = await supabase.rpc('get_cx_topic_dashboard', rpcParams));
+  if (error && (error.code === 'PGRST202' || error.message.includes('get_cx_topics_workspace_v2'))) {
+    ({ data, error } = await supabase.rpc('get_cx_topics_workspace', rpcParams));
   }
   if (error) throw errorMessage(error, 'дашборд тем')!;
   const payload = (data || {}) as RpcRow;
   const timeseriesMissing = timeseriesResult.error
-    && (timeseriesResult.error.code === 'PGRST202' || timeseriesResult.error.message.includes('get_cx_topic_timeseries'));
-  if (timeseriesResult.error && !timeseriesMissing) throw errorMessage(timeseriesResult.error, 'динамика тем')!;
+    && (timeseriesResult.error.code === 'PGRST202' || timeseriesResult.error.message.includes('get_cx_topic_timeseries_v2'));
+  if (timeseriesMissing) {
+    timeseriesResult = await supabase.rpc('get_cx_topic_timeseries', { ...rpcParams, p_granularity: granularity });
+  }
+  if (timeseriesResult.error) throw errorMessage(timeseriesResult.error, 'динамика тем')!;
   const timeseries = (timeseriesResult.data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
   const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
@@ -344,7 +359,7 @@ export async function getCxTopicDashboard(
   const comparison = (value: unknown): CxTopicComparison => {
     const row = value && typeof value === 'object' ? value as RpcRow : {};
     return {
-      current: number(row.current), previous: number(row.previous), delta: number(row.delta), deltaPercent: number(row.delta_percent),
+      current: nullableNumber(row.current), previous: nullableNumber(row.previous), delta: nullableNumber(row.delta), deltaPercent: number(row.delta_percent),
     };
   };
   const comparisons = (timeseries.comparisons || {}) as RpcRow;
@@ -355,10 +370,11 @@ export async function getCxTopicDashboard(
     version: number(payload.version),
     selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
     granularity: String(timeseries.granularity || granularity) as CxTopicGranularity,
-    mapMedians: { share: number(medians.share), topicScore: number(medians.topic_score) || 50 },
+    mapMedians: { share: number(medians.share), topicScore: nullableNumber(medians.topic_score) },
     comparisons: {
       textReviews: comparison(comparisons.text_reviews), classifiedReviews: comparison(comparisons.classified_reviews),
       mentions: comparison(comparisons.mentions), topicScore: comparison(comparisons.topic_score),
+      evaluativeShare: comparison(comparisons.evaluative_share),
       negativeShare: comparison(comparisons.negative_share), averageRating: comparison(comparisons.average_rating),
     },
     summary: {
@@ -371,7 +387,7 @@ export async function getCxTopicDashboard(
     },
     groups: rows(payload.groups).map(row => ({
       code: String(row.code || ''), name: String(row.name || ''), activeTopics: number(row.active_topics),
-      mentions: number(row.mentions), cxi: number(row.cxi), delta: number(row.delta),
+      mentions: number(row.mentions), cxi: nullableNumber(row.cxi), delta: nullableNumber(row.delta),
       strongestTopic: String(row.strongest_topic || '—'), problemTopic: String(row.problem_topic || '—'),
     })),
     attention: rows(payload.attention).map(row => ({
@@ -383,19 +399,19 @@ export async function getCxTopicDashboard(
       id: String(row.id || ''), name: String(row.name || ''), groupCode: String(row.group_code || ''),
       groupName: String(row.group_name || ''), reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches),
       share: number(row.share), weight: number(row.weight), averageRating: number(row.average_rating), ...sentiment(row),
-      negativeDelta: number(row.negative_delta), cxiContribution: number(row.cxi_contribution),
+      negativeDelta: number(row.negative_delta), cxiContribution: nullableNumber(row.cxi_contribution),
       problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicMetric['risk'],
     })),
     trend: trendSource.map(row => ({
       date: String(row.date || ''), textReviews: number(row.text_reviews), classifiedReviews: number(row.classified_reviews),
       mentions: number(row.mentions), reviews: number(row.reviews), topicShare: number(row.topic_share),
-      averageRating: number(row.average_rating), ...sentiment(row), topicScore: number(row.topic_score),
+      averageRating: number(row.average_rating), ...sentiment(row),
     })),
     products: rows(payload.products).map(row => ({
       entityKey: String(row.entity_key || ''), localProductId: row.local_product_id ? String(row.local_product_id) : null,
       sellerSku: String(row.seller_sku || ''), wbSku: String(row.wb_sku || ''), productName: String(row.product_name || ''),
       cabinetName: String(row.cabinet_name || ''), mentions: number(row.mentions), mentionShare: number(row.mention_share),
-      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), positiveShare: number(row.positive_share),
+      averageRating: number(row.average_rating), negativeShare: number(row.negative_share), neutralShare: number(row.neutral_share), positiveShare: number(row.positive_share),
     })),
     negativeReasons: rows(payload.negative_reasons).map(row => ({
       pattern: String(row.pattern || ''), mentions: number(row.mentions),
@@ -446,7 +462,7 @@ export async function getCxTopicReviewsPage(
     p_limit: pageSize,
     p_offset: Math.max(0, page) * pageSize,
   });
-  if (error) throw errorMessage(error, 'детализация сантимента')!;
+  if (error) throw errorMessage(error, 'детализация тональности')!;
   const sourceRows = data || [];
   return {
     total: number(sourceRows[0]?.total_count),
