@@ -13,9 +13,10 @@ import {
   type CxDashboard, type CxFilters, type CxReviewRow,
 } from '../../features/clientExperience/clientExperienceApi';
 import ClientExperienceSettings from '../../features/clientExperience/ClientExperienceSettings';
+import ClientExperienceMethodology from '../../features/clientExperience/ClientExperienceMethodology';
 import ClientExperienceTopics from '../../features/clientExperience/ClientExperienceTopics';
 
-type ActiveTab = 'overview' | 'topics' | 'reviews' | 'settings';
+type ActiveTab = 'overview' | 'topics' | 'reviews' | 'methodology' | 'settings';
 
 const EMPTY_DASHBOARD: CxDashboard = {
   summary: {
@@ -170,11 +171,12 @@ export default function ClientExperiencePage() {
           <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Обзор</button>
           <button className={tab === 'topics' ? 'active' : ''} onClick={() => setTab('topics')}>Темы</button>
           <button className={tab === 'reviews' ? 'active' : ''} onClick={() => setTab('reviews')}>Отзывы</button>
+          <button className={tab === 'methodology' ? 'active' : ''} onClick={() => setTab('methodology')}>Методология</button>
           <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Настройки анализа</button>
         </div>
       </header>
 
-      <section className="page-card cx-toolbar">
+      {tab !== 'methodology' && <section className="page-card cx-toolbar">
         {bounds.end && <DateRangeFilter label="Период" value={period} onChange={value => { setPeriod(value); setPage(0); }} maxDate={bounds.end} />}
         <select value={cabinet} onChange={event => { setCabinet(event.target.value); setPage(0); }}>
           <option value="">Все кабинеты</option>
@@ -198,16 +200,18 @@ export default function ClientExperiencePage() {
           {[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} звёзд</option>)}
         </select>
         <button type="button" className="cx-reset" onClick={resetFilters}>Сбросить</button>
-      </section>
+      </section>}
 
       {error && <div className="cx-error">{error}</div>}
       <div className="cx-scope-note">
-        {tab === 'topics'
+        {tab === 'methodology'
+          ? 'Описание использует текущую опубликованную версию словаря и не зависит от фильтров аналитического среза.'
+          : tab === 'topics'
           ? 'Дашборд использует последнюю опубликованную и полностью рассчитанную версию словаря.'
           : 'Оценочный обзор и исходные отзывы. Тематическая аналитика доступна на вкладке «Темы» после публикации словаря.'}
       </div>
 
-      {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'topics' ? <ClientExperienceTopics filters={filters} /> : tab === 'overview' ? (
+      {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'methodology' ? <ClientExperienceMethodology /> : tab === 'topics' ? <ClientExperienceTopics filters={filters} /> : tab === 'overview' ? (
         <>
           <section className={`cx-kpis${dashboardLoading ? ' loading' : ''}`}>
             <Kpi title="Всего отзывов" value={numberFormatter.format(summary.totalReviews)} note={`${numberFormatter.format(summary.textReviews)} с текстом`} tone="blue" />
