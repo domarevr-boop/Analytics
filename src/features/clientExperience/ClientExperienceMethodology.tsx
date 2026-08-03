@@ -67,7 +67,7 @@ export default function ClientExperienceMethodology() {
       </section>
 
       <nav className="page-card cx-methodology-nav" aria-label="Разделы методологии">
-        <a href="#cx-flow">Путь данных</a><a href="#cx-entities">Сущности</a><a href="#cx-formulas">Формулы</a><a href="#cx-rules">Правила</a><a href="#cx-glossary">Словарь</a>
+        <a href="#cx-flow">Путь данных</a><a href="#cx-entities">Сущности</a><a href="#cx-formulas">Формулы</a><a href="#cx-interpretation">Интерпретация</a><a href="#cx-rules">Правила</a><a href="#cx-glossary">Словарь</a>
       </nav>
 
       <section id="cx-flow" className="page-card cx-methodology-section">
@@ -129,6 +129,27 @@ export default function ClientExperienceMethodology() {
         </article>
       </section>
 
+      <section id="cx-interpretation" className="page-card cx-methodology-section cx-methodology-interpretation">
+        <div className="cx-section-head"><div><span>ЧТЕНИЕ РЕЗУЛЬТАТОВ</span><h2>Как интерпретировать показатели</h2><p>Средняя оценка описывает отзыв целиком, а тональность — только конкретную тему внутри него.</p></div></div>
+        <div className="cx-interpretation-definitions">
+          <article><span>ОБЩИЙ УРОВЕНЬ</span><strong>Средняя оценка</strong><b>1–5 ★</b><p>Среднее значение звёзд всех отзывов в выбранном срезе. Показывает итоговое впечатление покупателя от покупки.</p></article>
+          <article><span>УРОВЕНЬ ТЕМЫ</span><strong>Тональность темы</strong><b>P ÷ (P + N)</b><p>Доля позитивных среди позитивных и негативных упоминаний конкретной темы.</p></article>
+          <article><span>СТРУКТУРА ТЕМЫ</span><strong>Доля негатива</strong><b>N ÷ (P + U + N)</b><p>Негативные совпадения среди всех упоминаний темы, включая нейтральные.</p></article>
+          <article><span>ОБЪЁМ</span><strong>Нейтральные упоминания</strong><b>U входит в объём</b><p>Не участвуют в тональности, но входят в число упоминаний и показывают распространённость темы.</p></article>
+        </div>
+        <div className="cx-interpretation-note"><strong>Почему линии расходятся</strong><p>Средняя оценка и тональность могут двигаться по-разному: первая относится ко всему отзыву, вторая — к отдельному аспекту опыта. Например, покупатель может поставить пять звёзд товару, но негативно описать доставку.</p></div>
+        <div className="cx-section-head cx-interpretation-subhead"><div><span>МАТРИЦА СИГНАЛОВ</span><h2>Сочетания оценки и тональности</h2></div></div>
+        <div className="cx-interpretation-matrix">
+          <Interpretation state="Оба показателя растут" meaning="Общее впечатление и выбранная тема улучшаются одновременно." action="Проверить устойчивость роста и закрепить сильную практику." tone="good" />
+          <Interpretation state="Оба показателя падают" meaning="Ухудшение темы совпадает с ухудшением общего опыта." action="Высокий приоритет: изучить негативные причины и товары-лидеры проблемы." tone="bad" />
+          <Interpretation state="Оценка стабильна, тональность растёт" meaning="Тема улучшается, но пока недостаточно влияет на итоговую оценку." action="Проверить долю темы и продолжительность положительной динамики." tone="good" />
+          <Interpretation state="Оценка растёт, тональность падает" meaning="Общий опыт улучшается за счёт других факторов, а выбранная тема ухудшается." action="Не маскировать локальную проблему общим ростом оценки." tone="warn" />
+          <Interpretation state="Высокая оценка, низкая тональность" meaning="Покупатели довольны покупкой в целом, но системно критикуют конкретный аспект." action="Это точечная возможность улучшения без кризиса продукта целиком." tone="warn" />
+          <Interpretation state="Низкая оценка, высокая тональность" meaning="Выбранная тема воспринимается хорошо, но итоговый опыт портят другие причины." action="Искать проблему в соседних темах и неклассифицированном тексте." tone="neutral" />
+        </div>
+        <div className="cx-interpretation-limits"><strong>Ограничения анализа</strong><ul><li>Нельзя напрямую сравнивать крутизну линий на разных шкалах.</li><li>Тональность нестабильна при малом числе оценочных упоминаний.</li><li>Корреляция не доказывает влияние темы на итоговую оценку.</li><li>Выводы проверяются по числу упоминаний, доле оценочных упоминаний и примерам отзывов.</li></ul></div>
+      </section>
+
       <section id="cx-rules" className="page-card cx-methodology-section">
         <div className="cx-section-head"><div><span>СЛОВАРЬ</span><h2>Как находятся темы</h2><p>Режимы правил дополняют друг друга и уменьшают ручное перечисление словоформ.</p></div></div>
         <div className="cx-rule-method-grid">{ruleDescriptions.map(([name, text]) => <article key={name}><strong>{name}</strong><p>{text}</p></article>)}</div>
@@ -168,4 +189,8 @@ function Formula({ value }: { value: string }) {
 
 function Glossary({ term, text }: { term: string; text: string }) {
   return <article><strong>{term}</strong><p>{text}</p></article>;
+}
+
+function Interpretation({ state, meaning, action, tone }: { state: string; meaning: string; action: string; tone: 'good' | 'bad' | 'warn' | 'neutral' }) {
+  return <article className={tone}><strong>{state}</strong><p>{meaning}</p><small>{action}</small></article>;
 }

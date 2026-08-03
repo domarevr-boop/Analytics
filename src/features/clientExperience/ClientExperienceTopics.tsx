@@ -48,6 +48,24 @@ const trendMetrics: Record<TrendMetric, { label: string; color: string; unit: st
   averageRating: { label: 'Средняя оценка', color: '#E7A719', unit: '', domain: [0, 5], type: 'line' },
 };
 
+type MapMetric = 'share' | 'topicScore' | 'reviewCount' | 'negativeShare' | 'positiveShare' | 'evaluativeShare' | 'averageRating' | 'problemIndex';
+const mapMetrics: Record<MapMetric, { label: string; unit: string; domain: [number | 'auto', number | 'auto'] }> = {
+  share: { label: 'Доля упоминаний', unit: '%', domain: [0, 'auto'] },
+  topicScore: { label: 'Тональность', unit: '', domain: [0, 100] },
+  reviewCount: { label: 'Упоминания', unit: '', domain: [0, 'auto'] },
+  negativeShare: { label: 'Доля негатива', unit: '%', domain: [0, 100] },
+  positiveShare: { label: 'Доля позитива', unit: '%', domain: [0, 100] },
+  evaluativeShare: { label: 'Доля оценочных', unit: '%', domain: [0, 100] },
+  averageRating: { label: 'Средняя оценка', unit: '', domain: [0, 5] },
+  problemIndex: { label: 'Problem Index', unit: '', domain: [0, 100] },
+};
+
+interface TopicMapPoint extends CxTopicMetric {
+  xValue: number;
+  yValue: number;
+  sizeValue: number;
+}
+
 const sentimentLabels: Record<CxTopicSentiment, string> = {
   positive: 'Позитивные отзывы', neutral: 'Нейтральные отзывы', negative: 'Негативные отзывы',
 };
@@ -78,6 +96,9 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [granularityOverride, setGranularityOverride] = useState<{ period: string; value: CxTopicGranularity } | null>(null);
   const [visibleMetrics, setVisibleMetrics] = useState<[TrendMetric, TrendMetric | '']>(['topicScore', '']);
+  const [mapX, setMapX] = useState<MapMetric>('share');
+  const [mapY, setMapY] = useState<MapMetric>('topicScore');
+  const [mapSize, setMapSize] = useState<MapMetric>('reviewCount');
   const [dashboard, setDashboard] = useState<CxTopicDashboard>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -137,6 +158,22 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const positiveExamples = dashboard.examples.filter(example => example.sentiment === 'positive');
   const negativeExamples = dashboard.examples.filter(example => example.sentiment === 'negative');
   const hasTonality = dashboard.summary.topicScore !== null;
+  const mapPoints = useMemo(() => dashboard.topics.flatMap(topic => {
+    const xValue = topic[mapX];
+    const yValue = topic[mapY];
+    const sizeValue = topic[mapSize];
+    if (topic.reviewCount <= 0 || xValue === null || yValue === null || sizeValue === null) return [];
+    return [{ ...topic, xValue: Number(xValue), yValue: Number(yValue), sizeValue: Math.max(0, Number(sizeValue)) }];
+  }), [dashboard.topics, mapSize, mapX, mapY]);
+  const mapMedian = (key: 'xValue' | 'yValue') => {
+    const values = mapPoints.map(point => point[key]).sort((left, right) => left - right);
+    if (!values.length) return null;
+    const middle = Math.floor(values.length / 2);
+    return values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+  };
+  const mapXMedian = mapMedian('xValue');
+  const mapYMedian = mapMedian('yValue');
+  const defaultMap = mapX === 'share' && mapY === 'topicScore';
   const selectTopic = (topicId: string) => {
     if (topicId === (selectedTopicId || dashboard.selectedTopicId)) return;
     setSelectedTopicId(topicId);
@@ -199,31 +236,32 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         </article>
 
         <article className="page-card cx-section cx-topic-map">
-          <div className="cx-section-head"><div><span>ПОЗИЦИОНИРОВАНИЕ</span><h2>Карта тем</h2><p>X — доля отзывов · Y — тональность · размер — упоминания</p></div></div>
+          <div className="cx-section-head cx-topic-map-head"><div><span>ПОЗИЦИОНИРОВАНИЕ</span><h2>Карта тем</h2></div><div className="cx-topic-map-controls"><label>X<select value={mapX} onChange={event => setMapX(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Y<select value={mapY} onChange={event => setMapY(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Размер<select value={mapSize} onChange={event => setMapSize(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label></div></div>
           <div className="cx-topic-map-chart">
-            <div className="cx-topic-quadrants" aria-hidden="true"><span>Скрытые преимущества</span><span>Сильные стороны</span><span>Точечные проблемы</span><span>Приоритет улучшения</span></div>
+            {defaultMap && <div className="cx-topic-quadrants" aria-hidden="true"><span>Скрытые преимущества</span><span>Сильные стороны</span><span>Точечные проблемы</span><span>Приоритет улучшения</span></div>}
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 16, right: 20, bottom: 8, left: 0 }}>
                 <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="share" name="Доля" unit="%" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#7D8DA3' }} />
-                <YAxis type="number" dataKey="topicScore" name="Тональность" domain={[0, 100]} tick={{ fontSize: 9, fill: '#7D8DA3' }} width={32} />
-                <ZAxis type="number" dataKey="reviewCount" range={[70, 850]} />
-                <ReferenceLine x={dashboard.mapMedians.share} stroke="#9AA8B8" strokeDasharray="5 4" />
-                {dashboard.mapMedians.topicScore !== null && <ReferenceLine y={dashboard.mapMedians.topicScore} stroke="#9AA8B8" strokeDasharray="5 4" />}
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<TopicMapTooltip />} />
-                <Scatter data={dashboard.topics.filter(topic => topic.reviewCount > 0 && topic.topicScore !== null)} onClick={point => selectTopic((point as unknown as CxTopicMetric).id)}>
-                  {dashboard.topics.filter(topic => topic.reviewCount > 0 && topic.topicScore !== null).map(topic => <Cell key={topic.id} fill={groupColors[topic.groupCode] || '#8B99AB'} fillOpacity={0.88} stroke={topic.id === selectedTopic?.id ? '#142A45' : '#fff'} strokeWidth={topic.id === selectedTopic?.id ? 3 : 2} />)}
+                <XAxis type="number" dataKey="xValue" name={mapMetrics[mapX].label} unit={mapMetrics[mapX].unit} domain={mapMetrics[mapX].domain} tick={{ fontSize: 9, fill: '#7D8DA3' }} />
+                <YAxis type="number" dataKey="yValue" name={mapMetrics[mapY].label} unit={mapMetrics[mapY].unit} domain={mapMetrics[mapY].domain} tick={{ fontSize: 9, fill: '#7D8DA3' }} width={36} />
+                <ZAxis type="number" dataKey="sizeValue" range={[70, 850]} />
+                {mapXMedian !== null && <ReferenceLine x={mapXMedian} stroke="#9AA8B8" strokeDasharray="5 4" />}
+                {mapYMedian !== null && <ReferenceLine y={mapYMedian} stroke="#9AA8B8" strokeDasharray="5 4" />}
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<TopicMapTooltip xMetric={mapX} yMetric={mapY} sizeMetric={mapSize} />} />
+                <Scatter data={mapPoints} onClick={point => selectTopic((point as unknown as TopicMapPoint).id)}>
+                  {mapPoints.map(topic => <Cell key={topic.id} fill={groupColors[topic.groupCode] || '#8B99AB'} fillOpacity={0.88} stroke={topic.id === selectedTopic?.id ? '#142A45' : '#fff'} strokeWidth={topic.id === selectedTopic?.id ? 3 : 2} />)}
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
           <div className="cx-group-legend"><span><i className="product" />Продукт</span><span><i className="service" />Сервис</span><span><i className="outcomes" />Результат опыта</span></div>
+          <div className="cx-topic-map-decoding"><span><b>X</b>{mapMetrics[mapX].label}</span><span><b>Y</b>{mapMetrics[mapY].label}</span><span><b>Размер</b>{mapMetrics[mapSize].label}</span></div>
         </article>
 
         <article className="page-card cx-section cx-all-topics">
           <div className="cx-section-head"><div><span>СТРУКТУРА</span><h2>Все темы</h2><p>Клик по строке открывает детализацию</p></div></div>
           <div className="cx-table-wrap">
-            <table><thead><tr><th>Тема</th><th>Группа</th><th>Упом.</th><th>Доля</th><th>Сант.</th><th>Нег.</th><th>Δ нег.</th><th>Вклад</th><th>Риск</th></tr></thead>
+            <table><thead><tr><th>Тема</th><th>Группа</th><th>Упом.</th><th>Доля</th><th>Тональность</th><th>Нег.</th><th>Δ нег.</th><th>Вклад</th><th>Риск</th></tr></thead>
               <tbody>{dashboard.topics.map(topic => <tr key={topic.id} className={topic.id === selectedTopic?.id ? 'selected' : ''} onClick={() => selectTopic(topic.id)}>
                 <td><i style={{ background: riskColors[topic.risk] }} /><strong>{topic.name}</strong></td><td>{topic.groupName}</td>
                 <td>{integer.format(topic.reviewCount)}</td><td>{decimal.format(topic.share)}%</td><td>{metric(topic.topicScore)}</td>
@@ -290,10 +328,11 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   );
 }
 
-function TopicMapTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: CxTopicMetric }> }) {
+function TopicMapTooltip({ active, payload, xMetric, yMetric, sizeMetric }: { active?: boolean; payload?: Array<{ payload: TopicMapPoint }>; xMetric: MapMetric; yMetric: MapMetric; sizeMetric: MapMetric }) {
   const topic = payload?.[0]?.payload;
   if (!active || !topic) return null;
-  return <div className="cx-topic-map-tooltip"><strong>{topic.name}</strong><span>{topic.groupName}</span><dl><div><dt>Доля</dt><dd>{decimal.format(topic.share)}%</dd></div><div><dt>Тональность</dt><dd>{metric(topic.topicScore)}</dd></div><div><dt>Оценочные</dt><dd>{decimal.format(topic.evaluativeShare)}%</dd></div><div><dt>Упоминания</dt><dd>{integer.format(topic.reviewCount)}</dd></div><div><dt>Негатив</dt><dd>{decimal.format(topic.negativeShare)}%</dd></div><div><dt>Оценка</dt><dd>{decimal.format(topic.averageRating)} ★</dd></div></dl></div>;
+  const formatted = (value: number, key: MapMetric) => `${decimal.format(value)}${mapMetrics[key].unit}`;
+  return <div className="cx-topic-map-tooltip"><strong>{topic.name}</strong><span>{topic.groupName}</span><dl><div><dt>X · {mapMetrics[xMetric].label}</dt><dd>{formatted(topic.xValue, xMetric)}</dd></div><div><dt>Y · {mapMetrics[yMetric].label}</dt><dd>{formatted(topic.yValue, yMetric)}</dd></div><div><dt>Размер · {mapMetrics[sizeMetric].label}</dt><dd>{formatted(topic.sizeValue, sizeMetric)}</dd></div><div><dt>Упоминания</dt><dd>{integer.format(topic.reviewCount)}</dd></div><div><dt>Оценочные</dt><dd>{decimal.format(topic.evaluativeShare)}%</dd></div><div><dt>Оценка</dt><dd>{decimal.format(topic.averageRating)} ★</dd></div></dl></div>;
 }
 
 function TopicTrendChart({ data, metrics }: { data: CxTopicTrendPoint[]; metrics: TrendMetric[] }) {
