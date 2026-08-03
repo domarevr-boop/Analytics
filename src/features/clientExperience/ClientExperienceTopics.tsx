@@ -93,8 +93,6 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
       if (cancelled) return;
       setDashboard(result);
       setError('');
-      const nextTopicId = result.selectedTopicId || result.topics.find(topic => topic.reviewCount > 0)?.id || null;
-      if (nextTopicId && nextTopicId !== selectedTopicId) setSelectedTopicId(nextTopicId);
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
     }).finally(() => {
@@ -104,9 +102,10 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   }, [filters, selectedTopicId, granularity]);
 
   useEffect(() => {
-    if (!drilldownSentiment || !selectedTopicId) return;
+    const topicId = selectedTopicId || dashboard.selectedTopicId;
+    if (!drilldownSentiment || !topicId) return;
     let cancelled = false;
-    void getCxTopicReviewsPage(filters, selectedTopicId, drilldownSentiment, drilldownPage, DRILLDOWN_PAGE_SIZE).then(result => {
+    void getCxTopicReviewsPage(filters, topicId, drilldownSentiment, drilldownPage, DRILLDOWN_PAGE_SIZE).then(result => {
       if (cancelled) return;
       setDrilldownRows(result.rows);
       setDrilldownTotal(result.total);
@@ -116,7 +115,7 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
       if (!cancelled) setDrilldownLoading(false);
     });
     return () => { cancelled = true; };
-  }, [drilldownPage, drilldownSentiment, filters, selectedTopicId]);
+  }, [dashboard.selectedTopicId, drilldownPage, drilldownSentiment, filters, selectedTopicId]);
 
   useEffect(() => {
     if (!drilldownSentiment) return;
@@ -126,14 +125,14 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   }, [drilldownSentiment]);
 
   const selectedTopic = useMemo(
-    () => dashboard.topics.find(topic => topic.id === selectedTopicId) || dashboard.topics[0],
-    [dashboard.topics, selectedTopicId],
+    () => dashboard.topics.find(topic => topic.id === (selectedTopicId || dashboard.selectedTopicId)) || dashboard.topics[0],
+    [dashboard.selectedTopicId, dashboard.topics, selectedTopicId],
   );
   const positiveExamples = dashboard.examples.filter(example => example.sentiment === 'positive');
   const negativeExamples = dashboard.examples.filter(example => example.sentiment === 'negative');
   const hasSentiment = dashboard.summary.positiveShare > 0 || dashboard.summary.negativeShare > 0;
   const selectTopic = (topicId: string) => {
-    if (topicId === selectedTopicId) return;
+    if (topicId === (selectedTopicId || dashboard.selectedTopicId)) return;
     setSelectedTopicId(topicId);
     document.querySelector('.cx-topic-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };

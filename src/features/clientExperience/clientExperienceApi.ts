@@ -321,16 +321,19 @@ export async function getCxTopicDashboard(
     ...params(filters),
     p_topic_id: topicId,
   };
-  let { data, error } = await supabase.rpc('get_cx_topics_workspace', rpcParams);
+  const [workspaceResult, timeseriesResult] = await Promise.all([
+    supabase.rpc('get_cx_topics_workspace', rpcParams),
+    supabase.rpc('get_cx_topic_timeseries', {
+      ...rpcParams,
+      p_granularity: granularity,
+    }),
+  ]);
+  let { data, error } = workspaceResult;
   if (error && (error.code === 'PGRST202' || error.message.includes('get_cx_topics_workspace'))) {
     ({ data, error } = await supabase.rpc('get_cx_topic_dashboard', rpcParams));
   }
   if (error) throw errorMessage(error, 'дашборд тем')!;
   const payload = (data || {}) as RpcRow;
-  const timeseriesResult = await supabase.rpc('get_cx_topic_timeseries', {
-    ...rpcParams,
-    p_granularity: granularity,
-  });
   const timeseriesMissing = timeseriesResult.error
     && (timeseriesResult.error.code === 'PGRST202' || timeseriesResult.error.message.includes('get_cx_topic_timeseries'));
   if (timeseriesResult.error && !timeseriesMissing) throw errorMessage(timeseriesResult.error, 'динамика тем')!;
