@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
+import DateRangeFilter from '../../components/DateRangeFilter';
+import type { DatePeriod } from '../../data/mock';
 import {
   createCxDictionaryDraft, deleteCxTopicRule, getCxAnalysisSettings, saveCxTopic, saveCxTopicRule,
-  cancelCxAnalysis, publishCxDictionary, testCxDictionaryRules, type CxAnalysisRun, type CxAnalysisSettings,
+  cancelCxAnalysis, publishCxDictionary, recalculateCxRange, testCxDictionaryRules,
+  type CxAnalysisRun, type CxAnalysisSettings,
   type CxRuleTestResult, type CxRuleType, type CxSentiment,
 } from './analysisSettingsApi';
+import { getCxDateBounds } from './clientExperienceApi';
 import { backfillReviewLemmas, getLemmaBackfillPending } from './lemmaBackfill';
 
 const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [], analysisRuns: [] };
+
+function latestMonthPeriod(end: string): DatePeriod {
+  if (!end) return { start: '', end: '' };
+  return { start: `${end.slice(0, 7)}-01`, end };
+}
 
 export default function ClientExperienceSettings() {
   const [settings, setSettings] = useState(EMPTY);
@@ -31,6 +40,10 @@ export default function ClientExperienceSettings() {
   const [lemmatizing, setLemmatizing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishProgress, setPublishProgress] = useState<CxAnalysisRun | null>(null);
+  const [rangeProcessing, setRangeProcessing] = useState(false);
+  const [rangeProgress, setRangeProgress] = useState<CxAnalysisRun | null>(null);
+  const [dateBounds, setDateBounds] = useState<DatePeriod>({ start: '', end: '' });
+  const [rangePeriod, setRangePeriod] = useState<DatePeriod>({ start: '', end: '' });
 
   const load = async () => {
     const data = await getCxAnalysisSettings();
@@ -40,11 +53,16 @@ export default function ClientExperienceSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([getCxAnalysisSettings(), getLemmaBackfillPending()]).then(([data, pending]) => {
+    void Promise.all([getCxAnalysisSettings(), getLemmaBackfillPending(), getCxDateBounds()]).then(([data, pending, bounds]) => {
       if (cancelled) return;
       setSettings(data);
       setLemmaPending(pending);
       setSelectedTopicId(data.topics[0]?.id || '');
+      setDateBounds(bounds);
+      const activeRange = data.analysisRuns.find(run => run.status === 'processing' && run.analysisScope === 'range');
+      setRangePeriod(activeRange?.reviewDateFrom && activeRange.reviewDateTo
+        ? { start: activeRange.reviewDateFrom, end: activeRange.reviewDateTo }
+        : latestMonthPeriod(bounds.end));
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
     }).finally(() => {
@@ -61,7 +79,9 @@ export default function ClientExperienceSettings() {
     rule.topicId === selectedTopicId && rule.dictionaryVersionId === activeVersion?.id
   )), [activeVersion?.id, selectedTopicId, settings.rules]);
   const methodology = settings.methodologies.find(item => item.dictionaryVersionId === activeVersion?.id)?.config || {};
-  const activeRun = settings.analysisRuns.find(run => run.status === 'processing' && run.dictionaryVersionId === draft?.id);
+  const activeRun = settings.analysisRuns.find(run => run.status === 'processing');
+  const fullRun = settings.analysisRuns.find(run => run.status === 'processing' && run.analysisScope === 'full' && run.dictionaryVersionId === draft?.id);
+  const rangeRun = settings.analysisRuns.find(run => run.status === 'processing' && run.analysisScope === 'range');
 
   const run = async (action: () => Promise<unknown>) => {
     setSaving(true);
@@ -101,18 +121,37 @@ export default function ClientExperienceSettings() {
             void backfillReviewLemmas(progress => setLemmaProgress(progress)).then(() => getLemmaBackfillPending()).then(setLemmaPending)
               .catch(reason => setError(reason instanceof Error ? reason.message : String(reason))).finally(() => setLemmatizing(false));
           }}>{lemmatizing ? `Лемматизация ${lemmaProgress.reviews} / ${lemmaPending.reviews}` : `Подготовить леммы · ${lemmaPending.reviews}`}</button>}
-          {draft && <button disabled={publishing || lemmatizing || lemmaPending.reviews > 0} onClick={() => {
+          {draft && <button disabled={publishing || rangeProcessing || lemmatizing || lemmaPending.reviews > 0 || Boolean(rangeRun)} onClick={() => {
             setPublishing(true); setError('');
-            void publishCxDictionary(setPublishProgress, activeRun?.id).then(load)
+            void publishCxDictionary(setPublishProgress, fullRun?.id).then(load)
               .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
               .finally(() => setPublishing(false));
           }}>{publishing
-            ? `Перерасчёт ${publishProgress?.processedReviews || 0} / ${publishProgress?.totalReviews || activeRun?.totalReviews || 0}`
-            : activeRun ? `Продолжить перерасчёт · ${activeRun.processedReviews}/${activeRun.totalReviews}` : 'Опубликовать словарь'}</button>}
+            ? `Полный перерасчёт ${publishProgress?.processedReviews || 0} / ${publishProgress?.totalReviews || fullRun?.totalReviews || 0}`
+            : fullRun ? `Продолжить полный перерасчёт · ${fullRun.processedReviews}/${fullRun.totalReviews}` : 'Полный перерасчёт и публикация'}</button>}
           {activeRun && !publishing && <button className="cx-secondary-action" onClick={() => {
             void run(() => cancelCxAnalysis(activeRun.id));
           }}>Остановить</button>}
           {draft && <span className="cx-draft-badge">Черновик · не опубликован</span>}
+        </div>
+      </section>
+
+      <section className="page-card cx-range-analysis">
+        <div>
+          <span>ОБНОВЛЕНИЕ ДАННЫХ</span>
+          <h2>Перерасчёт выбранного диапазона</h2>
+          <p>Используйте после импорта новых отзывов. Опубликованный словарь не меняется, остальные даты не пересчитываются.</p>
+        </div>
+        <div className="cx-range-analysis-controls">
+          {dateBounds.end && <DateRangeFilter label="Диапазон" value={rangePeriod} onChange={setRangePeriod} maxDate={dateBounds.end} />}
+          <button disabled={!published || publishing || rangeProcessing || lemmatizing || lemmaPending.reviews > 0 || Boolean(fullRun) || !rangePeriod.start || !rangePeriod.end} onClick={() => {
+            setRangeProcessing(true); setError('');
+            void recalculateCxRange(rangePeriod.start, rangePeriod.end, setRangeProgress, rangeRun?.id).then(load)
+              .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+              .finally(() => setRangeProcessing(false));
+          }}>{rangeProcessing
+            ? `Диапазон ${rangeProgress?.processedReviews || 0} / ${rangeProgress?.totalReviews || rangeRun?.totalReviews || 0}`
+            : rangeRun ? `Продолжить диапазон · ${rangeRun.processedReviews}/${rangeRun.totalReviews}` : 'Пересчитать диапазон'}</button>
         </div>
       </section>
 

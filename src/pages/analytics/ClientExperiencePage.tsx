@@ -40,6 +40,11 @@ function formatDate(value: string) {
   return `${day}.${month}.${year}`;
 }
 
+function latestDataMonth(bounds: DatePeriod): DatePeriod {
+  if (!bounds.end) return bounds;
+  return { start: `${bounds.end.slice(0, 7)}-01`, end: bounds.end };
+}
+
 export default function ClientExperiencePage() {
   useSyncExternalStore(subscribe, getVersion);
   const cabinets = getCabinets();
@@ -101,7 +106,7 @@ export default function ClientExperiencePage() {
     void getCxDateBounds().then(nextBounds => {
       if (cancelled) return;
       setBounds(nextBounds);
-      setPeriod(current => current.start ? current : nextBounds);
+      setPeriod(current => current.start ? current : latestDataMonth(nextBounds));
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -149,7 +154,7 @@ export default function ClientExperiencePage() {
   }));
 
   const resetFilters = () => {
-    setPeriod(bounds);
+    setPeriod(latestDataMonth(bounds));
     setCabinet('');
     setCategory('');
     setBrand('');

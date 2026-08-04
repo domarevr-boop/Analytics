@@ -79,7 +79,13 @@ export default function ClientExperienceMethodology() {
           <article><b>4</b><strong>Тональность совпадений</strong><p>Каждая связь получает позитивную, нейтральную или негативную тональность по версии модели и контексту темы.</p></article>
           <article><b>5</b><strong>Агрегация</strong><p>PostgreSQL рассчитывает показатели по фильтрам. Смена формулы обновляет только агрегаты и не классифицирует тексты повторно.</p></article>
         </div>
-        <div className="cx-methodology-guardrail"><strong>Правило публикации</strong><span>Черновик не влияет на рабочие данные. При публикации неизменившиеся связи и их тональность переиспользуются; анализируются только новые отзывы и новые или изменённые совпадения.</span></div>
+        <div className="cx-methodology-guardrail"><strong>Два режима перерасчёта</strong><span>Полный перерасчёт используется при изменении словаря или логики анализа и завершается атомарной публикацией новой версии. Диапазонный перерасчёт использует текущий опубликованный словарь, обновляет только выбранные даты после импорта и сверяет число обработанных отзывов перед завершением.</span></div>
+        <div className="cx-methodology-params">
+          <div><span>Начальный срез</span><strong>последний месяц с данными</strong></div>
+          <div><span>Полный режим</span><strong>новая версия словаря</strong></div>
+          <div><span>Диапазонный режим</span><strong>только выбранные даты</strong></div>
+          <div><span>Контроль</span><strong>сверка обработанных строк</strong></div>
+        </div>
       </section>
 
       <section id="cx-entities" className="page-card cx-methodology-section">

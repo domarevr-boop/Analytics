@@ -61,6 +61,9 @@ export interface CxAnalysisRun {
   startedAt: string;
   completedAt: string | null;
   errorMessage: string;
+  analysisScope: 'full' | 'range';
+  reviewDateFrom: string | null;
+  reviewDateTo: string | null;
 }
 
 export interface CxAnalysisSettings {
@@ -134,6 +137,9 @@ function mapAnalysisRun(row: Row): CxAnalysisRun {
     totalReviews: Number(row.total_reviews) || 0, processedReviews: Number(row.processed_reviews) || 0,
     matchedReviews: Number(row.matched_reviews) || 0, startedAt: String(row.started_at || ''),
     completedAt: row.completed_at ? String(row.completed_at) : null, errorMessage: String(row.error_message || ''),
+    analysisScope: String(row.analysis_scope || 'full') as CxAnalysisRun['analysisScope'],
+    reviewDateFrom: row.review_date_from ? String(row.review_date_from) : null,
+    reviewDateTo: row.review_date_to ? String(row.review_date_to) : null,
   };
 }
 
@@ -150,7 +156,9 @@ function isStatementTimeout(reason: unknown) {
   return reason instanceof Error && reason.message.toLowerCase().includes('statement timeout');
 }
 
-export async function publishCxDictionary(
+async function runCxAnalysis(
+  start: () => Promise<CxAnalysisRun>,
+  finalizeRpc: string,
   onProgress?: (run: CxAnalysisRun) => void,
   resumeRunId?: string,
 ) {
@@ -170,7 +178,7 @@ export async function publishCxDictionary(
   };
   let run = resumeRunId
     ? await processBatch(resumeRunId)
-    : await analysisRpc('start_cx_dictionary_publication');
+    : await start();
   onProgress?.(run);
   while (run.processedReviews < run.totalReviews) {
     const processedBefore = run.processedReviews;
@@ -181,9 +189,35 @@ export async function publishCxDictionary(
     }
     await new Promise(resolve => window.setTimeout(resolve, 0));
   }
-  run = await analysisRpc('finalize_cx_dictionary_publication', { p_run_id: run.id });
+  run = await analysisRpc(finalizeRpc, { p_run_id: run.id });
   onProgress?.(run);
   return run;
+}
+
+export async function publishCxDictionary(
+  onProgress?: (run: CxAnalysisRun) => void,
+  resumeRunId?: string,
+) {
+  return runCxAnalysis(
+    () => analysisRpc('start_cx_dictionary_publication'),
+    'finalize_cx_dictionary_publication',
+    onProgress,
+    resumeRunId,
+  );
+}
+
+export async function recalculateCxRange(
+  dateFrom: string,
+  dateTo: string,
+  onProgress?: (run: CxAnalysisRun) => void,
+  resumeRunId?: string,
+) {
+  return runCxAnalysis(
+    () => analysisRpc('start_cx_range_analysis', { p_date_from: dateFrom, p_date_to: dateTo }),
+    'finalize_cx_range_analysis',
+    onProgress,
+    resumeRunId,
+  );
 }
 
 export async function cancelCxAnalysis(runId: string) {
