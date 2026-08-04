@@ -12,6 +12,7 @@ import {
 const EMPTY: CxTopicDashboard = {
   workspaceVersion: 0, version: 0, selectedTopicId: null,
   granularity: 'day', mapMedians: { share: 0, topicScore: null },
+  overallCxi: { value: null, previous: null, delta: null, evaluativeMentions: 0 },
   comparisons: {
     textReviews: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
     classifiedReviews: { current: 0, previous: 0, delta: 0, deltaPercent: 0 },
@@ -81,10 +82,6 @@ function signed(value: number, suffix = ' п.п.') {
 
 function metric(value: number | null, suffix = '') {
   return value === null ? '—' : `${decimal.format(value)}${suffix}`;
-}
-
-function riskLabel(value: CxTopicMetric['risk']) {
-  return value === 'high' ? 'Высокий' : value === 'medium' ? 'Средний' : 'Низкий';
 }
 
 function suggestedGranularity(start: string, end: string): CxTopicGranularity {
@@ -174,6 +171,18 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const mapXMedian = mapMedian('xValue');
   const mapYMedian = mapMedian('yValue');
   const defaultMap = mapX === 'share' && mapY === 'topicScore';
+  const cxiTopics = useMemo(
+    () => [...dashboard.topics].sort((left, right) => (right.cxiContribution ?? -1) - (left.cxiContribution ?? -1)),
+    [dashboard.topics],
+  );
+  const positiveDrivers = useMemo(
+    () => dashboard.topics.filter(topic => (topic.contributionDelta || 0) > 0).sort((left, right) => (right.contributionDelta || 0) - (left.contributionDelta || 0)).slice(0, 3),
+    [dashboard.topics],
+  );
+  const negativeDrivers = useMemo(
+    () => dashboard.topics.filter(topic => (topic.contributionDelta || 0) < 0).sort((left, right) => (left.contributionDelta || 0) - (right.contributionDelta || 0)).slice(0, 3),
+    [dashboard.topics],
+  );
   const selectTopic = (topicId: string) => {
     if (topicId === (selectedTopicId || dashboard.selectedTopicId)) return;
     setSelectedTopicId(topicId);
@@ -214,6 +223,20 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <span className="cx-published-badge">Словарь v{dashboard.version}</span>
       </div>
 
+      <section className="cx-cxi-overview">
+        <article className="page-card cx-section cx-cxi-composite">
+          <div className="cx-section-head"><div><span>КОМПОЗИТНЫЕ ИНДЕКСЫ</span><h2>Клиентский опыт по оценочным упоминаниям</h2></div></div>
+          <div className="cx-cxi-cards">
+            <CxiCard title="Overall CXI" value={dashboard.overallCxi.value} delta={dashboard.overallCxi.delta} note={`${integer.format(dashboard.overallCxi.evaluativeMentions)} оценочных упоминаний`} primary />
+            {dashboard.groups.map(group => <CxiCard key={group.code} title={groupTitles[group.code]?.replace(' опыт', ' CXI') || group.name} value={group.cxi} delta={group.delta} note={group.name} />)}
+          </div>
+        </article>
+        <article className="page-card cx-section cx-cxi-drivers">
+          <div className="cx-section-head"><div><span>ДИНАМИКА ВКЛАДА</span><h2>Что изменило CXI</h2><p>Изменение вклада темы к прошлому равному периоду</p></div></div>
+          <div className="cx-cxi-driver-columns"><CxiDrivers title="Рост" rows={positiveDrivers} tone="good" /><CxiDrivers title="Снижение" rows={negativeDrivers} tone="bad" /></div>
+        </article>
+      </section>
+
       <section className="cx-topic-overview-grid">
         <article className="page-card cx-section cx-topic-attention">
           <div className="cx-section-head"><div><span>ПРИОРИТЕТЫ</span><h2>Что требует внимания</h2><p>Темы с максимальным Problem Index</p></div></div>
@@ -224,14 +247,6 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
               <span><b>{decimal.format(item.problemIndex)}</b><small className={item.negativeDelta > 0 ? 'bad' : 'good'}>{signed(item.negativeDelta)}</small></span>
             </button>)}
             {!loading && dashboard.attention.length === 0 && <div className="cx-settings-empty">Нет тем с упоминаниями в выбранном срезе</div>}
-          </div>
-          <div className="cx-topic-group-cards">
-            {dashboard.groups.map(group => <article key={group.code}>
-              <span>{groupTitles[group.code] || group.name}</span>
-              <strong>{metric(group.cxi)}</strong>
-              <small className={(group.delta || 0) >= 0 ? 'good' : 'bad'}>{group.delta === null ? 'Нет оценочных упоминаний' : `${signed(group.delta)} к прошлому периоду`}</small>
-              <dl><div><dt>Сильная сторона</dt><dd>{group.strongestTopic}</dd></div><div><dt>Проблема</dt><dd>{group.problemTopic}</dd></div></dl>
-            </article>)}
           </div>
         </article>
 
@@ -261,12 +276,12 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <article className="page-card cx-section cx-all-topics">
           <div className="cx-section-head"><div><span>СТРУКТУРА</span><h2>Все темы</h2><p>Клик по строке открывает детализацию</p></div></div>
           <div className="cx-table-wrap">
-            <table><thead><tr><th>Тема</th><th>Группа</th><th>Упом.</th><th>Доля</th><th>Тональность</th><th>Нег.</th><th>Δ нег.</th><th>Вклад</th><th>Риск</th></tr></thead>
-              <tbody>{dashboard.topics.map(topic => <tr key={topic.id} className={topic.id === selectedTopic?.id ? 'selected' : ''} onClick={() => selectTopic(topic.id)}>
+            <table><thead><tr><th>Тема</th><th>Группа</th><th>Вес в группе</th><th>Оценочные</th><th>Тональность</th><th>Доля нег.</th><th>Вклад в CXI</th><th>Δ вклада</th></tr></thead>
+              <tbody>{cxiTopics.map(topic => <tr key={topic.id} className={topic.id === selectedTopic?.id ? 'selected' : ''} onClick={() => selectTopic(topic.id)}>
                 <td><i style={{ background: riskColors[topic.risk] }} /><strong>{topic.name}</strong></td><td>{topic.groupName}</td>
-                <td>{integer.format(topic.reviewCount)}</td><td>{decimal.format(topic.share)}%</td><td>{metric(topic.topicScore)}</td>
-                <td>{decimal.format(topic.negativeShare)}%</td><td className={topic.negativeDelta > 0 ? 'bad' : 'good'}>{signed(topic.negativeDelta, '')}</td>
-                <td>{metric(topic.cxiContribution)}</td><td><span className={`cx-risk-pill ${topic.risk}`}>{riskLabel(topic.risk)}</span></td>
+                <td>{decimal.format(topic.groupWeight)}%</td><td>{integer.format(topic.evaluativeMentions)}</td><td><span className={`cx-tonality-cell ${topic.topicScore === null ? 'empty' : topic.topicScore >= 70 ? 'high' : topic.topicScore >= 40 ? 'medium' : 'low'}`}>{metric(topic.topicScore)}</span></td>
+                <td>{decimal.format(topic.negativeShare)}%</td><td><strong>{metric(topic.cxiContribution)}</strong></td>
+                <td className={(topic.contributionDelta || 0) >= 0 ? 'good' : 'bad'}>{topic.contributionDelta === null ? '—' : signed(topic.contributionDelta)}</td>
               </tr>)}</tbody></table>
           </div>
         </article>
@@ -333,6 +348,14 @@ function TopicMapTooltip({ active, payload, xMetric, yMetric, sizeMetric }: { ac
   if (!active || !topic) return null;
   const formatted = (value: number, key: MapMetric) => `${decimal.format(value)}${mapMetrics[key].unit}`;
   return <div className="cx-topic-map-tooltip"><strong>{topic.name}</strong><span>{topic.groupName}</span><dl><div><dt>X · {mapMetrics[xMetric].label}</dt><dd>{formatted(topic.xValue, xMetric)}</dd></div><div><dt>Y · {mapMetrics[yMetric].label}</dt><dd>{formatted(topic.yValue, yMetric)}</dd></div><div><dt>Размер · {mapMetrics[sizeMetric].label}</dt><dd>{formatted(topic.sizeValue, sizeMetric)}</dd></div><div><dt>Упоминания</dt><dd>{integer.format(topic.reviewCount)}</dd></div><div><dt>Оценочные</dt><dd>{decimal.format(topic.evaluativeShare)}%</dd></div><div><dt>Оценка</dt><dd>{decimal.format(topic.averageRating)} ★</dd></div></dl></div>;
+}
+
+function CxiCard({ title, value, delta, note, primary = false }: { title: string; value: number | null; delta: number | null; note: string; primary?: boolean }) {
+  return <article className={primary ? 'primary' : ''}><span>{title}</span><div><strong>{metric(value)}</strong>{delta !== null && <b className={delta >= 0 ? 'good' : 'bad'}>{signed(delta)}</b>}</div><i><b style={{ width: `${Math.max(0, Math.min(100, value || 0))}%` }} /></i><small>{note}</small></article>;
+}
+
+function CxiDrivers({ title, rows, tone }: { title: string; rows: CxTopicMetric[]; tone: 'good' | 'bad' }) {
+  return <section><h3>{title}</h3>{rows.map(topic => <div key={topic.id}><span><i style={{ background: groupColors[topic.groupCode] || '#8B99AB' }} />{topic.name}</span><strong className={tone}>{signed(topic.contributionDelta || 0)}</strong></div>)}{rows.length === 0 && <small>Нет изменений для отображения</small>}</section>;
 }
 
 function TopicTrendChart({ data, metrics }: { data: CxTopicTrendPoint[]; metrics: TrendMetric[] }) {

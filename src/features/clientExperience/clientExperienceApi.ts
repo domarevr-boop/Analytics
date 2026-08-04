@@ -113,6 +113,11 @@ export interface CxTopicMetric {
   topicScore: number | null;
   negativeDelta: number;
   cxiContribution: number | null;
+  evaluativeMentions: number;
+  groupWeight: number;
+  overallWeight: number;
+  previousTopicScore: number | null;
+  contributionDelta: number | null;
   problemIndex: number;
   risk: 'low' | 'medium' | 'high';
 }
@@ -210,6 +215,7 @@ export interface CxTopicDashboard {
   selectedTopicId: string | null;
   granularity: CxTopicGranularity;
   mapMedians: { share: number; topicScore: number | null };
+  overallCxi: { value: number | null; previous: number | null; delta: number | null; evaluativeMentions: number };
   comparisons: CxTopicComparisons;
   summary: CxTopicSummary;
   groups: CxTopicGroupSummary[];
@@ -332,12 +338,13 @@ export async function getCxTopicDashboard(
     ...params(filters),
     p_topic_id: topicId,
   };
-  const [workspaceResult, initialTimeseriesResult] = await Promise.all([
+  const [workspaceResult, initialTimeseriesResult, cxiResult] = await Promise.all([
     supabase.rpc('get_cx_topics_workspace_v2', rpcParams),
     supabase.rpc('get_cx_topic_timeseries_v2', {
       ...rpcParams,
       p_granularity: granularity,
     }),
+    supabase.rpc('get_cx_cxi_summary', params(filters)),
   ]);
   let timeseriesResult = initialTimeseriesResult;
   let { data, error } = workspaceResult;
@@ -352,6 +359,9 @@ export async function getCxTopicDashboard(
     timeseriesResult = await supabase.rpc('get_cx_topic_timeseries', { ...rpcParams, p_granularity: granularity });
   }
   if (timeseriesResult.error) throw errorMessage(timeseriesResult.error, 'динамика тем')!;
+  const cxiMissing = cxiResult.error
+    && (cxiResult.error.code === 'PGRST202' || cxiResult.error.message.includes('get_cx_cxi_summary'));
+  if (cxiResult.error && !cxiMissing) throw errorMessage(cxiResult.error, 'сводка CXI')!;
   const timeseries = (timeseriesResult.data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
   const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
@@ -365,12 +375,44 @@ export async function getCxTopicDashboard(
   const comparisons = (timeseries.comparisons || {}) as RpcRow;
   const medians = (timeseries.medians || {}) as RpcRow;
   const trendSource = rows(timeseries.trend).length ? rows(timeseries.trend) : rows(payload.trend);
+  const cxiPayload = (cxiResult.data || {}) as RpcRow;
+  const cxiTopicRows = rows(cxiPayload.topics);
+  const cxiTopics = new Map(cxiTopicRows.map(row => [String(row.id || ''), row]));
+  const cxiGroups = new Map(rows(cxiPayload.groups).map(row => [String(row.code || ''), row]));
+  const mappedTopics = rows(payload.topics).map(row => {
+    const cxi = cxiTopics.get(String(row.id || '')) || {};
+    return {
+      id: String(row.id || ''), name: String(row.name || ''), groupCode: String(row.group_code || ''),
+      groupName: String(row.group_name || ''), reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches),
+      share: number(row.share), weight: number(row.weight), averageRating: number(row.average_rating), ...sentiment(row),
+      negativeDelta: number(row.negative_delta), cxiContribution: nullableNumber(cxi.contribution ?? row.cxi_contribution),
+      evaluativeMentions: number(cxi.evaluative_mentions), groupWeight: number(cxi.group_weight),
+      overallWeight: number(cxi.overall_weight), previousTopicScore: nullableNumber(cxi.previous_tonality),
+      contributionDelta: nullableNumber(cxi.contribution_delta),
+      problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicMetric['risk'],
+    };
+  });
+  const overall = (cxiPayload.overall || {}) as RpcRow;
+  const fallbackOverall = mappedTopics.reduce((sum, topic) => sum + (topic.cxiContribution || 0), 0);
+  const mappedGroups = rows(payload.groups).map(row => {
+    const cxi = cxiGroups.get(String(row.code || '')) || {};
+    return {
+      code: String(row.code || ''), name: String(row.name || ''), activeTopics: number(row.active_topics),
+      mentions: number(row.mentions), cxi: nullableNumber(cxi.cxi ?? row.cxi), delta: nullableNumber(cxi.delta ?? row.delta),
+      strongestTopic: String(row.strongest_topic || '—'), problemTopic: String(row.problem_topic || '—'),
+    };
+  });
   return {
     workspaceVersion: number(payload.workspace_version),
     version: number(payload.version),
     selectedTopicId: payload.selected_topic_id ? String(payload.selected_topic_id) : null,
     granularity: String(timeseries.granularity || granularity) as CxTopicGranularity,
     mapMedians: { share: number(medians.share), topicScore: nullableNumber(medians.topic_score) },
+    overallCxi: {
+      value: nullableNumber(overall.cxi) ?? (mappedTopics.some(topic => topic.cxiContribution !== null) ? fallbackOverall : null),
+      previous: nullableNumber(overall.previous_cxi), delta: nullableNumber(overall.delta),
+      evaluativeMentions: number(overall.evaluative_mentions),
+    },
     comparisons: {
       textReviews: comparison(comparisons.text_reviews), classifiedReviews: comparison(comparisons.classified_reviews),
       mentions: comparison(comparisons.mentions), topicScore: comparison(comparisons.topic_score),
@@ -385,23 +427,13 @@ export async function getCxTopicDashboard(
       averageRating: number(summary.average_rating),
       ...summarySentiment,
     },
-    groups: rows(payload.groups).map(row => ({
-      code: String(row.code || ''), name: String(row.name || ''), activeTopics: number(row.active_topics),
-      mentions: number(row.mentions), cxi: nullableNumber(row.cxi), delta: nullableNumber(row.delta),
-      strongestTopic: String(row.strongest_topic || '—'), problemTopic: String(row.problem_topic || '—'),
-    })),
+    groups: mappedGroups,
     attention: rows(payload.attention).map(row => ({
       id: String(row.id || ''), name: String(row.name || ''), groupName: String(row.group_name || ''),
       reviewCount: number(row.review_count), negativeShare: number(row.negative_share), negativeDelta: number(row.negative_delta),
       problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicAttention['risk'],
     })),
-    topics: rows(payload.topics).map(row => ({
-      id: String(row.id || ''), name: String(row.name || ''), groupCode: String(row.group_code || ''),
-      groupName: String(row.group_name || ''), reviewCount: number(row.review_count), ruleMatches: number(row.rule_matches),
-      share: number(row.share), weight: number(row.weight), averageRating: number(row.average_rating), ...sentiment(row),
-      negativeDelta: number(row.negative_delta), cxiContribution: nullableNumber(row.cxi_contribution),
-      problemIndex: number(row.problem_index), risk: String(row.risk || 'low') as CxTopicMetric['risk'],
-    })),
+    topics: mappedTopics,
     trend: trendSource.map(row => ({
       date: String(row.date || ''), textReviews: number(row.text_reviews), classifiedReviews: number(row.classified_reviews),
       mentions: number(row.mentions), reviews: number(row.reviews), topicShare: number(row.topic_share),
