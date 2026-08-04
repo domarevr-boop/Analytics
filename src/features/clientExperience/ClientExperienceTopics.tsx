@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Bar, CartesianGrid, Cell, ComposedChart, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer,
+  Bar, CartesianGrid, Cell, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer,
   Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts';
 import {
@@ -90,6 +90,74 @@ function suggestedGranularity(start: string, end: string): CxTopicGranularity {
   return days <= 45 ? 'day' : days <= 180 ? 'week' : 'month';
 }
 
+function splitTopicMapLabel(value: string) {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  if (words.length === 1 && words[0].length > 13) {
+    return [words[0].slice(0, 13), `${words[0].slice(13, 28)}${words[0].length > 28 ? '…' : ''}`];
+  }
+  const lines = ['', ''];
+  for (const word of words) {
+    const target = lines[0].length < 16 ? 0 : 1;
+    const candidate = `${lines[target]} ${word}`.trim();
+    if (candidate.length <= 22 || !lines[target]) lines[target] = candidate;
+    else if (target === 0) lines[1] = word;
+  }
+  const visible = lines.filter(Boolean).slice(0, 2);
+  const joined = visible.join(' ');
+  if (joined.length < value.length && visible.length > 0) {
+    visible[visible.length - 1] = `${visible[visible.length - 1].slice(0, 19).trim()}…`;
+  }
+  return visible;
+}
+
+function layoutTopicMapLabels(points: TopicMapPoint[], xMax: number, yMax: number) {
+  const plotWidth = 520;
+  const plotHeight = 300;
+  const occupied: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+  return points
+    .filter(point => point.mapLabel)
+    .sort((left, right) => right.reviewCount - left.reviewCount)
+    .flatMap(point => {
+      const lines = splitTopicMapLabel(point.mapLabel);
+      const width = Math.max(48, Math.min(116, Math.max(...lines.map(line => line.length)) * 4.8));
+      const height = lines.length * 10 + 4;
+      const pointX = Math.max(0, Math.min(plotWidth, (point.xValue / Math.max(1, xMax)) * plotWidth));
+      const pointY = Math.max(0, Math.min(plotHeight, (1 - point.yValue / Math.max(1, yMax)) * plotHeight));
+      const candidates = [
+        { left: pointX - width / 2, top: pointY - height - 17 },
+        { left: pointX + 18, top: pointY - height / 2 },
+        { left: pointX - width - 18, top: pointY - height / 2 },
+        { left: pointX - width / 2, top: pointY + 17 },
+        { left: pointX + 16, top: pointY - height - 14 },
+        { left: pointX - width - 16, top: pointY - height - 14 },
+        { left: pointX + 24, top: pointY + 15 },
+        { left: pointX - width - 24, top: pointY + 15 },
+        { left: pointX - width / 2, top: pointY - height - 38 },
+        { left: pointX + 38, top: pointY - height / 2 },
+        { left: pointX - width - 38, top: pointY - height / 2 },
+      ];
+      const position = candidates.find(candidate => {
+        const rect = { left: candidate.left, top: candidate.top, right: candidate.left + width, bottom: candidate.top + height };
+        const inside = rect.left >= 0 && rect.right <= plotWidth && rect.top >= 0 && rect.bottom <= plotHeight;
+        const overlaps = occupied.some(area => !(rect.right + 3 < area.left || rect.left - 3 > area.right || rect.bottom + 3 < area.top || rect.top - 3 > area.bottom));
+        if (inside && !overlaps) {
+          occupied.push(rect);
+          return true;
+        }
+        return false;
+      });
+      if (!position) return [];
+      return [{
+        id: point.id,
+        lines,
+        left: `${(position.left / plotWidth) * 100}%`,
+        top: `${(position.top / plotHeight) * 100}%`,
+        width: `${(width / plotWidth) * 100}%`,
+      }];
+    });
+}
+
 export default function ClientExperienceTopics({ filters }: { filters: CxFilters }) {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [granularityOverride, setGranularityOverride] = useState<{ period: string; value: CxTopicGranularity } | null>(null);
@@ -156,26 +224,21 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const positiveExamples = dashboard.examples.filter(example => example.sentiment === 'positive');
   const negativeExamples = dashboard.examples.filter(example => example.sentiment === 'negative');
   const hasTonality = dashboard.summary.topicScore !== null;
-  const mapPoints = useMemo(() => {
-    const labeledTopics = new Set(
-      [...dashboard.topics]
-        .sort((left, right) => right.reviewCount - left.reviewCount)
-        .slice(0, 8)
-        .map(topic => topic.id),
-    );
-    return dashboard.topics.flatMap(topic => {
+  const rawMapPoints = useMemo(() => dashboard.topics.flatMap(topic => {
     const xValue = topic[mapX];
     const yValue = topic[mapY];
     const sizeValue = topic[mapSize];
     if (topic.reviewCount <= 0 || xValue === null || yValue === null || sizeValue === null) return [];
-      const mapLabel = labeledTopics.has(topic.id)
-        ? `${topic.name.slice(0, 18)}${topic.name.length > 18 ? '…' : ''}`
-        : '';
-      return [{ ...topic, xValue: Number(xValue), yValue: Number(yValue), sizeValue: Math.max(0, Number(sizeValue)), mapLabel }];
-    });
-  }, [dashboard.topics, mapSize, mapX, mapY]);
+    return [{
+      ...topic,
+      xValue: Number(xValue),
+      yValue: Number(yValue),
+      sizeValue: Math.max(0, Number(sizeValue)),
+      mapLabel: '',
+    }];
+  }), [dashboard.topics, mapSize, mapX, mapY]);
   const mapMedian = (key: 'xValue' | 'yValue') => {
-    const values = mapPoints.map(point => point[key]).sort((left, right) => left - right);
+    const values = rawMapPoints.map(point => point[key]).sort((left, right) => left - right);
     if (!values.length) return null;
     const middle = Math.floor(values.length / 2);
     return values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
@@ -183,9 +246,32 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
   const mapXMedian = mapMedian('xValue');
   const mapYMedian = mapMedian('yValue');
   const defaultMap = mapX === 'share' && mapY === 'topicScore';
-  const defaultMapXMax = Math.max(1, ...mapPoints.map(point => point.xValue)) * 1.08;
+  const defaultMapXMax = Math.max(1, ...rawMapPoints.map(point => point.xValue)) * 1.08;
   const mapXDivider = defaultMap ? defaultMapXMax / 2 : mapXMedian;
   const mapYDivider = defaultMap ? 50 : mapYMedian;
+  const mapXMax = defaultMap
+    ? defaultMapXMax
+    : Math.max(1, ...rawMapPoints.map(point => point.xValue)) * 1.08;
+  const mapYMax = defaultMap
+    ? 100
+    : mapMetrics[mapY].domain[1] === 'auto'
+      ? Math.max(1, ...rawMapPoints.map(point => point.yValue)) * 1.08
+      : Number(mapMetrics[mapY].domain[1]);
+  const selectedMapTopicId = selectedTopic?.id || null;
+  const mapPoints = useMemo(() => {
+    const labeledTopics = new Set(
+      [...rawMapPoints]
+        .sort((left, right) => right.reviewCount - left.reviewCount)
+        .slice(0, 5)
+        .map(topic => topic.id),
+    );
+    if (selectedMapTopicId) labeledTopics.add(selectedMapTopicId);
+    return rawMapPoints.map(point => {
+      if (!labeledTopics.has(point.id)) return point;
+      return { ...point, mapLabel: point.name };
+    });
+  }, [rawMapPoints, selectedMapTopicId]);
+  const mapLabelLayouts = useMemo(() => layoutTopicMapLabels(mapPoints, mapXMax, mapYMax), [mapPoints, mapXMax, mapYMax]);
   const cxiTopics = useMemo(
     () => [...dashboard.topics].sort((left, right) => (right.cxiContribution ?? -1) - (left.cxiContribution ?? -1)),
     [dashboard.topics],
@@ -268,22 +354,26 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
         <article className="page-card cx-section cx-topic-map">
           <div className="cx-section-head cx-topic-map-head"><div><span>ПОЗИЦИОНИРОВАНИЕ</span><h2>Карта тем</h2></div><div className="cx-topic-map-controls"><label>X<select value={mapX} onChange={event => setMapX(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Y<select value={mapY} onChange={event => setMapY(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Размер<select value={mapSize} onChange={event => setMapSize(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label></div></div>
           <div className="cx-topic-map-chart">
-            {defaultMap && <div className="cx-topic-quadrants" aria-hidden="true"><span>Нишевые · Позитивные</span><span>Мейнстрим · Позитивные</span><span>Нишевые · Негативные</span><span>Мейнстрим · Негативные</span></div>}
+            {defaultMap && <div className="cx-topic-quadrants" aria-hidden="true"><span><b>Нишевые</b><small>Позитивные</small></span><span><b>Мейнстрим</b><small>Позитивные</small></span><span><b>Нишевые</b><small>Негативные</small></span><span><b>Мейнстрим</b><small>Негативные</small></span></div>}
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 28, right: 22, bottom: 10, left: 2 }}>
+              <ScatterChart margin={{ top: 34, right: 42, bottom: 18, left: 10 }}>
                 <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="xValue" name={mapMetrics[mapX].label} unit={mapMetrics[mapX].unit} domain={defaultMap ? [0, defaultMapXMax] : mapMetrics[mapX].domain} tick={{ fontSize: 9, fill: '#7D8DA3' }} />
-                <YAxis type="number" dataKey="yValue" name={mapMetrics[mapY].label} unit={mapMetrics[mapY].unit} domain={defaultMap ? [0, 100] : mapMetrics[mapY].domain} tick={{ fontSize: 9, fill: '#7D8DA3' }} width={36} />
-                <ZAxis type="number" dataKey="sizeValue" range={[70, 850]} />
+                <XAxis type="number" dataKey="xValue" name={mapMetrics[mapX].label} unit={mapMetrics[mapX].unit} domain={defaultMap ? [0, defaultMapXMax] : mapMetrics[mapX].domain} ticks={defaultMap && mapXDivider !== null ? [0, mapXDivider, defaultMapXMax] : undefined} tickFormatter={value => decimal.format(Number(value))} tick={{ fontSize: 9, fill: '#7D8DA3' }} />
+                <YAxis type="number" dataKey="yValue" name={mapMetrics[mapY].label} unit={mapMetrics[mapY].unit} domain={defaultMap ? [0, 100] : mapMetrics[mapY].domain} ticks={defaultMap ? [0, 25, 50, 75, 100] : undefined} tickFormatter={value => decimal.format(Number(value))} tick={{ fontSize: 9, fill: '#7D8DA3' }} width={38} />
+                <ZAxis type="number" dataKey="sizeValue" range={[55, 620]} />
                 {mapXDivider !== null && <ReferenceLine x={mapXDivider} stroke="#91A0B2" strokeDasharray="5 4" />}
                 {mapYDivider !== null && <ReferenceLine y={mapYDivider} stroke="#91A0B2" strokeDasharray="5 4" />}
                 <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<TopicMapTooltip xMetric={mapX} yMetric={mapY} sizeMetric={mapSize} />} />
                 <Scatter data={mapPoints} onClick={point => selectTopic((point as unknown as TopicMapPoint).id)}>
                   {mapPoints.map(topic => <Cell key={topic.id} fill={groupColors[topic.groupCode] || '#8B99AB'} fillOpacity={0.88} stroke={topic.id === selectedTopic?.id ? '#142A45' : '#fff'} strokeWidth={topic.id === selectedTopic?.id ? 3 : 2} />)}
-                  <LabelList dataKey="mapLabel" position="top" offset={7} fill="#3D526B" fontSize={8} fontWeight={700} />
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
+            <div className="cx-topic-map-label-layer" aria-hidden="true">
+              {mapLabelLayouts.map(label => <span key={label.id} className="cx-topic-map-point-label" style={{ left: label.left, top: label.top, width: label.width }}>
+                {label.lines.map(line => <b key={`${label.id}-${line}`}>{line}</b>)}
+              </span>)}
+            </div>
           </div>
           <div className="cx-group-legend"><span><i className="product" />Продукт</span><span><i className="service" />Сервис</span><span><i className="outcomes" />Результат опыта</span></div>
           <div className="cx-topic-map-decoding"><span><b>X</b>{mapMetrics[mapX].label}</span><span><b>Y</b>{mapMetrics[mapY].label}</span><span><b>Размер</b>{mapMetrics[mapSize].label}</span></div>

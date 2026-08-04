@@ -272,7 +272,7 @@
 .cx-sentiment-overview > i b { display: block; height: 100%; }
 .cx-sentiment-overview > i .positive { background: #16ad7b; }.cx-sentiment-overview > i .neutral { background: #aeb9c7; }.cx-sentiment-overview > i .negative { background: #e45d68; }
 .cx-sentiment-overview > small { grid-column: 1 / -1; color: #8290a2; font-size: 9px; }
-.cx-topic-overview-grid { display: grid; grid-template-columns: minmax(310px, .9fr) minmax(340px, 1.05fr) minmax(520px, 1.55fr); gap: 12px; align-items: stretch; }
+.cx-topic-overview-grid { display: grid; grid-template-columns: minmax(250px, .55fr) minmax(640px, 1.35fr) minmax(500px, 1.25fr); gap: 12px; align-items: stretch; }
 .cx-cxi-overview { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(320px, .9fr); gap: 12px; }
 .cx-cxi-overview > .page-card { border: 1px solid #dfe6ee; box-shadow: none; }
 .cx-cxi-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 9px; border: 1px solid #e3e9f0; border-radius: 9px; overflow: hidden; }
@@ -303,14 +303,17 @@
 .cx-topic-group-cards > article > small { display: block; min-height: 20px; margin-top: 3px; font-size: 8px; }
 .cx-topic-group-cards dl { margin: 7px 0 0; padding-top: 6px; border-top: 1px solid #e5eaf0; }
 .cx-topic-group-cards dl div + div { margin-top: 5px; }.cx-topic-group-cards dt { color: #91a0b1; font-size: 7px; text-transform: uppercase; }.cx-topic-group-cards dd { overflow: hidden; margin: 1px 0 0; color: #314a66; font-size: 8px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.cx-topic-map-chart { position: relative; width: min(100%, 360px); aspect-ratio: 1; margin: 0 auto; }
+.cx-topic-map-chart { position: relative; width: 100%; min-height: 350px; height: 370px; margin: 4px auto 0; }
 .cx-topic-map-head { align-items: flex-start; gap: 8px; }
 .cx-topic-map-controls { display: grid; grid-template-columns: repeat(3, minmax(82px, 1fr)); gap: 5px; }
 .cx-topic-map-controls label { color: #8492a4; font-size: 7px; font-weight: 800; text-transform: uppercase; }
 .cx-topic-map-controls select { display: block; width: 100%; height: 25px; margin-top: 3px; border: 1px solid #dce4ed; border-radius: 6px; background: #fff; color: #29435f; font: 8px/1 inherit; }
 .cx-topic-map .recharts-scatter-symbol { cursor: pointer; }
-.cx-topic-quadrants { position: absolute; z-index: 1; inset: 34px 26px 32px 38px; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); pointer-events: none; }
-.cx-topic-quadrants span { align-self: start; max-width: 92px; border-radius: 4px; background: rgb(255 255 255 / 78%); color: #718196; padding: 2px 4px; font-size: 7px; font-weight: 800; line-height: 1.2; }.cx-topic-quadrants span:nth-child(2), .cx-topic-quadrants span:nth-child(4) { justify-self: end; text-align: right; }.cx-topic-quadrants span:nth-child(3), .cx-topic-quadrants span:nth-child(4) { align-self: end; }
+.cx-topic-quadrants { position: absolute; z-index: 1; inset: 36px 44px 38px 50px; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); pointer-events: none; }
+.cx-topic-quadrants span { align-self: start; display: flex; max-width: 116px; flex-direction: column; border-radius: 5px; background: rgb(255 255 255 / 86%); color: #7b899a; padding: 3px 5px; line-height: 1.15; }.cx-topic-quadrants span b { color: #50647b; font-size: 8px; }.cx-topic-quadrants span small { margin-top: 1px; font-size: 7px; font-weight: 700; }.cx-topic-quadrants span:nth-child(2), .cx-topic-quadrants span:nth-child(4) { justify-self: end; text-align: right; }.cx-topic-quadrants span:nth-child(3), .cx-topic-quadrants span:nth-child(4) { align-self: end; }
+.cx-topic-map-label-layer { position: absolute; z-index: 2; inset: 34px 42px 38px 48px; pointer-events: none; }
+.cx-topic-map-point-label { position: absolute; display: flex; min-width: 48px; box-sizing: border-box; flex-direction: column; border-radius: 4px; background: rgb(255 255 255 / 84%); color: #314a65; padding: 1px 3px; font-size: 8px; font-weight: 800; line-height: 1.12; text-align: center; }
+.cx-topic-map-point-label b { overflow: hidden; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .cx-topic-map-tooltip { min-width: 170px; border: 1px solid #dbe3ed; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgb(22 42 67 / 12%); padding: 9px 10px; }
 .cx-topic-map-tooltip > strong, .cx-topic-map-tooltip > span { display: block; }.cx-topic-map-tooltip > strong { color: #17304d; font-size: 11px; }.cx-topic-map-tooltip > span { margin-top: 2px; color: #8593a5; font-size: 8px; }
 .cx-topic-map-tooltip dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 10px; margin: 8px 0 0; }.cx-topic-map-tooltip dl div { display: flex; justify-content: space-between; gap: 6px; }.cx-topic-map-tooltip dt { color: #8391a4; font-size: 8px; }.cx-topic-map-tooltip dd { margin: 0; color: #213a56; font-size: 8px; font-weight: 800; }
@@ -389,7 +392,7 @@
   .cx-toolbar select:nth-of-type(4) { display: none; }
   .cx-kpis { grid-template-columns: repeat(3, 1fr); }
   .cx-topic-kpis { grid-template-columns: repeat(3, 1fr); }
-  .cx-topic-overview-grid { grid-template-columns: minmax(320px, .9fr) minmax(360px, 1.1fr); }
+  .cx-topic-overview-grid { grid-template-columns: minmax(300px, .72fr) minmax(500px, 1.28fr); }
   .cx-all-topics { grid-column: 1 / -1; }
   .cx-topic-detail-grid { grid-template-columns: minmax(250px, .65fr) minmax(0, 1.55fr) minmax(260px, .75fr); }
   .cx-topic-examples { grid-column: 1 / -1; }
@@ -407,6 +410,7 @@
   .cx-settings-bottom { grid-template-columns: 1fr; }
   .cx-range-analysis.page-card { align-items: flex-start; flex-direction: column; }
   .cx-topic-overview-grid, .cx-topic-detail-grid { grid-template-columns: 1fr; }
+  .cx-topic-map-chart { max-width: 620px; }
   .cx-cxi-overview { grid-template-columns: 1fr; }
   .cx-all-topics, .cx-topic-examples { grid-column: auto; }
 }
@@ -422,6 +426,7 @@
   .cx-settings-grid { grid-template-columns: 1fr; }
   .cx-topic-form, .cx-rule-form { grid-template-columns: 1fr; }
   .cx-topic-kpis { grid-template-columns: repeat(2, 1fr); }
+  .cx-topic-map-chart { min-height: 320px; height: 330px; }
   .cx-topic-dashboard-head { align-items: flex-start; flex-direction: column; }
   .cx-range-analysis-controls { align-items: stretch; width: 100%; flex-direction: column; }
   .cx-cxi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
