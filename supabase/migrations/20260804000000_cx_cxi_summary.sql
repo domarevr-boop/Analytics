@@ -1,3 +1,34 @@
+create or replace function public.cx_tonality(p_positive numeric, p_negative numeric)
+returns numeric
+language sql
+immutable
+set search_path = public
+as $$
+  select case when coalesce(p_positive, 0) + coalesce(p_negative, 0) = 0 then null
+    else 100.0 * coalesce(p_positive, 0)
+      / (coalesce(p_positive, 0) + coalesce(p_negative, 0)) end;
+$$;
+
+create or replace function public.cx_evaluative_share(
+  p_positive numeric,
+  p_neutral numeric,
+  p_negative numeric
+)
+returns numeric
+language sql
+immutable
+set search_path = public
+as $$
+  select coalesce(
+    100.0 * (coalesce(p_positive, 0) + coalesce(p_negative, 0))
+      / nullif(
+        coalesce(p_positive, 0) + coalesce(p_neutral, 0) + coalesce(p_negative, 0),
+        0
+      ),
+    0
+  );
+$$;
+
 create or replace function public.get_cx_cxi_summary(
   p_date_from date default null,
   p_date_to date default null,
