@@ -1496,6 +1496,11 @@
   min-width: 280px;
 }
 
+.drf-popup-end {
+  right: 0;
+  left: auto;
+}
+
 .drf-popup-presets {
   display: flex;
   gap: 4px;

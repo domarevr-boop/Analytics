@@ -143,7 +143,7 @@ export default function ClientExperienceSettings() {
           <p>Используйте после импорта новых отзывов. Опубликованный словарь не меняется, остальные даты не пересчитываются.</p>
         </div>
         <div className="cx-range-analysis-controls">
-          {dateBounds.end && <DateRangeFilter label="Диапазон" value={rangePeriod} onChange={setRangePeriod} maxDate={dateBounds.end} />}
+          {dateBounds.end && <DateRangeFilter label="Диапазон" value={rangePeriod} onChange={setRangePeriod} maxDate={dateBounds.end} popupAlignment="end" />}
           <button disabled={!published || publishing || rangeProcessing || lemmatizing || lemmaPending.reviews > 0 || Boolean(fullRun) || !rangePeriod.start || !rangePeriod.end} onClick={() => {
             setRangeProcessing(true); setError('');
             void recalculateCxRange(rangePeriod.start, rangePeriod.end, setRangeProgress, rangeRun?.id).then(load)

@@ -12,6 +12,7 @@ interface Props {
   value: DatePeriod;
   onChange: (period: DatePeriod) => void;
   maxDate: string;
+  popupAlignment?: 'start' | 'end';
 }
 
 interface DatePreset {
@@ -39,7 +40,7 @@ function samePeriod(left: DatePeriod, right: DatePeriod) {
   return left.start === right.start && left.end === right.end;
 }
 
-export default function DateRangeFilter({ label, value, onChange, maxDate }: Props) {
+export default function DateRangeFilter({ label, value, onChange, maxDate, popupAlignment = 'start' }: Props) {
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState<Date | null>(() => toDate(value.start));
   const [draftEnd, setDraftEnd] = useState<Date | null>(() => toDate(value.end));
@@ -97,7 +98,7 @@ export default function DateRangeFilter({ label, value, onChange, maxDate }: Pro
         </button>
 
         {open && (
-          <div className="drf-popup" ref={popupRef}>
+          <div className={`drf-popup${popupAlignment === 'end' ? ' drf-popup-end' : ''}`} ref={popupRef}>
             <aside className="drf-preset-list">
               <span className="drf-popup-eyebrow">Быстрый выбор</span>
               {presets.map(preset => {
