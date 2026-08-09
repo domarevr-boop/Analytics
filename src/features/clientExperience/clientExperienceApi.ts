@@ -364,7 +364,9 @@ export async function getCxTopicDashboard(
   if (cxiResult.error && !cxiMissing) throw errorMessage(cxiResult.error, 'сводка CXI')!;
   const timeseries = (timeseriesResult.data || {}) as RpcRow;
   const summary = (payload.summary || {}) as RpcRow;
-  const rows = (value: unknown) => Array.isArray(value) ? value as RpcRow[] : [];
+  const rows = (value: unknown): RpcRow[] => Array.isArray(value)
+    ? value.filter((row): row is RpcRow => row !== null && typeof row === 'object' && !Array.isArray(row))
+    : [];
   const summarySentiment = sentiment(summary);
   const comparison = (value: unknown): CxTopicComparison => {
     const row = value && typeof value === 'object' ? value as RpcRow : {};
