@@ -1,4 +1,4 @@
 interface:
   display_name: "Analytics Product Design"
-  short_description: "Modernizes dense analytics interfaces"
-  default_prompt: "Use $analytics-product-design to audit and improve this analytics interface consistently."
+  short_description: "Unifies dense Analytics MVP interfaces"
+  default_prompt: "Use $analytics-product-design to audit and improve this Analytics MVP screen without changing its business logic."

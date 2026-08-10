@@ -1,33 +1,69 @@
 # UI Components
 
-This document defines the reusable visual contracts for analytical controls. Business pages may vary in data and composition, but the same control must not receive a new local visual language.
+Краткие контракты переиспользуемых элементов. Визуальные значения и паттерны определяет `DESIGN_SYSTEM.md`.
 
-## Period Filters
+## `DateRangeFilter`
 
-- Use `DateRangeFilter` for analytical date ranges.
-- Primary and comparison periods are separate controls placed in one `.date-filters` group.
-- When the primary period changes, comparison defaults to the immediately preceding period of equal length.
-- Comparison remains editable after the automatic update.
-- Both triggers use the same height, border, radius, typography, focus state, and calendar popover as Dashboard.
+- Единый контрол диапазона для Dashboard и аналитических страниц.
+- Поддерживает presets, custom range, draft-state, apply/cancel и безопасное позиционирование popover.
+- На широком экране — два месяца, на узком — один.
+- Сравнение строится отдельным контролом или автоматически равным предыдущим периодом, если это закреплено страницей.
 
-## Select Controls
+## `FilterBar`
 
-- Base analytical select: white surface, `#d8e1eb` border, 7px radius, project font, neutral text, and blue focus ring.
-- Standard compact height is 30px; dense chart controls may use 28px, Dashboard filters may use 34px.
-- A select must not introduce a colored background unless color identifies the selected series through a separate dot or swatch.
-- Page-specific CSS may adjust width only. Border, radius, typography, hover, focus, and disabled states remain shared.
-- Use native `select` for short single-choice lists. Use a dedicated popover only for searchable, grouped, or multi-select data.
+- Порядок: период → сравнение → кабинет → категория → бренд/склейка → поиск → дополнительные фильтры → метрики → result count/reset.
+- Все видимые controls имеют одну высоту.
+- Страница передаёт значения и callbacks; компонент не владеет бизнес-формулами.
 
-## Segmented Buttons
+## Select
 
-- Use one shared segmented-control anatomy for metric tabs, granularity, and entity context.
-- Container: neutral border and surface, 7px radius, 2px inner padding.
-- Active item: restrained yellow surface, dark text, stronger weight.
-- Do not use unrelated pill, tab, and button styles for the same interaction type.
+- Один стиль для одиночного выбора метрики, сущности и сортировки.
+- Label располагается над контролом только когда без него теряется смысл.
+- Ширина зависит от контента, но не растягивает toolbar без необходимости.
+- Длинные значения обрезаются с tooltip.
 
-## Product Detail
+## Segmented Control
 
-- Product identity, tags, primary period, and comparison period stay in the left context area.
-- KPI cards are independent tiles on the page background; do not wrap them in an additional white sheet.
-- Funnel stage labels sit left of the funnel, absolute values stay inside, and conversion labels sit right.
-- Traffic metric tabs belong to the chart they control and align with the chart plotting area.
+- Используется для взаимоисключающих режимов: День/Неделя/Месяц, Товар/Склейка, Заказы/Сумма заказов.
+- Активный сегмент использует жёлтый акцент.
+- Не заменяет multi-select.
+
+## Metric Picker
+
+- Один metric select — для основной метрики.
+- До двух метрик — через два одинаковых select или multi-select с лимитом 2.
+- Выбор визуально отражается в легенде и tooltip графика.
+- Повторно используемые таблицы сохраняют выбор колонок.
+
+## KPI Tile
+
+- Label, value, comparison delta, sparkline и optional progress.
+- Размеры и порядок одинаковы внутри одного ряда.
+- Loading не меняет размер плитки.
+- `null` показывается как `—`, отсутствие плана — `Не задан`.
+
+## Analytical Matrix
+
+- Sticky context columns слева.
+- Fixed-width date columns.
+- Row-local heatmap по умолчанию.
+- Sparkline и delta используют тот же период, что и ячейки.
+
+## Product Cell
+
+- Фото, название, SKU, WB ID и вторичные теги находятся в одной ячейке.
+- Фото и SKU кликабельны, если открывают карточку товара.
+- Не повторять SKU как название при отсутствии отдельного имени.
+
+## Chart Panel
+
+- Заголовок и краткий вопрос слева; controls справа.
+- Legend внутри header или над plot, если не уменьшает полезную область.
+- Empty/error/loading занимают ту же высоту, что и график.
+
+## Topic Map
+
+- Квадратный plot.
+- Стандарт: X — доля упоминаний, Y — тональность, size — упоминания, color — группа.
+- Selection — отдельная обводка.
+- Labels ограничиваются границами plot; полный набор метрик доступен в tooltip.
