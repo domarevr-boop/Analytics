@@ -11,21 +11,35 @@ interface NavBarProps {
 
 interface DropdownGroup {
   label: string;
-  items: { page: PageName; label: string }[];
+  items?: { page: PageName; label: string }[];
+  sections?: { label: string; items: { page: PageName; label: string }[] }[];
   matchPages: PageName[];
 }
 
 const GROUPS: DropdownGroup[] = [
   {
     label: 'Аналитика',
-    matchPages: ['funnel', 'entry-points', 'search-phrases', 'niche', 'geography', 'client-experience'],
-    items: [
-      { page: 'client-experience', label: 'Клиентский опыт' },
-      { page: 'geography', label: 'География заказов' },
-      { page: 'funnel', label: 'Воронка' },
-      { page: 'entry-points', label: 'Точки входа' },
-      { page: 'search-phrases', label: 'Поисковые фразы' },
-      { page: 'niche', label: 'Динамика ниши' },
+    matchPages: ['funnel', 'entry-points', 'search-phrases', 'niche', 'geography', 'client-experience', 'competitors'],
+    sections: [
+      {
+        label: 'Клиентский опыт',
+        items: [{ page: 'client-experience', label: 'Отзывы' }],
+      },
+      {
+        label: 'Трафик',
+        items: [
+          { page: 'funnel', label: 'Воронка' },
+          { page: 'entry-points', label: 'Точки входа' },
+          { page: 'search-phrases', label: 'Поисковые фразы' },
+        ],
+      },
+      {
+        label: 'Конкуренты',
+        items: [
+          { page: 'competitors', label: 'Конкуренты' },
+          { page: 'niche', label: 'Динамика ниши' },
+        ],
+      },
     ],
   },
   {
@@ -84,26 +98,55 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: 
             const groupActive = g.matchPages.includes(activePage);
             const isOpen = openDropdown === g.label;
             return (
-              <div className={`nav-dropdown ${isOpen ? 'open' : ''}`} key={g.label}>
-                <span
+              <div
+                className={`nav-dropdown ${isOpen ? 'open' : ''}`}
+                key={g.label}
+                onMouseEnter={() => setOpenDropdown(g.label)}
+                onMouseLeave={() => setOpenDropdown(current => current === g.label ? null : current)}
+                onBlur={event => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpenDropdown(null);
+                }}
+              >
+                <button
+                  type="button"
                   className={`nav-tab nav-dropdown-trigger ${groupActive ? 'active' : ''}`}
-                  onClick={() => setOpenDropdown(isOpen ? null : g.label)}
+                  aria-expanded={isOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setOpenDropdown(g.label)}
+                  onFocus={() => setOpenDropdown(g.label)}
                 >
                   {g.label}
                   <svg className="nav-dropdown-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                </span>
+                </button>
                 {isOpen && (
-                  <div className="nav-dropdown-menu">
-                    {g.items.map(item => (
-                      <span
+                  <div className={`nav-dropdown-menu ${g.sections ? 'nav-dropdown-menu--mega' : ''}`} role="menu">
+                    {g.sections ? g.sections.map(section => (
+                      <section className="nav-dropdown-section" key={section.label} aria-label={section.label}>
+                        <strong className="nav-dropdown-heading">{section.label}</strong>
+                        {section.items.map(item => (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={item.page}
+                            className={`nav-dropdown-item ${activePage === item.page ? 'active' : ''}`}
+                            onClick={() => navigate(item.page)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </section>
+                    )) : g.items?.map(item => (
+                      <button
+                        type="button"
+                        role="menuitem"
                         key={item.page}
                         className={`nav-dropdown-item ${activePage === item.page ? 'active' : ''}`}
                         onClick={() => navigate(item.page)}
                       >
                         {item.label}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}

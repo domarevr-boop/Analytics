@@ -676,6 +676,9 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
 }
 
 .nav-dropdown-arrow {
@@ -700,15 +703,68 @@
   margin-top: 4px;
 }
 
+.nav-dropdown.open::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 8px;
+  content: "";
+}
+
+.nav-dropdown-menu--mega {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+  width: min(590px, calc(100vw - 32px));
+  padding: 16px;
+}
+
+.nav-dropdown-section {
+  min-width: 0;
+}
+
+.nav-dropdown-heading {
+  display: block;
+  margin: 0 8px 7px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .nav-dropdown-item {
   display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
   padding: 8px 14px;
+  text-align: left;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.12s;
+}
+
+.competitors-page {
+  min-height: calc(100vh - 48px);
+}
+
+.competitors-page-heading {
+  padding-bottom: 18px;
+}
+
+.competitors-empty-card {
+  min-height: 240px;
+}
+
+@media (max-width: 760px) {
+  .nav-dropdown-menu--mega {
+    grid-template-columns: 1fr;
+    width: min(320px, calc(100vw - 24px));
+  }
 }
 
 .nav-dropdown-item:hover {
