@@ -31,6 +31,7 @@ const GROUPS: DropdownGroup[] = [
           { page: 'funnel', label: 'Воронка' },
           { page: 'entry-points', label: 'Точки входа' },
           { page: 'search-phrases', label: 'Поисковые фразы' },
+          { page: 'geography', label: 'География заказов' },
         ],
       },
       {
