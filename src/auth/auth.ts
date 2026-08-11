@@ -1,5 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabaseClient';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 export interface AuthState {
   initialized: boolean;
@@ -35,6 +35,17 @@ export function getAuthState(): AuthState {
 
 export async function initAuth(): Promise<void> {
   if (state.initialized) return;
+
+  if (!isSupabaseConfigured) {
+    state = {
+      initialized: true,
+      loading: false,
+      session: null,
+      user: null,
+    };
+    emit();
+    return;
+  }
 
   const { data } = await supabase.auth.getSession();
   state = {

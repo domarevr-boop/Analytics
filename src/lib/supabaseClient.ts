@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const configuredUrl = import.meta.env.VITE_SUPABASE_URL;
+const configuredKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!url || !key) {
-  throw new Error('Supabase credentials are not configured');
-}
+export const isSupabaseConfigured = Boolean(configuredUrl && configuredKey);
+
+const url = configuredUrl || 'http://127.0.0.1:54321';
+const key = configuredKey || 'supabase-not-configured';
 
 export const supabase = createClient(url, key, {
   auth: {

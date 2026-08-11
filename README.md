@@ -34,6 +34,8 @@ npm run build
 npm run deploy
 ```
 
+Перед `npm run deploy` должен существовать локальный `.env.production.local` с `VITE_SUPABASE_URL` и публичным `VITE_SUPABASE_ANON_KEY`. Проверка останавливает публикацию, если конфигурация отсутствует, чтобы GitHub Pages не получил нерабочую сборку. Service-role ключ в frontend использовать нельзя.
+
 ## Безопасность
 
 - Не коммитьте `.env.local`, пароли и service-role ключи.

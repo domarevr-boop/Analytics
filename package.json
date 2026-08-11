@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "test:cx": "node --test src/features/clientExperience/cxCalculations.test.ts",
     "preview": "vite preview",
-    "predeploy": "node scripts/copy-az-dicts.mjs",
+    "predeploy": "node scripts/check-production-env.mjs && node scripts/copy-az-dicts.mjs",
     "deploy": "vite build && npx gh-pages -d dist -b gh-pages"
   },
   "dependencies": {

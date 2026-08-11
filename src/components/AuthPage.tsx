@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getAdminEmail, signIn, signUp } from '../auth/auth';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
@@ -8,6 +9,17 @@ export default function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h2>Сервис временно недоступен</h2>
+          <div className="auth-error">В production-сборке отсутствует публичная конфигурация Supabase. Данные локальных отчётов не повреждены.</div>
+        </div>
+      </div>
+    );
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
