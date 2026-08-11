@@ -8,6 +8,7 @@ import type { DataSnapshot } from '../types';
 import { normalizeImportDate, addDays } from './dateUtils';
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
 import { getReportNetProfit } from './profitabilityCalculations';
+import { normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from './geographyHierarchy';
 
 let _version = 0;
 const _listeners = new Set<() => void>();
@@ -1119,7 +1120,8 @@ export async function importMappedData(
         }
       }
     } else if (source === 'geography') {
-      const recordsByKey = new Map(_geography.map(record => [`${record.date}|${record.product_id}|${record.region}|${record.area || ''}|${record.city || ''}`, record]));
+      _geography = selectDetailedGeographyRows(_geography);
+      const recordsByKey = new Map(_geography.map(record => [`${record.date}|${record.product_id}|${record.region}|${normalizeGeoArea(record.area)}|${normalizeGeoCity(record.city)}`, record]));
       for (const row of rows) {
         const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
         const rawSku = row.sku;
@@ -1131,8 +1133,8 @@ export async function importMappedData(
         enrichProductFromImport(product, row, source);
         if (rawSku && rawSku !== product.sku) registerAlias(rawSku, product.id);
         if (rawWbSku && rawWbSku !== product.sku && rawWbSku !== rawSku) registerAlias(rawWbSku, product.id);
-        const area = String(row.area || '').trim() || 'Без региона';
-        const city = String(row.city || '').trim() || 'Без населённого пункта';
+        const area = normalizeGeoArea(row.area);
+        const city = normalizeGeoCity(row.city);
         const record: GeographyOrderRecord = {
           date, product_id: product.id, region, area, city, delivery_hours: parseDeliveryHours(row.delivery_time),
           orders_total: toNumber(row.geo_orders_total), product_local_orders: toNumber(row.geo_product_local_orders),
@@ -1148,6 +1150,7 @@ export async function importMappedData(
         if (!maxDate || date > maxDate) maxDate = date;
         productIds.add(product.id);
       }
+      _geography = selectDetailedGeographyRows(_geography);
     } else if (source === 'niche_dynamics') {
       const nextRecords = [..._nicheDynamics];
       const recordIndexByKey = new Map(nextRecords.map((record, index) => [`${record.date}|${record.category}|${record.subject}`, index]));
