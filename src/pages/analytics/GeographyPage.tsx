@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
+import AnalyticsHelp from '../../components/AnalyticsHelp';
 import { getGeographyOrders, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
 import { getFilteredProductIds } from '../../data/productFilters';
 import { getCabinetExtraExpense } from '../../data/profitStore';
@@ -9,6 +10,7 @@ import { getReportNetProfit } from '../../data/profitabilityCalculations';
 import { appendToMap } from '../../data/collectionUtils';
 import { orderShare } from './geographyCalculations';
 import { hasKnownGeoArea, hasKnownGeoCity, normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from '../../data/geographyHierarchy';
+import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
 
 type ChartMetric = 'orders' | 'localOrders' | 'nonlocalOrders' | 'localShare' | 'deliveryHours' | 'stock';
@@ -96,6 +98,7 @@ export default function GeographyPage() {
   const [expandedDetailAreas, setExpandedDetailAreas] = useState<Set<string>>(() => new Set());
   const [detailSort, setDetailSort] = useState<DetailSort>('orders');
   const [detailPage, setDetailPage] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
   const [selectedGeo, setSelectedGeo] = useState<{ level: 'district' | 'area' | 'city'; district: string; area?: string; city?: string } | null>(null);
 
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
@@ -273,13 +276,15 @@ export default function GeographyPage() {
   const growthRegion = regionRows[0];
   const totalRegionAmount = topRegions.reduce((sum, item) => sum + item.value, 0);
 
+  if (showHelp) return <section className="geo-page"><AnalyticsHelp data={geographyHelp} onClose={() => setShowHelp(false)} /></section>;
+
   if (!records.length) return <section className="geo-page analytics-empty-page">
-    <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div></header>
+    <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
     <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>География пока недоступна</h2><p>Импортируйте отчёт «География заказов», чтобы увидеть показатели по округам, регионам и населённым пунктам.</p></article>
   </section>;
 
   return <section className="geo-page geo-page-v2">
-    <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div><small>Найдено товаров: <b>{formatNumber(filteredProductCount)}</b></small></header>
+    <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Локальность, скорость доставки и потенциал распределения запасов.</p></div><div className="analytics-page-header-actions"><small>Найдено товаров: <b>{formatNumber(filteredProductCount)}</b></small><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></div></header>
     <div className="geo-toolbar table-toolbar entry-analytics-toolbar page-card"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); setDetailPage(0); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinetId} categoryFilter={category} brandFilter={brandId} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinetId} onCategoryChange={setCategory} onBrandChange={setBrandId} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" afterControls={<div className="geo-location-filters"><select className="entry-context-select" aria-label="Федеральный округ" value={region} onChange={event => { setRegion(event.target.value); setArea(''); setCity(''); setDetailPage(0); }}><option value="">Все ФО</option>{regions.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Регион" value={area} onChange={event => { setArea(event.target.value); setCity(''); setDetailPage(0); }}><option value="">Все регионы</option>{areas.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Населённый пункт" value={city} onChange={event => { setCity(event.target.value); setDetailPage(0); }}><option value="">Все города</option>{cities.map(item => <option key={item} value={item}>{item}</option>)}</select></div>} /></div>
     <div className="geo-kpis">
       <article className="geo-kpi"><span>Локальные заказы</span><strong>{formatNumber(totals.localShare)}%</strong><small className={totals.localShare >= previousTotals.localShare ? 'geo-positive' : 'geo-negative'}>{previousTotals.total ? `${totals.localShare >= previousTotals.localShare ? '+' : ''}${formatNumber(totals.localShare - previousTotals.localShare)} п.п. к прошлому периоду` : 'Нет прошлого периода'}</small><i><b style={{ width: `${Math.min(100, totals.localShare)}%` }} /></i><small>{formatNumber(totals.local)} из {formatNumber(totals.total)} шт.</small></article>

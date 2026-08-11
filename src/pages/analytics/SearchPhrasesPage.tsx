@@ -1,8 +1,10 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
+import AnalyticsHelp from '../../components/AnalyticsHelp';
 import { getNicheDynamics, getSearchQueries, getVersion, subscribe } from '../../data/store';
 import type { SearchQueryRecord } from '../../types';
+import { searchQueriesHelp } from './analyticsHelpContent';
 
 type MetricKey = 'requests' | 'card_clicks' | 'carts' | 'orders' | 'order_amount' | 'products';
 type SortKey = 'requests' | 'cardClicks' | 'carts' | 'orders' | 'orderAmount' | 'products' | 'growth' | 'cartCr' | 'orderCr' | 'opportunity';
@@ -71,6 +73,7 @@ export default function SearchPhrasesPage() {
   const [metric, setMetric] = useState<MetricKey>('requests');
   const [sortKey, setSortKey] = useState<SortKey>('requests');
   const [page, setPage] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
 
   const categories = useMemo(() => [...new Set(records.map(row => row.category))].sort((a, b) => a.localeCompare(b, 'ru')), [records]);
   const nicheCheckByMonthSubject = useMemo(() => {
@@ -144,8 +147,10 @@ export default function SearchPhrasesPage() {
   }), [dates, filtered, start, end]);
   const trendChart = (data: { date: string; current: number; previous: number }[]) => <ResponsiveContainer width="100%" height={210}><LineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}><CartesianGrid stroke="#E7EDF5" strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={value => String(value).slice(5)} tick={{ fontSize: 9 }} tickLine={false} /><YAxis tickFormatter={metricFormat} tick={{ fontSize: 9 }} tickLine={false} width={56} /><Tooltip formatter={(value, name) => [metricFormat(Number(value)), name === 'current' ? 'Текущий период' : 'Предыдущий период']} /><Line type="monotone" dataKey="current" stroke="#2563EB" strokeWidth={2.3} dot={data.length <= 14 ? { r: 2 } : false} /><Line type="monotone" dataKey="previous" stroke="#94A3B8" strokeDasharray="5 4" strokeWidth={1.7} dot={false} /></LineChart></ResponsiveContainer>;
 
+  if (showHelp) return <section className="search-analytics-page search-analytics-v2"><AnalyticsHelp data={searchQueriesHelp} onClose={() => setShowHelp(false)} /></section>;
+
   return <section className="search-analytics-page search-analytics-v2">
-    <header className="analytics-page-title"><span>АНАЛИТИКА · ПОИСКОВЫЕ ЗАПРОСЫ</span><h1>Поисковые запросы</h1><p>Спрос, динамика ключей, конкуренция и возможности роста в поиске Wildberries.</p></header>
+    <header className="analytics-page-title analytics-page-heading-with-action"><div><span>АНАЛИТИКА · ПОИСКОВЫЕ ЗАПРОСЫ</span><h1>Поисковые запросы</h1><p>Спрос, динамика ключей, конкуренция и возможности роста в поиске Wildberries.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
     <div className="search-toolbar page-card"><DateRangeFilter label="Период" value={{ start, end }} onChange={setPeriod} maxDate={dates.at(-1) || end} /><select value={category} onChange={event => { setCategory(event.target.value); setPage(0); }}><option value="">Все предметы</option>{categories.map(item => <option key={item}>{item}</option>)}</select><input value={search} onChange={event => { setSearch(event.target.value.toLocaleLowerCase('ru-RU')); setPage(0); }} placeholder="Поиск по запросу" /><label>Метрика<select value={metric} onChange={event => setMetric(event.target.value as MetricKey)}>{Object.entries(metrics).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
 
     {!records.length ? <div className="search-empty page-card"><strong>Нет данных поисковых запросов</strong><span>Загрузите отчёт «Поисковые запросы ВБ» на странице импорта. Даты вида 19.07 будут дополнены выбранным годом отчёта.</span></div> : <>

@@ -16,8 +16,10 @@ import {
 } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
+import AnalyticsHelp from '../../components/AnalyticsHelp';
 import { getEntryPoints, getMemberships, getProducts, getVersion, subscribe } from '../../data/store';
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
+import { entryPointsHelp } from './analyticsHelpContent';
 import { appendToMap } from '../../data/collectionUtils';
 import type { EntryPointRecord, Product } from '../../types';
 
@@ -116,6 +118,7 @@ export default function EntryPointsPage() {
   const [topMetric, setTopMetric] = useState<AbsoluteMetric>('orders');
   const [structureLevel, setStructureLevel] = useState<'section' | 'point'>('point');
   const [structureMetric, setStructureMetric] = useState<'orders' | 'clicks' | 'profit'>('orders');
+  const [showHelp, setShowHelp] = useState(false);
   const [dayWindow, setDayWindow] = useState<7 | 14 | 30>(30);
 
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
@@ -369,14 +372,16 @@ export default function EntryPointsPage() {
   const structureDataKey = structureMetric;
   const structureMetricLabel = structureMetric === 'orders' ? 'Заказы' : structureMetric === 'clicks' ? 'Переходы' : 'Чистая прибыль';
 
+  if (showHelp) return <section className="entry-page"><AnalyticsHelp data={entryPointsHelp} onClose={() => setShowHelp(false)} /></section>;
+
   if (!rows.length) return <section className="entry-page analytics-empty-page">
-    <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></header>
+    <header className="entry-header analytics-page-heading-with-action"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
     <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>Точки входа пока недоступны</h2><p>Импортируйте отчёт «Точки входа», чтобы собрать структуру трафика и финансовую аналитику каналов.</p></article>
   </section>;
 
   return (
     <section className="entry-page entry-page-v2">
-      <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></header>
+      <header className="entry-header analytics-page-heading-with-action"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
 
       <article className="entry-card entry-filter-card table-toolbar entry-analytics-toolbar">
         <div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={availableDates.at(-1) || end} /></div>
