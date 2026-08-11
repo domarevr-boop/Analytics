@@ -7003,51 +7003,22 @@ thead .at-metric:last-child {
 .geo-segmented button.active { background: #ffe7a1; color: #453811; font-weight: 800; }
 
 .geo-locality-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.geo-map-card { min-height: 390px; }
-.geo-map-stage {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: repeat(4, 70px);
-  gap: 5px;
-  min-height: 300px;
-  margin-top: 12px;
-  padding: 8px 24px;
-  align-content: center;
-  background: radial-gradient(circle at 48% 48%, rgba(71, 139, 235, .08), transparent 58%);
-}
-.geo-map-stage button {
-  display: grid;
-  align-content: center;
-  gap: 3px;
-  min-width: 0;
-  border: 1px solid rgba(255,255,255,.75);
-  border-radius: 16px 22px 13px 20px;
-  background: rgba(16, 185, 129, var(--geo-strength));
-  color: #173b50;
-  padding: 7px;
-  box-shadow: inset 0 0 0 1px rgba(48, 109, 169, .06);
-  cursor: pointer;
-  transition: transform .12s ease, filter .12s ease;
-}
-.geo-map-stage button:hover { z-index: 2; filter: saturate(1.18); transform: translateY(-2px); }
-.geo-map-stage button span { overflow: hidden; font-size: 8px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.geo-map-stage button b { font-size: 12px; }
-.geo-map-stage button:nth-child(1) { grid-column: 2 / 5; grid-row: 2 / 4; }
-.geo-map-stage button:nth-child(2) { grid-column: 5 / 8; grid-row: 2 / 3; }
-.geo-map-stage button:nth-child(3) { grid-column: 5 / 7; grid-row: 3 / 5; }
-.geo-map-stage button:nth-child(4) { grid-column: 8 / 11; grid-row: 2 / 4; }
-.geo-map-stage button:nth-child(5) { grid-column: 1 / 3; grid-row: 1 / 2; }
-.geo-map-stage button:nth-child(6) { grid-column: 3 / 6; grid-row: 1 / 2; }
-.geo-map-stage button:nth-child(7) { grid-column: 10 / 13; grid-row: 1 / 3; }
-.geo-map-stage button:nth-child(8) { grid-column: 7 / 10; grid-row: 4 / 5; }
-.geo-map-stage button:nth-child(9) { grid-column: 10 / 12; grid-row: 4 / 5; }
-.geo-map-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 0 8px; color: #6f7f94; font-size: 8px; }
-.geo-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.geo-map-legend i { width: 9px; height: 9px; border-radius: 2px; background: #dce6f0; }
-.geo-map-legend .high { background: rgba(16,185,129,.9); }
-.geo-map-legend .medium { background: rgba(16,185,129,.55); }
-.geo-map-legend .low { background: rgba(16,185,129,.28); }
-.geo-map-legend .zero { background: rgba(59,130,246,.14); }
+.geo-map-card { min-height: 470px; overflow: hidden; }
+.geo-map-metric { display: grid; gap: 4px; min-width: 190px; color: #718097; font-size: 8px; }
+.geo-map-metric select { min-height: 32px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #18324d; padding: 0 9px; font: inherit; }
+.russia-metric-map { display: grid; gap: 10px; }
+.russia-metric-map-stage { position: relative; display: grid; min-height: 390px; place-items: center; overflow: hidden; padding: 4px 16px; background: radial-gradient(circle at 48% 50%, rgba(71,139,235,.08), transparent 62%); }
+.russia-metric-map-stage .map { width: 100% !important; max-width: 1040px; }
+.russia-metric-map-stage svg { display: block; width: 100%; height: auto; max-height: 430px; }
+.russia-metric-map-stage svg path { cursor: pointer; transition: filter .12s ease, opacity .12s ease; }
+.russia-metric-map-stage svg path:hover { filter: saturate(1.08); }
+.russia-map-tooltip { position: absolute; z-index: 8; display: grid; gap: 3px; min-width: 190px; max-width: 250px; padding: 10px 11px; border: 1px solid #dbe3ed; border-radius: 8px; background: rgba(255,255,255,.97); box-shadow: 0 10px 28px rgba(31,55,82,.14); color: #18324d; font-size: 9px; pointer-events: none; }
+.russia-map-tooltip strong { font-size: 11px; }
+.russia-map-tooltip small { color: #718097; font-size: 8px; }
+.russia-map-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 8px; color: #6f7f94; font-size: 8px; }
+.russia-map-scale span { display: inline-flex; align-items: center; gap: 4px; }
+.russia-map-scale i { width: 18px; height: 8px; border: 1px solid rgba(24,50,77,.06); border-radius: 2px; }
+.russia-map-unmatched { padding: 7px 8px; border-radius: 6px; background: #f7f9fc; color: #718097; font-size: 8px; }
 
 .geo-page-v2 .geo-plan-card { align-content: start; gap: 12px; }
 .geo-page-v2 .geo-plan-card label { gap: 6px; padding: 11px; border: 1px solid #e4eaf1; border-radius: 8px; background: #fbfcfe; font-size: 8px; }
@@ -7108,8 +7079,8 @@ thead .at-metric:last-child {
   .geo-location-filters select { flex: 1 1 150px; max-width: none; }
   .geo-detail-table-card .geo-card-head { align-items: stretch; }
   .geo-detail-sort select { width: 100%; }
-  .geo-map-stage { grid-template-rows: repeat(5, 60px); padding-inline: 4px; }
-  .geo-map-stage button span { font-size: 7px; }
+  .geo-map-metric { width: 100%; }
+  .russia-metric-map-stage { min-height: 250px; padding-inline: 0; }
   .geo-locality-cell { grid-template-columns: 36px 54px; }
 }
 

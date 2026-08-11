@@ -3,6 +3,7 @@ import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, Responsive
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
+import RussiaMetricMap, { type RussiaMapAreaRow } from '../../components/RussiaMetricMap';
 import { getGeographyOrders, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
 import { getFilteredProductIds } from '../../data/productFilters';
 import { getCabinetExtraExpense } from '../../data/profitStore';
@@ -16,6 +17,7 @@ import type { GeographyOrderRecord } from '../../types';
 type ChartMetric = 'orders' | 'localOrders' | 'nonlocalOrders' | 'localShare' | 'deliveryHours' | 'stock';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
 type DetailSort = 'orders' | 'orderedAmount' | 'share' | 'localShare' | 'deliveryHours';
+type MapMetric = 'orderedAmount' | 'deliveryHours' | 'netProfitShare' | 'orderedAmountShare';
 type DetailMetricRow = { orders: number; orderedAmount: number; share: number; localShare: number; deliveryHours: number | null };
 const DETAIL_PAGE_SIZE = 8;
 
@@ -25,6 +27,12 @@ const metricLabels: Record<ChartMetric, string> = {
 };
 const funnelMetricLabels: Record<FunnelMetric, string> = {
   orderedAmount: 'Сумма заказов, ₽', impressions: 'Показы', clicks: 'Клики', carts: 'Корзины', orders: 'Заказы, шт', ctr: 'CTR', cartCr: 'CR корзины', impressionOrderCr: 'CR показ → заказ',
+};
+const mapMetricLabels: Record<MapMetric, string> = {
+  orderedAmount: 'Сумма заказов',
+  deliveryHours: 'СВД',
+  netProfitShare: 'Доля ЧП',
+  orderedAmountShare: 'Доля суммы заказов',
 };
 const regionColors = ['#2563EB', '#38BDF8', '#10B981', '#34D399', '#8B5CF6', '#F59E0B', '#F97316'];
 type FinanceGeoRow = { region: string; area: string; city: string; orders: number; orderedAmount: number; netProfit: number; profitRevenue: number; profitability: number };
@@ -97,6 +105,7 @@ export default function GeographyPage() {
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(() => new Set());
   const [expandedDetailAreas, setExpandedDetailAreas] = useState<Set<string>>(() => new Set());
   const [detailSort, setDetailSort] = useState<DetailSort>('orders');
+  const [mapMetric, setMapMetric] = useState<MapMetric>('orderedAmount');
   const [detailPage, setDetailPage] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [selectedGeo, setSelectedGeo] = useState<{ level: 'district' | 'area' | 'city'; district: string; area?: string; city?: string } | null>(null);
@@ -213,10 +222,35 @@ export default function GeographyPage() {
         const cityFinance = sumFinance(financeByCity.get(`${areaKey}|${cityName}`) || []);
         return { name: cityName, orders: citySummary.total, localShare: citySummary.localShare, deliveryHours: citySummary.deliveryHours, orderedAmount: cityFinance.orderedAmount, profitability: cityFinance.profitability, share: orderShare(citySummary.total, baseTotals.total) };
       }).sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
-      return { key: areaKey, district: entry.district, name: entry.area, orders: summary.total, localShare: summary.localShare, deliveryHours: summary.deliveryHours, orderedAmount: finance.orderedAmount, profitability: finance.profitability, share: orderShare(summary.total, baseTotals.total), cities: citiesForArea };
+      return { key: areaKey, district: entry.district, name: entry.area, orders: summary.total, localShare: summary.localShare, deliveryHours: summary.deliveryHours, orderedAmount: finance.orderedAmount, netProfit: finance.netProfit, profitability: finance.profitability, share: orderShare(summary.total, baseTotals.total), cities: citiesForArea };
     });
     return rows.sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
   }, [filtered, financeLeaves, baseTotals.total, detailSort]);
+  const mapRows = useMemo<RussiaMapAreaRow[]>(() => {
+    const totalOrderedAmount = detailAreas.reduce((sum, row) => sum + row.orderedAmount, 0);
+    const totalNetProfit = detailAreas.reduce((sum, row) => sum + row.netProfit, 0);
+    return detailAreas.map(row => {
+      const netProfitShare = totalNetProfit ? row.netProfit / totalNetProfit * 100 : null;
+      const orderedAmountShare = totalOrderedAmount ? row.orderedAmount / totalOrderedAmount * 100 : 0;
+      const value = mapMetric === 'orderedAmount'
+        ? row.orderedAmount
+        : mapMetric === 'deliveryHours'
+          ? row.deliveryHours
+          : mapMetric === 'netProfitShare'
+            ? netProfitShare
+            : orderedAmountShare;
+      return {
+        area: row.name,
+        district: row.district,
+        value,
+        orders: row.orders,
+        orderedAmount: row.orderedAmount,
+        deliveryHours: row.deliveryHours,
+        netProfitShare,
+        orderedAmountShare,
+      };
+    });
+  }, [detailAreas, mapMetric]);
   const detailPageCount = Math.max(1, Math.ceil(detailAreas.length / DETAIL_PAGE_SIZE));
   const currentDetailPage = Math.min(detailPage, detailPageCount - 1);
   const visibleDetailAreas = detailAreas.slice(currentDetailPage * DETAIL_PAGE_SIZE, (currentDetailPage + 1) * DETAIL_PAGE_SIZE);
@@ -299,7 +333,24 @@ export default function GeographyPage() {
       </article>
     </div>
     <div className="geo-locality-grid">
-      <article className="geo-card geo-map-card"><div className="geo-card-head"><div><h2>Локальность по федеральным округам</h2><p>Top-9 по доле локальных заказов; полная детализация доступна ниже.</p></div></div><div className="geo-map-stage">{regionRows.slice(0, 9).map((row, index) => <button type="button" key={row.region} title={row.region} style={{ '--geo-strength': Math.max(.1, row.localShare / 100), '--geo-order': index } as React.CSSProperties} onClick={() => setSelectedGeo({ level: 'district', district: row.region })}><span>{row.region}</span><b>{formatNumber(row.localShare)}%</b></button>)}</div><div className="geo-map-legend"><span><i className="high" />&gt; 50%</span><span><i className="medium" />30–50%</span><span><i className="low" />10–30%</span><span><i className="zero" />&lt; 10%</span></div></article>
+      <article className="geo-card geo-map-card">
+        <div className="geo-card-head"><div><h2>Карта областей России</h2><p>Цвет показывает выбранную метрику. Нажмите на область, чтобы применить географический фильтр.</p></div><label className="geo-map-metric">Показатель<select value={mapMetric} onChange={event => setMapMetric(event.target.value as MapMetric)}>{Object.entries(mapMetricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        <RussiaMetricMap
+          rows={mapRows}
+          metricLabel={mapMetricLabels[mapMetric]}
+          formatValue={value => mapMetric === 'orderedAmount' ? `${formatNumber(value || 0)} ₽` : mapMetric === 'deliveryHours' ? formatHours(value) : value === null ? '—' : `${formatNumber(value)}%`}
+          inverse={mapMetric === 'deliveryHours'}
+          diverging={mapMetric === 'netProfitShare'}
+          onAreaSelect={selectedArea => {
+            const row = detailAreas.find(item => item.name === selectedArea);
+            if (!row) return;
+            setRegion(row.district);
+            setArea(row.name);
+            setCity('');
+            setDetailPage(0);
+          }}
+        />
+      </article>
     </div>
     <article className="geo-card geo-table-card"><div className="geo-card-head"><div><h2>Регионы</h2><p>Отсортировано по доле не локальных заказов.</p></div></div><div className="geo-table-wrap"><table className="geo-table geo-regions-table"><thead><tr><th>Регион</th><th>Заказы, шт</th><th>Локальность</th><th>Ср. время доставки</th><th>Покрытие СВД</th><th>Не локально</th><th>Потенциал</th></tr></thead><tbody>{visibleRegionRows.map(row => <tr key={row.region} className="geo-clickable-row" onClick={() => setSelectedGeo({ level: 'district', district: row.region })}><td>{row.region}</td><td>{formatNumber(row.total)}</td><td><div className="geo-locality-cell"><span>{formatNumber(row.localShare)}%</span><i><b style={{ width: `${Math.min(100, row.localShare)}%` }} /></i></div></td><td>{formatHours(row.deliveryHours)}</td><td>{formatNumber(row.total ? row.coveredOrders / row.total * 100 : 0)}%</td><td>{formatNumber(row.nonlocal)}</td><td>{formatNumber(Math.min(row.nonlocal, row.stock))}</td></tr>)}</tbody></table></div>{regionRows.length > 8 && <button type="button" className="geo-show-all" onClick={() => setShowAllRegions(value => !value)}>{showAllRegions ? 'Скрыть часть регионов' : 'Показать все регионы'}</button>}</article>
     <div className="geo-finance-grid">

@@ -15,6 +15,7 @@
     "deploy": "vite build && npx gh-pages -d dist -b gh-pages"
   },
   "dependencies": {
+    "@react-map/russia": "^1.0.9",
     "@supabase/supabase-js": "^2.108.2",
     "@types/react-datepicker": "^6.2.0",
     "az": "^0.2.3",
