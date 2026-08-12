@@ -1,4 +1,5 @@
-import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord } from '../types';
+import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord } from '../types';
+import type { CompetitorWorkbookData } from './competitorImport';
 import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
 import { repository } from '../database/db';
@@ -56,6 +57,10 @@ let _geographyPlans: GeographyPlanRecord[] = [];
 let _entryPoints: EntryPointRecord[] = [];
 let _searchQueries: SearchQueryRecord[] = [];
 let _nicheDynamics: NicheDynamicsRecord[] = [];
+let _competitorFunnel: CompetitorFunnelRecord[] = [];
+let _competitorSearch: CompetitorSearchRecord[] = [];
+let _competitorStocks: CompetitorStockRecord[] = [];
+let _competitorPositions: CompetitorPositionRecord[] = [];
 let _skuAliases = new Map<string, string>();
 let _lastPersistedSnapshot: DataSnapshot | null = null;
 function genId(prefix: string) { return `${prefix}-${crypto.randomUUID().slice(0, 8)}`; }
@@ -131,6 +136,10 @@ export function getGeographyPlans() { return cachedRows('geographyPlans', _geogr
 export function getEntryPoints() { return cachedRows('entryPoints', _entryPoints); }
 export function getSearchQueries() { return cachedRows('searchQueries', _searchQueries); }
 export function getNicheDynamics() { return cachedRows('nicheDynamics', _nicheDynamics); }
+export function getCompetitorFunnel() { return cachedRows('competitorFunnel', _competitorFunnel); }
+export function getCompetitorSearch() { return cachedRows('competitorSearch', _competitorSearch); }
+export function getCompetitorStocks() { return cachedRows('competitorStocks', _competitorStocks); }
+export function getCompetitorPositions() { return cachedRows('competitorPositions', _competitorPositions); }
 export function getImportLog() { return [...cachedRows('importLogs', _importLog)].reverse(); }
 
 export function getRelatedProductIds(productId: string): string[] {
@@ -155,6 +164,12 @@ function estimateRowBytes<T>(rows: T[], predicate: (row: T) => boolean, project:
 }
 
 export function getLocalDataVolumes(): Record<ImportSource, LocalDataVolume> {
+  const competitorVolumes = [
+    estimateRowBytes(_competitorFunnel, () => true, row => row),
+    estimateRowBytes(_competitorSearch, () => true, row => row),
+    estimateRowBytes(_competitorStocks, () => true, row => row),
+    estimateRowBytes(_competitorPositions, () => true, row => row),
+  ];
   return {
     wb_funnel: estimateRowBytes(_metrics, row => row.impressions !== 0 || row.clicks !== 0 || row.carts !== 0 || row.orders !== 0 || row.ordered_amount !== 0, row => ({ date: row.date, product_id: row.product_id, impressions: row.impressions, clicks: row.clicks, carts: row.carts, orders: row.orders, ordered_amount: row.ordered_amount, buyout_amount: row.buyout_amount, stock: row.stock })),
     xway: estimateRowBytes(_metrics, row => row.ad_impressions !== 0 || row.ad_clicks !== 0 || row.ad_orders !== 0 || row.ad_spend !== 0, row => ({ date: row.date, product_id: row.product_id, ad_impressions: row.ad_impressions, ad_clicks: row.ad_clicks, ad_orders: row.ad_orders, ad_spend: row.ad_spend })),
@@ -163,6 +178,7 @@ export function getLocalDataVolumes(): Record<ImportSource, LocalDataVolume> {
     entry_points: estimateRowBytes(_entryPoints, () => true, row => row),
     search_queries: estimateRowBytes(_searchQueries, () => true, row => row),
     niche_dynamics: estimateRowBytes(_nicheDynamics, () => true, row => row),
+    competitors: { bytes: competitorVolumes.reduce((sum, volume) => sum + volume.bytes, 0), estimated: competitorVolumes.some(volume => volume.estimated) },
     reviews: { bytes: 0, estimated: false },
     plan_template: estimateRowBytes(_monthlyPlans, () => true, row => row),
   };
@@ -188,6 +204,10 @@ export function exportV4Backup() {
       entryPoints: _entryPoints.map(item => ({ ...item })),
       searchQueries: _searchQueries.map(item => ({ ...item })),
       nicheDynamics: _nicheDynamics.map(item => ({ ...item })),
+      competitorFunnel: _competitorFunnel.map(item => ({ ...item })),
+      competitorSearch: _competitorSearch.map(item => ({ ...item })),
+      competitorStocks: _competitorStocks.map(item => ({ ...item })),
+      competitorPositions: _competitorPositions.map(item => ({ ...item })),
       importLogs: _importLog.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined })),
     },
   };
@@ -215,6 +235,10 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
     entryPoints: data.entryPoints || [],
     searchQueries: data.searchQueries || [],
     nicheDynamics: data.nicheDynamics || [],
+    competitorFunnel: data.competitorFunnel || [],
+    competitorSearch: data.competitorSearch || [],
+    competitorStocks: data.competitorStocks || [],
+    competitorPositions: data.competitorPositions || [],
     importLogs: data.importLogs || [],
   };
 
@@ -236,6 +260,10 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
   _entryPoints = snapshot.entryPoints;
   _searchQueries = snapshot.searchQueries;
   _nicheDynamics = snapshot.nicheDynamics;
+  _competitorFunnel = snapshot.competitorFunnel;
+  _competitorSearch = snapshot.competitorSearch;
+  _competitorStocks = snapshot.competitorStocks;
+  _competitorPositions = snapshot.competitorPositions;
   _importLog = snapshot.importLogs;
   _lastPersistedSnapshot = snapshot;
   buildAliasMap();
@@ -250,7 +278,12 @@ export async function deleteImportLogEntry(logId: string) {
 
   if (DEV) console.log('[store] deleteImportLogEntry:', log.id, log.fileName, log.source);
 
-  if (log.source === 'entry_points') {
+  if (log.source === 'competitors') {
+    _competitorFunnel = [];
+    _competitorSearch = [];
+    _competitorStocks = [];
+    _competitorPositions = [];
+  } else if (log.source === 'entry_points') {
     const idSet = new Set(log.productIds || []);
     _entryPoints = _entryPoints.filter(record => !idSet.has(record.product_id) || (log.dataStart && record.date < log.dataStart) || (log.dataEnd && record.date > log.dataEnd));
   } else if (log.source === 'geography') {
@@ -289,7 +322,8 @@ export async function deleteImportLogEntry(logId: string) {
 
   _importLog = _importLog.filter(l => l.id !== logId);
   const deletedStores: DataStoreName[] = ['importLogs'];
-  if (log.source === 'entry_points') deletedStores.push('entryPoints');
+  if (log.source === 'competitors') deletedStores.push('competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions');
+  else if (log.source === 'entry_points') deletedStores.push('entryPoints');
   else if (log.source === 'geography') deletedStores.push('geography');
   else if (log.source === 'profitability') deletedStores.push('profitability');
   else deletedStores.push('metrics');
@@ -306,7 +340,7 @@ export async function deleteImportLogEntry(logId: string) {
         }
       }
     }
-  } else if (log.source !== 'geography' && log.source !== 'entry_points' && log.productIds && log.productIds.length > 0) {
+  } else if (log.source !== 'geography' && log.source !== 'entry_points' && log.source !== 'competitors' && log.productIds && log.productIds.length > 0) {
     // Удаляем метрики из Supabase
     try {
       await repository.deleteMetrics?.({
@@ -750,6 +784,7 @@ export function detectSourceFromFilename(fileName: string): ImportSource {
   if (normalizedName.includes('отзыв') || normalizedName.includes('review')) return 'reviews';
   if (normalizedName.includes('поисков') || normalizedName.includes('search quer')) return 'search_queries';
   if (normalizedName.includes('динамик') && normalizedName.includes('ниш')) return 'niche_dynamics';
+  if (normalizedName.includes('конкурент')) return 'competitors';
   const n = fileName.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
   if (n.includes('wb') || n.includes('funnel') || n.includes('воронк')) return 'wb_funnel';
   if (n.includes('xway') || n.includes('реклам') || n.includes('ad') || n.includes('adv')) return 'xway';
@@ -777,6 +812,7 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   entry_points: new Set([]),
   search_queries: new Set([]),
   niche_dynamics: new Set([]),
+  competitors: new Set([]),
   reviews: new Set([]),
   plan_template: new Set([]),
 };
@@ -800,6 +836,11 @@ function getImportStoreNames(source: ImportSource, entryPointsChanged: boolean):
     stores.add('searchQueries');
   } else if (source === 'niche_dynamics') {
     stores.add('nicheDynamics');
+  } else if (source === 'competitors') {
+    stores.add('competitorFunnel');
+    stores.add('competitorSearch');
+    stores.add('competitorStocks');
+    stores.add('competitorPositions');
   } else {
     stores.add('metrics');
   }
@@ -963,6 +1004,10 @@ export function clearMetricsAndImports(): void {
   _entryPoints = [];
   _searchQueries = [];
   _nicheDynamics = [];
+  _competitorFunnel = [];
+  _competitorSearch = [];
+  _competitorStocks = [];
+  _competitorPositions = [];
   _monthlyPlans = [];
   saveMonthlyPlansBackup();
   persistAll();
@@ -984,11 +1029,58 @@ export function resetAllData(): void {
   _geography = [];
   _geographyPlans = [];
   _entryPoints = [];
+  _searchQueries = [];
+  _nicheDynamics = [];
+  _competitorFunnel = [];
+  _competitorSearch = [];
+  _competitorStocks = [];
+  _competitorPositions = [];
   _skuAliases.clear();
   _nextLogId = 1;
   seed();
   persistAll();
   notify(false);
+}
+
+export async function importCompetitorWorkbook(fileName: string, data: CompetitorWorkbookData): Promise<ImportFileLog> {
+  const log: ImportFileLog = {
+    id: `log-${_nextLogId++}`,
+    fileName,
+    source: 'competitors',
+    rowCount: data.funnel.length + data.search.length + data.stocks.length + data.positions.length,
+    uploadedAt: new Date().toISOString(),
+    status: 'processing',
+    dataStart: data.dateStart,
+    dataEnd: data.dateEnd,
+  };
+  const previous = {
+    funnel: _competitorFunnel,
+    search: _competitorSearch,
+    stocks: _competitorStocks,
+    positions: _competitorPositions,
+    logs: _importLog,
+  };
+  _importLog = [..._importLog.filter(item => item.source !== 'competitors'), log];
+  try {
+    _competitorFunnel = data.funnel.map(row => ({ ...row }));
+    _competitorSearch = data.search.map(row => ({ ...row }));
+    _competitorStocks = data.stocks.map(row => ({ ...row }));
+    _competitorPositions = data.positions.map(row => ({ ...row }));
+    log.status = 'success';
+    const stores: DataStoreName[] = ['competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions', 'importLogs'];
+    await persistStores(stores);
+    notify(false, stores);
+  } catch (error) {
+    _competitorFunnel = previous.funnel;
+    _competitorSearch = previous.search;
+    _competitorStocks = previous.stocks;
+    _competitorPositions = previous.positions;
+    _importLog = previous.logs;
+    log.status = 'error';
+    log.error = error instanceof Error ? error.message : String(error);
+    notify(false, ['competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions', 'importLogs']);
+  }
+  return log;
 }
 
 export async function importMappedData(
@@ -1575,6 +1667,10 @@ function cloneStore(store: DataStoreName): DataSnapshot[DataStoreName] {
     case 'entryPoints': return _entryPoints.map(item => ({ ...item }));
     case 'searchQueries': return _searchQueries.map(item => ({ ...item }));
     case 'nicheDynamics': return _nicheDynamics.map(item => ({ ...item }));
+    case 'competitorFunnel': return _competitorFunnel.map(item => ({ ...item }));
+    case 'competitorSearch': return _competitorSearch.map(item => ({ ...item }));
+    case 'competitorStocks': return _competitorStocks.map(item => ({ ...item }));
+    case 'competitorPositions': return _competitorPositions.map(item => ({ ...item }));
     case 'importLogs': return _importLog.map(item => ({
       ...item,
       productIds: item.productIds ? [...item.productIds] : undefined,
@@ -1655,6 +1751,10 @@ export async function initStore() {
     _entryPoints = snapshot.entryPoints.map(item => ({ ...item }));
     _searchQueries = snapshot.searchQueries;
     _nicheDynamics = snapshot.nicheDynamics;
+    _competitorFunnel = snapshot.competitorFunnel;
+    _competitorSearch = snapshot.competitorSearch;
+    _competitorStocks = snapshot.competitorStocks;
+    _competitorPositions = snapshot.competitorPositions;
     _importLog = snapshot.importLogs.map(item => ({ ...item, productIds: item.productIds ? [...item.productIds] : undefined }));
     restoreNextId();
 

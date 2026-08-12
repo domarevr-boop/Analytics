@@ -65,8 +65,12 @@ function coverageFromLogs(source: ImportSource, label: string, logs: ImportFileL
 
 export default function DataCoverage() {
   const version = useSyncExternalStore(subscribe, getVersion);
-  const volumes = useMemo(() => getLocalDataVolumes(), [version]);
+  const volumes = useMemo(() => {
+    void version;
+    return getLocalDataVolumes();
+  }, [version]);
   const rows = useMemo(() => {
+    void version;
     const logs = getImportLog();
     const planIntervals: DayInterval[] = [];
     for (const month of new Set(getMonthlyPlans().map(record => record.month))) {
@@ -87,6 +91,7 @@ export default function DataCoverage() {
       coverageFromLogs('entry_points', 'Точки входа', logs),
       coverageFromLogs('search_queries', 'Поисковые запросы WB', logs),
       coverageFromLogs('niche_dynamics', 'Динамика ниши', logs),
+      coverageFromLogs('competitors', 'Конкуренты', logs),
       coverageFromIntervals('plan_template', 'План', planIntervals),
     ];
   }, [version]);

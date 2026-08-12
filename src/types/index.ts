@@ -240,7 +240,62 @@ export interface NicheDynamicsRecord {
   avg_rating: number;
 }
 
-export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'reviews' | 'plan_template';
+export interface CompetitorFunnelRecord {
+  date: string;
+  position: number;
+  wb_article: string;
+  seller: string;
+  brand: string;
+  ordered_amount: number;
+  discounted_price: number;
+  buyer_median_price: number;
+  avg_search_position: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  carts: number;
+  cart_conversion: number;
+  orders: number;
+  order_conversion: number;
+  buyouts: number;
+  buyout_rate: number;
+}
+
+export interface CompetitorSearchRecord {
+  date: string;
+  wb_article: string;
+  query: string;
+  requests: number;
+  requests_previous: number;
+  cart_conversion: number;
+  cart_conversion_previous: number;
+  order_conversion: number;
+  order_conversion_previous: number;
+}
+
+export interface CompetitorStockRecord {
+  date: string;
+  name: string;
+  wb_article: string;
+  subject: string;
+  brand: string;
+  region: string;
+  warehouse: string;
+  stock: number;
+  in_transit_to_customer: number;
+  in_transit_from_customer: number;
+  avg_daily_orders: number;
+}
+
+export interface CompetitorPositionRecord {
+  date: string;
+  position: number;
+  wb_article: string;
+  seller: string;
+  brand: string;
+}
+
+export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'competitors' | 'reviews' | 'plan_template';
 
 export interface ImportFileLog {
   id: string;
@@ -272,6 +327,10 @@ export interface DataSnapshot {
   entryPoints: EntryPointRecord[];
   searchQueries: SearchQueryRecord[];
   nicheDynamics: NicheDynamicsRecord[];
+  competitorFunnel: CompetitorFunnelRecord[];
+  competitorSearch: CompetitorSearchRecord[];
+  competitorStocks: CompetitorStockRecord[];
+  competitorPositions: CompetitorPositionRecord[];
   importLogs: ImportFileLog[];
 }
 
@@ -290,6 +349,10 @@ export interface DataChanges {
   entryPoints: ChangeSet<EntryPointRecord>;
   searchQueries: ChangeSet<SearchQueryRecord>;
   nicheDynamics: ChangeSet<NicheDynamicsRecord>;
+  competitorFunnel: ChangeSet<CompetitorFunnelRecord>;
+  competitorSearch: ChangeSet<CompetitorSearchRecord>;
+  competitorStocks: ChangeSet<CompetitorStockRecord>;
+  competitorPositions: ChangeSet<CompetitorPositionRecord>;
   importLogs: ChangeSet<ImportFileLog>;
 }
 

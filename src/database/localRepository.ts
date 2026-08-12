@@ -1,8 +1,8 @@
-import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, ImportFileLog, SaveResult } from '../types';
+import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
 
 const DB_NAME = 'analytics-db';
-const DB_VERSION = 5;
-const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'import_logs'] as const;
+const DB_VERSION = 6;
+const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -17,6 +17,7 @@ function openDB(): Promise<IDBDatabase> {
           if (s === 'entry_points') store.createIndex('date', 'date', { unique: false });
           if (s === 'search_queries') store.createIndex('date', 'date', { unique: false });
           if (s === 'niche_dynamics') store.createIndex('date', 'date', { unique: false });
+          if (s.startsWith('competitor_')) store.createIndex('date', 'date', { unique: false });
           if (s === 'products') store.createIndex('sku', 'sku', { unique: false });
         }
       }
@@ -57,6 +58,10 @@ function getKey(store: string, obj: Record<string, unknown>): IDBValidKey {
     case 'entry_points': return [obj.date, obj.product_id, obj.section, obj.entry_point] as IDBValidKey;
     case 'search_queries': return [obj.date, obj.query, obj.category] as IDBValidKey;
     case 'niche_dynamics': return [obj.date, obj.category, obj.subject] as IDBValidKey;
+    case 'competitor_funnel': return [obj.date, obj.wb_article] as IDBValidKey;
+    case 'competitor_search': return [obj.date, obj.wb_article, obj.query] as IDBValidKey;
+    case 'competitor_stocks': return [obj.date, obj.wb_article, obj.region || '', obj.warehouse || ''] as IDBValidKey;
+    case 'competitor_positions': return [obj.date, obj.wb_article] as IDBValidKey;
     default: return obj.id as string;
   }
 }
@@ -82,7 +87,8 @@ export class LocalRepository implements IDataRepository {
     const tx = getTX(db, [...STORES], 'readonly');
     const [
       cabinets, brands, groups, products, memberships, metrics,
-      plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, importLogs,
+      plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics,
+      competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs,
     ] = await Promise.all([
       getAll<Cabinet>(tx.objectStore('cabinets')),
       getAll<Brand>(tx.objectStore('brands')),
@@ -98,10 +104,14 @@ export class LocalRepository implements IDataRepository {
       getAll<EntryPointRecord>(tx.objectStore('entry_points')),
       getAll<SearchQueryRecord>(tx.objectStore('search_queries')),
       getAll<NicheDynamicsRecord>(tx.objectStore('niche_dynamics')),
+      getAll<CompetitorFunnelRecord>(tx.objectStore('competitor_funnel')),
+      getAll<CompetitorSearchRecord>(tx.objectStore('competitor_search')),
+      getAll<CompetitorStockRecord>(tx.objectStore('competitor_stocks')),
+      getAll<CompetitorPositionRecord>(tx.objectStore('competitor_positions')),
       getAll<ImportFileLog>(tx.objectStore('import_logs')),
     ]);
 
-    return { cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, importLogs };
+    return { cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs };
   }
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
@@ -121,6 +131,10 @@ export class LocalRepository implements IDataRepository {
       { store: 'entry_points', rows: data.entryPoints as unknown as DBRecord[] },
       { store: 'search_queries', rows: data.searchQueries as unknown as DBRecord[] },
       { store: 'niche_dynamics', rows: data.nicheDynamics as unknown as DBRecord[] },
+      { store: 'competitor_funnel', rows: data.competitorFunnel as unknown as DBRecord[] },
+      { store: 'competitor_search', rows: data.competitorSearch as unknown as DBRecord[] },
+      { store: 'competitor_stocks', rows: data.competitorStocks as unknown as DBRecord[] },
+      { store: 'competitor_positions', rows: data.competitorPositions as unknown as DBRecord[] },
       { store: 'import_logs', rows: data.importLogs as unknown as DBRecord[] },
     ];
 
@@ -172,6 +186,10 @@ export class LocalRepository implements IDataRepository {
           : storeName === 'entry_points' ? 'entryPoints'
           : storeName === 'search_queries' ? 'searchQueries'
           : storeName === 'niche_dynamics' ? 'nicheDynamics'
+          : storeName === 'competitor_funnel' ? 'competitorFunnel'
+          : storeName === 'competitor_search' ? 'competitorSearch'
+          : storeName === 'competitor_stocks' ? 'competitorStocks'
+          : storeName === 'competitor_positions' ? 'competitorPositions'
           : storeName === 'import_logs' ? 'importLogs'
           : storeName;
         const changes = data[changeName] as unknown as { upserts: DBRecord[]; deletes: IDBValidKey[] };

@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import { importMappedData, getImportLog, subscribe, getVersion, deleteImportLogEntry } from '../data/store';
+import { importCompetitorWorkbook, importMappedData, getImportLog, subscribe, getVersion, deleteImportLogEntry } from '../data/store';
 import { parseFile } from '../data/parseFile';
+import { parseCompetitorWorkbook } from '../data/competitorImport';
+import type { CompetitorWorkbookData } from '../data/competitorImport';
 import type { ParsedFile } from '../data/parseFile';
 import type { ColumnMapping } from '../data/columnMapping';
 import type { ImportSource, ImportFileLog } from '../types';
@@ -13,6 +15,7 @@ const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
   search_queries: 'Поисковые запросы WB',
   niche_dynamics: 'Динамика ниши',
+  competitors: 'Конкуренты',
   geography: 'География заказов',
   wb_funnel: 'WB Воронка',
   xway: 'XWay Реклама',
@@ -25,6 +28,7 @@ const SOURCE_COLORS: Record<string, string> = {
   reviews: '#FFF7D6',
   search_queries: '#EAF2FF',
   niche_dynamics: '#E9F7F2',
+  competitors: '#E8F5FF',
   geography: '#DBEAFE',
   wb_funnel: '#F3F4F6',
   xway: '#F0FDF4',
@@ -58,6 +62,8 @@ export default function ImportPage() {
   const [progress, setProgress] = useState('');
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [competitorPreview, setCompetitorPreview] = useState<CompetitorWorkbookData | null>(null);
+  const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const importRunningRef = useRef(false);
 
@@ -72,6 +78,17 @@ export default function ImportPage() {
     setProgress(`Чтение ${file.name}...`);
     try {
       await waitForPaint();
+      if (ext === 'xlsx' || ext === 'xls') {
+        try {
+          const competitorData = await parseCompetitorWorkbook(file);
+          setCompetitorPreview(competitorData);
+          setCompetitorYear(competitorData.inferredYear || new Date().getFullYear());
+          setSelectedFile(file);
+          return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
+        }
+      }
       const result = await parseFile(file);
       if (DEV) console.log('[import-ui] parsed:', result.fileType, result.totalRows, 'rows,', result.headers.length, 'cols, headers:', result.headers);
       setParsed(result);
@@ -84,6 +101,28 @@ export default function ImportPage() {
       setProgress('');
     }
   }, []);
+
+  const handleCompetitorImport = useCallback(async () => {
+    if (!selectedFile || !competitorPreview || importRunningRef.current) return;
+    importRunningRef.current = true;
+    setLoading(true);
+    setProgress('Проверка четырёх листов и сохранение...');
+    try {
+      await waitForPaint();
+      const data = await parseCompetitorWorkbook(selectedFile, competitorYear);
+      const result = await importCompetitorWorkbook(selectedFile.name, data);
+      if (result.status === 'error') throw new Error(result.error || 'Не удалось сохранить данные конкурентов');
+      alert(`Импорт конкурентов завершён. Загружено ${result.rowCount} строк из 4 листов.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка импорта конкурентов');
+    } finally {
+      importRunningRef.current = false;
+      setLoading(false);
+      setProgress('');
+      setCompetitorPreview(null);
+      setSelectedFile(null);
+    }
+  }, [selectedFile, competitorPreview, competitorYear]);
 
   const handleConfirmMapping = useCallback(async (
     source: ImportSource,
@@ -215,6 +254,29 @@ export default function ImportPage() {
             onConfirm={handleConfirmMapping}
             onCancel={handleCancelMapping}
           />
+        </div>
+      )}
+      {competitorPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header">
+                <div className="import-mapper-header-info"><h3>Импорт конкурентов: {selectedFile?.name}</h3><span className="import-mapper-summary">Все 4 листа распознаны</span></div>
+                <span className="import-mapper-date"><label>Год отчёта:</label><input type="number" className="daterange-input" min="2000" max="2100" value={competitorYear} onChange={event => setCompetitorYear(Number(event.target.value))} /></span>
+              </div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{competitorPreview.dateStart} — {competitorPreview.dateEnd}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Заказы и воронка</span><strong>{competitorPreview.funnel.length}</strong><small>{competitorPreview.sheetNames.funnel}</small></article>
+                  <article><span>Поисковые запросы</span><strong>{competitorPreview.search.length}</strong><small>{competitorPreview.sheetNames.search}</small></article>
+                  <article><span>Склады и остатки</span><strong>{competitorPreview.stocks.length}</strong><small>{competitorPreview.sheetNames.stocks}</small></article>
+                  <article><span>Позиции ТОП-50</span><strong>{competitorPreview.positions.length}</strong><small>{competitorPreview.sheetNames.positions}</small></article>
+                </div>
+                <p className="import-preview-note">Импорт заменит только предыдущий набор данных страницы «Конкуренты». Остальные локальные отчёты и отзывы на сервере не изменятся.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setCompetitorPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" onClick={handleCompetitorImport}>Импортировать 4 листа</button></div>
+            </div>
+          </div>
         </div>
       )}
 

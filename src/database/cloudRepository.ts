@@ -158,6 +158,10 @@ export class CloudRepository implements IDataRepository {
       entryPoints: [],
       searchQueries: [],
       nicheDynamics: [],
+      competitorFunnel: [],
+      competitorSearch: [],
+      competitorStocks: [],
+      competitorPositions: [],
       importLogs: (importLogs.data || []).map(r => toImportLog(r as ImportLogRow)),
     };
   }
