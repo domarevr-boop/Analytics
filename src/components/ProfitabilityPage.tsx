@@ -1,339 +1,178 @@
-import { useState, useMemo, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, UNGROUPED_GROUP_ID, getMetrics, getProfitabilityRecords } from '../data/store';
-import { subscribeExtraExpenses, getExtraExpensesVersion, getExtraExpenses, setExtraExpense } from '../data/profitStore';
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getMetrics, getProfitabilityRecords } from '../data/store';
+import { subscribeExtraExpenses, getExtraExpensesVersion, getExtraExpenses, getCabinetExtraExpense, setExtraExpense } from '../data/profitStore';
 import FilterBar from './FilterBar';
 import type { FilterBarProps } from './FilterBar';
-import { getFilteredProductIds, hasProductFilters, isUngroupedFilter } from '../data/productFilters';
+import { getFilteredProductIds } from '../data/productFilters';
 import { getReportGrossProfit } from '../data/profitabilityCalculations';
 import DateRangeFilter from './DateRangeFilter';
 import type { DatePeriod } from '../data/mock';
 
-function pad(n: number) { return n < 10 ? '0' + n : '' + n; }
-function todayDate() {
-  const date = new Date();
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-function monthStart(m: string) { return m + '-01'; }
-function monthEnd(m: string) { const d = new Date(+m.split('-')[0], +m.split('-')[1], 0); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+const pad = (value: number) => String(value).padStart(2, '0');
+const monthOf = (date: string) => date.slice(0, 7);
+const monthStart = (month: string) => `${month}-01`;
+const monthEnd = (month: string) => { const [year, number] = month.split('-').map(Number); return `${year}-${pad(number)}-${pad(new Date(year, number, 0).getDate())}`; };
+const fmt = (value: number) => Math.round(value).toLocaleString('ru-RU');
+const fmt1 = (value: number) => value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+const monthLabel = (month: string) => new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(new Date(`${month}-01T00:00:00`));
 
-function f(n: number) { return Math.round(n).toLocaleString('ru-RU'); }
-function f1(n: number) { return n.toLocaleString('ru-RU', { maximumFractionDigits: 1 }); }
+type Granularity = 'day' | 'week' | 'month';
+type StatusFilter = 'all' | 'profitable' | 'below' | 'loss' | 'no-sales';
+type NodeType = 'cabinet' | 'category' | 'group' | 'product';
+type FinanceValue = { revenue: number; grossProfit: number; expenseAmount: number; netProfit: number };
+type ProfitNode = FinanceValue & { id: string; type: NodeType; name: string; sku?: string; parent: string | null; depth: number; cabinetId: string };
 
-interface ProfitNode {
-  id: string;
-  type: 'cabinet' | 'group' | 'product';
-  name: string;
-  sku?: string;
-  depth: number;
-  parent: string | null;
-  revenue: number;
-  profit: number;
-  cabinetId: string;
-}
+const emptyFinance = (): FinanceValue => ({ revenue: 0, grossProfit: 0, expenseAmount: 0, netProfit: 0 });
+const addFinance = (target: FinanceValue, source: FinanceValue) => { target.revenue += source.revenue; target.grossProfit += source.grossProfit; target.expenseAmount += source.expenseAmount; target.netProfit += source.netProfit; };
+const profitabilityOf = (value: FinanceValue) => value.revenue ? value.netProfit / value.revenue * 100 : 0;
+const marginOf = (value: FinanceValue) => value.revenue ? value.grossProfit / value.revenue * 100 : 0;
+const previousPeriod = (period: DatePeriod): DatePeriod => {
+  const start = new Date(`${period.start}T00:00:00`);
+  const end = new Date(`${period.end}T00:00:00`);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  const previousEnd = new Date(start); previousEnd.setDate(previousEnd.getDate() - 1);
+  const previousStart = new Date(previousEnd); previousStart.setDate(previousStart.getDate() - days + 1);
+  const iso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return { start: iso(previousStart), end: iso(previousEnd) };
+};
+const deltaPct = (current: number, previous: number) => previous ? (current - previous) / Math.abs(previous) * 100 : current ? 100 : 0;
+const bucketDate = (date: string, granularity: Granularity) => {
+  if (granularity === 'day') return date;
+  if (granularity === 'month') return date.slice(0, 7);
+  const value = new Date(`${date}T00:00:00`); const day = value.getDay() || 7; value.setDate(value.getDate() - day + 1);
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+};
 
 export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
-  const eeVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
-
-  const now = new Date();
-  const curMonth = now.getFullYear() + '-' + pad(now.getMonth() + 1);
-  const [period, setPeriod] = useState<DatePeriod>(() => ({
-    start: monthStart(curMonth),
-    end: monthEnd(curMonth),
-  }));
-  const currentMonth = period.start.slice(0, 7);
-  const extraExpenses = useMemo(() => getExtraExpenses(currentMonth), [eeVersion, currentMonth]);
-
-  const tree = useMemo(() => {
-    const cabinets = getCabinets();
-    const groups = getGroups();
-    const products = getProducts();
-    const memberships = getMemberships();
-    const allMetrics = getMetrics();
-    const profitabilityRecords = getProfitabilityRecords();
-    const filteredProductIds = getFilteredProductIds(products, memberships, filterProps);
-    const filteredProducts = products.filter(product => filteredProductIds.has(product.id));
-    const filtering = hasProductFilters(filterProps);
-
-    // The profitability report is the source of truth for revenue and margin.
-    // Daily metrics remain only a fallback for months without that report.
-    const prodMap = new Map<string, { revenue: number; profit: number }>();
-    const reportProductIds = new Set<string>();
-    for (const record of profitabilityRecords) {
-      if (record.period_end < period.start || record.period_start > period.end) continue;
-      const cur = prodMap.get(record.product_id) || { revenue: 0, profit: 0 };
-      cur.revenue += record.profit_revenue;
-      cur.profit += getReportGrossProfit(record);
-      prodMap.set(record.product_id, cur);
-      reportProductIds.add(record.product_id);
-    }
-    for (const m of allMetrics) {
-      if (reportProductIds.has(m.product_id)) continue;
-      if (m.date >= period.start && m.date <= period.end) {
-        const cur = prodMap.get(m.product_id) || { revenue: 0, profit: 0 };
-        const revenue = m.profit_revenue || 0;
-        const profit = revenue - (m.cost || 0) - (m.agent_fee || 0) - (m.logistics_cost || 0) - (m.marketing_cost || 0) - (m.storage_cost || 0);
-        cur.revenue += revenue;
-        cur.profit += profit;
-        prodMap.set(m.product_id, cur);
-      }
-    }
-
-    const ungroupedIds = new Set(
-      memberships.filter(m => m.group_id === UNGROUPED_GROUP_ID).map(m => m.product_id)
-    );
-
-    const nodes: ProfitNode[] = [];
-    const productSet = new Set<string>();
-
-    const addProductNodes = (parentId: string, productList: typeof products, depth: number) => {
-      for (const pr of productList) {
-        productSet.add(pr.id);
-        const data = prodMap.get(pr.id) || { revenue: 0, profit: 0 };
-        nodes.push({
-          id: pr.id, type: 'product', name: pr.name, sku: pr.sku,
-          depth, parent: parentId,
-          revenue: data.revenue, profit: data.profit,
-          cabinetId: pr.cabinet_id,
-        });
-      }
-    };
-
-    for (const cab of cabinets) {
-      if (filterProps.cabinetFilter && cab.id !== filterProps.cabinetFilter) continue;
-      if (filtering && !filteredProducts.some(product => product.cabinet_id === cab.id)) continue;
-
-      const cabGroups = groups.filter(group =>
-        group.cabinet_id === cab.id
-        && (!filterProps.groupFilter || group.id === filterProps.groupFilter)
-      );
-      const groupData: { grp: typeof groups[0]; rev: number; prof: number }[] = [];
-
-      for (const grp of cabGroups) {
-        let rev = 0, prof = 0;
-        const grpProducts = filteredProducts.filter(p =>
-          memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
-        );
-        if (filtering && grpProducts.length === 0) continue;
-        addProductNodes(grp.id, grpProducts, 2);
-        for (const p of grpProducts) {
-          const d = prodMap.get(p.id) || { revenue: 0, profit: 0 };
-          rev += d.revenue; prof += d.profit;
-        }
-        groupData.push({ grp, rev, prof });
-      }
-
-      groupData.sort((a, b) => b.rev - a.rev);
-
-      let cabRev = 0, cabProf = 0;
-      for (const { grp, rev, prof } of groupData) {
-        nodes.push({
-          id: grp.id, type: 'group', name: grp.name,
-          depth: 1, parent: cab.id,
-          revenue: rev, profit: prof, cabinetId: cab.id,
-        });
-        cabRev += rev; cabProf += prof;
-      }
-
-      const ungroupedProducts = filteredProducts.filter(p =>
-        p.cabinet_id === cab.id
-        && !productSet.has(p.id)
-        && (ungroupedIds.has(p.id) || !memberships.some(membership => membership.product_id === p.id))
-      );
-      if ((!filterProps.groupFilter || isUngroupedFilter(filterProps.groupFilter)) && ungroupedProducts.length > 0) {
-        let rev = 0, prof = 0;
-        addProductNodes(cab.id + '-' + UNGROUPED_GROUP_ID, ungroupedProducts, 2);
-        for (const p of ungroupedProducts) {
-          const d = prodMap.get(p.id) || { revenue: 0, profit: 0 };
-          rev += d.revenue; prof += d.profit;
-        }
-        nodes.push({
-          id: cab.id + '-' + UNGROUPED_GROUP_ID, type: 'group',
-          name: 'Без склейки', depth: 1, parent: cab.id,
-          revenue: rev, profit: prof, cabinetId: cab.id,
-        });
-        cabRev += rev; cabProf += prof;
-      }
-
-      nodes.push({
-        id: cab.id, type: 'cabinet', name: cab.name,
-        depth: 0, parent: null,
-        revenue: cabRev, profit: cabProf, cabinetId: cab.id,
-      });
-    }
-
-    return nodes;
-  }, [version, period, filterProps]);
-
-  const summary = useMemo(() => {
-    const cabs = tree.filter(n => n.type === 'cabinet');
-    let totalRev = 0, totalProf = 0;
-    for (const c of cabs) {
-      totalRev += c.revenue;
-      totalProf += c.profit;
-    }
-    const margin = totalRev ? (totalProf / totalRev) * 100 : 0;
-    let weightedEeSum = 0, weightedEeRev = 0;
-    for (const c of cabs) {
-      const ee = extraExpenses[c.cabinetId] || 0;
-      if (ee) {
-        weightedEeRev += c.revenue;
-        weightedEeSum += c.revenue * ee;
-      }
-    }
-    const weightedEe = weightedEeRev ? weightedEeSum / weightedEeRev : 0;
-    const profitability = margin - weightedEe;
-    const netProfit = profitability * totalRev / 100;
-    return { revenue: totalRev, profit: totalProf, margin, extraExpenses: weightedEe, profitability, netProfit };
-  }, [tree, extraExpenses]);
-
+  const expenseVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
+  const products = getProducts();
+  const memberships = getMemberships();
+  const groups = getGroups();
+  const cabinets = getCabinets();
+  const records = getProfitabilityRecords();
+  const metrics = getMetrics();
+  const availableMonths = useMemo(() => [...new Set(records.map(row => monthOf(row.period_start)))].sort(), [records]);
+  const latestMonth = availableMonths.at(-1) || `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
+  const [period, setPeriod] = useState<DatePeriod>(() => ({ start: monthStart(latestMonth), end: monthEnd(latestMonth) }));
+  const [expenseMonth, setExpenseMonth] = useState(latestMonth);
+  const [granularity, setGranularity] = useState<Granularity>('day');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [threshold, setThreshold] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const comparison = useMemo(() => previousPeriod(period), [period]);
+  const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
+  const allowedIds = useMemo(() => getFilteredProductIds(products, memberships, filterProps), [products, memberships, filterProps]);
 
-  const toggle = (id: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
+  const aggregateRange = (range: DatePeriod) => {
+    const byProduct = new Map<string, FinanceValue>();
+    const reportProductDates = new Set<string>();
+    records.forEach(record => {
+      if (!allowedIds.has(record.product_id) || record.period_end < range.start || record.period_start > range.end) return;
+      const product = productMap.get(record.product_id); if (!product) return;
+      const revenue = record.profit_revenue;
+      const grossProfit = getReportGrossProfit(record);
+      const expenseAmount = revenue * getCabinetExtraExpense(monthOf(record.period_start), product.cabinet_id) / 100;
+      const current = byProduct.get(record.product_id) || emptyFinance();
+      addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount });
+      byProduct.set(record.product_id, current);
+      reportProductDates.add(`${record.product_id}|${record.period_start}`);
     });
+    metrics.forEach(row => {
+      if (!allowedIds.has(row.product_id) || row.date < range.start || row.date > range.end || reportProductDates.has(`${row.product_id}|${row.date}`)) return;
+      const product = productMap.get(row.product_id); if (!product || !row.profit_revenue) return;
+      const revenue = row.profit_revenue;
+      const grossProfit = revenue - row.cost - row.agent_fee - row.logistics_cost - row.marketing_cost - row.storage_cost;
+      const expenseAmount = revenue * getCabinetExtraExpense(monthOf(row.date), product.cabinet_id) / 100;
+      const current = byProduct.get(row.product_id) || emptyFinance();
+      addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount });
+      byProduct.set(row.product_id, current);
+    });
+    return byProduct;
   };
 
+  const currentByProduct = useMemo(() => aggregateRange(period), [version, expenseVersion, period, allowedIds]);
+  const previousByProduct = useMemo(() => aggregateRange(comparison), [version, expenseVersion, comparison, allowedIds]);
+  const total = useMemo(() => { const value = emptyFinance(); currentByProduct.forEach(row => addFinance(value, row)); return value; }, [currentByProduct]);
+  const previousTotal = useMemo(() => { const value = emptyFinance(); previousByProduct.forEach(row => addFinance(value, row)); return value; }, [previousByProduct]);
+
+  const dailyData = useMemo(() => {
+    const byDate = new Map<string, FinanceValue>();
+    records.forEach(record => {
+      if (!allowedIds.has(record.product_id) || record.period_start < period.start || record.period_start > period.end) return;
+      const product = productMap.get(record.product_id); if (!product) return;
+      const key = bucketDate(record.period_start, granularity);
+      const revenue = record.profit_revenue; const grossProfit = getReportGrossProfit(record);
+      const expenseAmount = revenue * getCabinetExtraExpense(monthOf(record.period_start), product.cabinet_id) / 100;
+      const current = byDate.get(key) || emptyFinance(); addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount }); byDate.set(key, current);
+    });
+    return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, value]) => ({ date, ...value, margin: marginOf(value), profitability: profitabilityOf(value) }));
+  }, [records, allowedIds, productMap, period, granularity, expenseVersion]);
+
+  const tree = useMemo(() => {
+    const nodes: ProfitNode[] = [];
+    const firstGroupByProduct = new Map<string, string>(); memberships.forEach(item => { if (!firstGroupByProduct.has(item.product_id)) firstGroupByProduct.set(item.product_id, item.group_id); });
+    const addNode = (id: string, type: NodeType, name: string, parent: string | null, depth: number, cabinetId: string, productIds: string[], sku?: string) => {
+      const value = emptyFinance(); productIds.forEach(productId => addFinance(value, currentByProduct.get(productId) || emptyFinance()));
+      nodes.push({ id, type, name, parent, depth, cabinetId, sku, ...value });
+    };
+    cabinets.forEach(cabinet => {
+      const cabinetProducts = products.filter(product => product.cabinet_id === cabinet.id && allowedIds.has(product.id));
+      const cabinetNodeId = `cabinet:${cabinet.id}`; addNode(cabinetNodeId, 'cabinet', cabinet.name, null, 0, cabinet.id, cabinetProducts.map(item => item.id));
+      [...new Set(cabinetProducts.map(product => product.category || 'Без категории'))].sort().forEach(category => {
+        const categoryProducts = cabinetProducts.filter(product => (product.category || 'Без категории') === category);
+        const categoryId = `${cabinetNodeId}|category:${category}`; addNode(categoryId, 'category', category, cabinetNodeId, 1, cabinet.id, categoryProducts.map(item => item.id));
+        const groupKeys = [...new Set(categoryProducts.map(product => firstGroupByProduct.get(product.id) || 'ungrouped'))];
+        groupKeys.forEach(groupId => {
+          const groupProducts = categoryProducts.filter(product => (firstGroupByProduct.get(product.id) || 'ungrouped') === groupId);
+          const groupName = groups.find(group => group.id === groupId)?.name || 'Без склейки';
+          const nodeId = `${categoryId}|group:${groupId}`; addNode(nodeId, 'group', groupName, categoryId, 2, cabinet.id, groupProducts.map(item => item.id));
+          groupProducts.sort((left, right) => (currentByProduct.get(right.id)?.revenue || 0) - (currentByProduct.get(left.id)?.revenue || 0)).forEach(product => addNode(`product:${product.id}`, 'product', product.name, nodeId, 3, cabinet.id, [product.id], product.sku));
+        });
+      });
+    });
+    return nodes;
+  }, [products, cabinets, groups, memberships, allowedIds, currentByProduct]);
+
+  const statusMatches = (node: ProfitNode) => status === 'all' || (status === 'profitable' && node.netProfit > 0) || (status === 'loss' && node.netProfit < 0) || (status === 'no-sales' && node.revenue === 0) || (status === 'below' && node.revenue > 0 && profitabilityOf(node) < threshold);
+  const statusCounts = useMemo(() => { const productNodes = tree.filter(node => node.type === 'product'); return { all: productNodes.length, profitable: productNodes.filter(node => node.netProfit > 0).length, loss: productNodes.filter(node => node.netProfit < 0).length, below: productNodes.filter(node => node.revenue > 0 && profitabilityOf(node) < threshold).length, noSales: productNodes.filter(node => node.revenue === 0).length }; }, [tree, threshold]);
   const visible = useMemo(() => {
-    const result: ProfitNode[] = [];
-    const filtering = hasProductFilters(filterProps);
-    const expandedCabs = new Set(tree.filter(n => n.type === 'cabinet' && expanded.has(n.id)).map(n => n.id));
-    const expandedGroups = new Set(tree.filter(n => n.type === 'group' && expanded.has(n.id)).map(n => n.id));
+    if (status !== 'all') return tree.filter(node => node.type === 'product' && statusMatches(node));
+    return tree.filter(node => !node.parent || expanded.has(node.parent));
+  }, [tree, expanded, status, threshold]);
+  const toggle = (id: string) => setExpanded(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
-    for (const n of tree) {
-      if (n.type === 'cabinet') {
-        result.push(n);
-        if (filtering || expandedCabs.has(n.id)) {
-          for (const child of tree) {
-            if (child.parent === n.id && child.type === 'group') {
-              result.push(child);
-              if (filtering || expandedGroups.has(child.id)) {
-                for (const grandChild of tree) {
-                  if (grandChild.parent === child.id) result.push(grandChild);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    return result;
-  }, [tree, expanded, filterProps]);
+  const kpis = [
+    { label: 'Выручка', value: `${fmt(total.revenue)} ₽`, delta: deltaPct(total.revenue, previousTotal.revenue) },
+    { label: 'Себестоимость и расходы', value: `${fmt(total.revenue - total.grossProfit)} ₽`, delta: deltaPct(total.revenue - total.grossProfit, previousTotal.revenue - previousTotal.grossProfit) },
+    { label: 'Валовая прибыль', value: `${fmt(total.grossProfit)} ₽`, delta: deltaPct(total.grossProfit, previousTotal.grossProfit) },
+    { label: 'Маржинальность', value: `${fmt1(marginOf(total))}%`, delta: marginOf(total) - marginOf(previousTotal), points: true },
+    { label: 'Постоянные расходы', value: `${fmt(total.expenseAmount)} ₽`, sub: `${fmt1(total.revenue ? total.expenseAmount / total.revenue * 100 : 0)}% от выручки`, delta: deltaPct(total.expenseAmount, previousTotal.expenseAmount), inverse: true },
+    { label: 'Чистая прибыль', value: `${fmt(total.netProfit)} ₽`, delta: deltaPct(total.netProfit, previousTotal.netProfit) },
+    { label: 'Рентабельность', value: `${fmt1(profitabilityOf(total))}%`, delta: profitabilityOf(total) - profitabilityOf(previousTotal), points: true },
+  ];
+  const waterfall = [
+    { name: 'Выручка', base: 0, value: total.revenue, label: total.revenue, color: '#4F8EF7' },
+    { name: 'Расходы', base: total.grossProfit, value: Math.max(0, total.revenue - total.grossProfit), label: -(total.revenue - total.grossProfit), color: '#AAB4C2' },
+    { name: 'Валовая прибыль', base: 0, value: Math.max(0, total.grossProfit), label: total.grossProfit, color: '#25A86B' },
+    { name: 'Пост. расходы', base: total.netProfit, value: Math.max(0, total.expenseAmount), label: -total.expenseAmount, color: '#F08A36' },
+    { name: 'Чистая прибыль', base: Math.min(0, total.netProfit), value: Math.abs(total.netProfit), label: total.netProfit, color: total.netProfit >= 0 ? '#54B983' : '#E45B65' },
+  ];
 
-  return (
-    <div className="profit-page analytics-page-shell">
-      <header className="analytics-page-header">
-        <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Рентабельность</h1><p>Финансовый результат по периодам, кабинетам, группам и отдельным товарам.</p></div>
-      </header>
-      <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar">
-        <div className="date-filters">
-          <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={todayDate()} />
-        </div>
-        <FilterBar {...filterProps} variant="dashboard" />
-      </div>
+  return <div className="profit-page profit-page-v2 analytics-page-shell">
+    <header className="analytics-page-header profit-header"><div><span>БИЗНЕС-МЕТРИКИ</span><h1>Рентабельность</h1><p>Финансовый результат по периодам, кабинетам, категориям, склейкам и товарам.</p></div><aside className="profit-settings"><div><strong>Параметры расчёта</strong><small>{monthLabel(expenseMonth)} {expenseMonth.slice(0, 4)}</small></div><div className="profit-setting-values">{cabinets.map(cabinet => <label key={cabinet.id}><span>{cabinet.name}</span><b><input type="number" min="0" max="100" step="0.1" value={getExtraExpenses(expenseMonth)[cabinet.id] || 0} onChange={event => setExtraExpense(expenseMonth, cabinet.id, Number(event.target.value) || 0)} />%</b></label>)}</div></aside></header>
 
-      <div className="profit-summary analytics-kpi-sheet">
-        <div className="profit-summary-card">
-          <div className="profit-summary-label">Выручка</div>
-          <div className="profit-summary-value">{f(summary.revenue)} ₽</div>
-        </div>
-        <div className="profit-summary-card">
-          <div className="profit-summary-label">Чистая прибыль</div>
-          <div className="profit-summary-value">{f(summary.netProfit)} ₽</div>
-        </div>
-        <div className="profit-summary-card">
-          <div className="profit-summary-label">Маржа</div>
-          <div className="profit-summary-value">{f1(summary.margin)}%</div>
-        </div>
-        <div className="profit-summary-card">
-          <div className="profit-summary-label">Доп. расходы</div>
-          <div className="profit-summary-value">{f1(summary.extraExpenses)}%</div>
-        </div>
-        <div className="profit-summary-card profit-summary-highlight">
-          <div className="profit-summary-label">Рентабельность</div>
-          <div className="profit-summary-value">{f1(summary.profitability)}%</div>
-        </div>
-      </div>
+    <div className="profit-month-strip">{availableMonths.slice(-8).map(month => <button key={month} className={period.start === monthStart(month) && period.end === monthEnd(month) ? 'active' : ''} onClick={() => { setPeriod({ start: monthStart(month), end: monthEnd(month) }); setExpenseMonth(month); }}>{monthLabel(month)}</button>)}</div>
+    <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={period} onChange={next => { setPeriod(next); setExpenseMonth(monthOf(next.end)); }} maxDate={records.map(row => row.period_end).sort().at(-1) || period.end} /></div><FilterBar {...filterProps} variant="dashboard" /></div>
 
-      <div className="profit-expenses">
-        <span className="profit-expenses-title">Доп. расходы за {currentMonth}:</span>
-        {tree.filter(n => n.type === 'cabinet').length === 0 && <span className="profit-expenses-empty">Нет кабинетов</span>}
-        {tree.filter(n => n.type === 'cabinet').map(cab => (
-          <div key={cab.id} className="profit-expense-item">
-            <span className="profit-expense-label">{cab.name}</span>
-            <input
-              type="number"
-              className="profit-expense-input"
-              min="0" max="100" step="0.1"
-              value={extraExpenses[cab.cabinetId] || 0}
-              onChange={e => setExtraExpense(currentMonth, cab.cabinetId, parseFloat(e.target.value) || 0)}
-            />
-            <span className="profit-expense-suffix">%</span>
-          </div>
-        ))}
-      </div>
+    <section className="profit-kpis">{kpis.map(kpi => <article key={kpi.label}><span>{kpi.label}</span><strong>{kpi.value}</strong><small className={(kpi.inverse ? kpi.delta <= 0 : kpi.delta >= 0) ? 'positive' : 'negative'}>{kpi.delta >= 0 ? '▲' : '▼'} {fmt1(Math.abs(kpi.delta))}{kpi.points ? ' п.п.' : '%'} к прошлому периоду</small>{kpi.sub && <em>{kpi.sub}</em>}</article>)}</section>
 
-      <div className="profit-table-wrap">
-        <table className="profit-table">
-          <thead>
-            <tr>
-              <th className="pt-th pt-toggle-col"></th>
-              <th className="pt-th pt-name-col">Артикул / Название</th>
-              <th className="pt-th pt-num">Выручка</th>
-              <th className="pt-th pt-num">Себест-сть</th>
-              <th className="pt-th pt-num">Валовая прибыль</th>
-              <th className="pt-th pt-num">Маржа %</th>
-              <th className="pt-th pt-num">Доп. расх. %</th>
-              <th className="pt-th pt-num">Рентаб-сть %</th>
-              <th className="pt-th pt-num">ЧП</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map(n => {
-              const children = tree.filter(c => c.parent === n.id);
-              const hasChildren = children.length > 0;
-              const isExpanded = expanded.has(n.id);
-              const cost = n.revenue - n.profit;
-              const margin = n.revenue ? (n.profit / n.revenue) * 100 : 0;
-              const ee = extraExpenses[n.cabinetId] || 0;
-              const profitability = margin - ee;
-              const netProfit = profitability / 100 * n.revenue;
+    <section className="profit-chart-grid"><article className="profit-panel"><header><div><span>ДИНАМИКА</span><h2>Рентабельность и чистая прибыль</h2></div><div className="entry-segmented"><button className={granularity === 'day' ? 'active' : ''} onClick={() => setGranularity('day')}>День</button><button className={granularity === 'week' ? 'active' : ''} onClick={() => setGranularity('week')}>Неделя</button><button className={granularity === 'month' ? 'active' : ''} onClick={() => setGranularity('month')}>Месяц</button></div></header><ResponsiveContainer width="100%" height={270}><ComposedChart data={dailyData} margin={{ top: 14, right: 22, left: 4, bottom: 4 }}><CartesianGrid stroke="#E8EDF3" strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 9 }} /><YAxis yAxisId="money" tickFormatter={value => `${Math.round(Number(value) / 1000)}к`} tick={{ fontSize: 9 }} /><YAxis yAxisId="rate" orientation="right" tickFormatter={value => `${fmt1(Number(value))}%`} tick={{ fontSize: 9 }} /><Tooltip formatter={(value, name) => [name === 'Чистая прибыль' ? `${fmt(Number(value || 0))} ₽` : `${fmt1(Number(value || 0))}%`, name]} /><Bar yAxisId="money" dataKey="netProfit" name="Чистая прибыль" fill="#78A9F7" radius={[3, 3, 0, 0]} maxBarSize={22} /><Line yAxisId="rate" dataKey="profitability" name="Рентабельность" stroke="#10A778" strokeWidth={2.2} dot={false} /><Line yAxisId="rate" dataKey="margin" name="Маржинальность" stroke="#8B5CF6" strokeWidth={1.8} dot={false} /></ComposedChart></ResponsiveContainer></article>
+      <article className="profit-panel"><header><div><span>СТРУКТУРА</span><h2>Формирование чистой прибыли</h2></div><small>{monthLabel(monthOf(period.end))}</small></header><ResponsiveContainer width="100%" height={270}><BarChart data={waterfall} margin={{ top: 22, right: 12, left: 8, bottom: 4 }}><CartesianGrid stroke="#E8EDF3" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 9 }} /><YAxis tickFormatter={value => `${Math.round(Number(value) / 1_000_000)}м`} tick={{ fontSize: 9 }} /><Tooltip formatter={(value, name, item) => name === 'Значение' ? [`${fmt(Number(item.payload.label))} ₽`, 'Изменение'] : [value, name]} /><ReferenceLine y={0} stroke="#8391A3" /><Bar dataKey="base" stackId="waterfall" fill="transparent" /><Bar dataKey="value" name="Значение" stackId="waterfall" radius={[3, 3, 0, 0]}>{waterfall.map(item => <Cell key={item.name} fill={item.color} />)}</Bar></BarChart></ResponsiveContainer></article></section>
 
-              return (
-                <tr key={n.id} className={`profit-row profit-${n.type}`}>
-                  <td className="pt-td pt-toggle">
-                    {hasChildren && (
-                      <span className="profit-expand" onClick={() => toggle(n.id)}>
-                        {isExpanded ? '−' : '+'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="pt-td pt-name" style={{ paddingLeft: 12 + n.depth * 20 }}>
-                    {n.type === 'product' ? (
-                      <><span className="profit-sku">{n.sku}</span> {n.name}</>
-                    ) : (
-                      <span className={`profit-typename profit-${n.type}-name`}>{n.name}</span>
-                    )}
-                  </td>
-                  <td className="pt-td pt-num">{f(n.revenue)}</td>
-                  <td className="pt-td pt-num pt-dim">{f(Math.max(0, cost))}</td>
-                  <td className="pt-td pt-num">{f(n.profit)}</td>
-                  <td className="pt-td pt-num">{f1(margin)}</td>
-                  <td className="pt-td pt-num">{f1(ee)}</td>
-                  <td className={`pt-td pt-num pt-pct ${profitability >= 0 ? 'up' : 'down'}`}>{f1(profitability)}</td>
-                  <td className="pt-td pt-num">{f(netProfit)}</td>
-                </tr>
-              );
-            })}
-            {visible.length === 0 && (
-              <tr><td colSpan={9} className="pt-empty">Нет данных за выбранный месяц</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    <div className="profit-status-tabs"><button className={status === 'all' ? 'active' : ''} onClick={() => setStatus('all')}>Все <b>{statusCounts.all}</b></button><button className={status === 'profitable' ? 'active' : ''} onClick={() => setStatus('profitable')}>Прибыльные <b>{statusCounts.profitable}</b></button><button className={status === 'below' ? 'active' : ''} onClick={() => setStatus('below')}>Ниже цели <b>{statusCounts.below}</b></button><button className={status === 'loss' ? 'active' : ''} onClick={() => setStatus('loss')}>Убыточные <b>{statusCounts.loss}</b></button><button className={status === 'no-sales' ? 'active' : ''} onClick={() => setStatus('no-sales')}>Без продаж <b>{statusCounts.noSales}</b></button><label>Цель <input type="number" value={threshold} onChange={event => setThreshold(Number(event.target.value) || 0)} />%</label></div>
+
+    <div className="profit-table-wrap"><table className="profit-table profit-table-v2"><thead><tr><th className="pt-toggle-col"></th><th className="pt-name-col">Артикул / Название</th><th>Выручка</th><th>Себестоимость и расходы</th><th>Валовая прибыль</th><th>Маржа</th><th>Пост. расходы, %</th><th>Пост. расходы, ₽</th><th>Чистая прибыль</th><th>Рентабельность</th></tr></thead><tbody>{visible.map(node => { const hasChildren = tree.some(child => child.parent === node.id); const margin = marginOf(node); const profitability = profitabilityOf(node); const expensePct = node.revenue ? node.expenseAmount / node.revenue * 100 : 0; return <tr key={node.id} className={`profit-row profit-${node.type}`}><td className="pt-td pt-toggle">{hasChildren && status === 'all' && <button className="profit-expand" onClick={() => toggle(node.id)}>{expanded.has(node.id) ? '−' : '+'}</button>}</td><td className="pt-td pt-name" style={{ paddingLeft: 12 + node.depth * 18 }}>{node.type === 'product' ? <><span className="profit-sku">{node.sku}</span><small>{node.name}</small></> : <strong>{node.name}</strong>}</td><td className="pt-td pt-num">{fmt(node.revenue)} ₽</td><td className="pt-td pt-num pt-dim">{fmt(Math.max(0, node.revenue - node.grossProfit))} ₽</td><td className={`pt-td pt-num ${node.grossProfit >= 0 ? 'up' : 'down'}`}>{fmt(node.grossProfit)} ₽</td><td className="pt-td pt-num">{fmt1(margin)}%</td><td className="pt-td pt-num">{fmt1(expensePct)}%</td><td className="pt-td pt-num">{fmt(node.expenseAmount)} ₽</td><td className={`pt-td pt-num ${node.netProfit >= 0 ? 'up' : 'down'}`}><span className="profit-value-bar"><i style={{ width: `${Math.min(100, Math.abs(node.netProfit) / Math.max(Math.abs(total.netProfit), 1) * 100)}%` }} />{fmt(node.netProfit)} ₽</span></td><td className={`pt-td pt-num ${profitability >= 0 ? 'up' : 'down'}`}>{fmt1(profitability)}%</td></tr>; })}{!visible.length && <tr><td colSpan={10} className="pt-empty">Нет данных в выбранном срезе</td></tr>}</tbody></table></div>
+  </div>;
 }

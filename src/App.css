@@ -4060,6 +4060,70 @@ thead .at-metric:last-child {
   min-width: 180px;
 }
 
+/* Profitability financial workspace */
+.profit-page-v2 { gap: 12px; overflow: visible; padding: 18px 22px 28px; background: #f7f9fc; }
+.profit-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 20px; }
+.profit-settings { display: flex; align-items: center; gap: 14px; min-width: 360px; padding: 10px 12px; border: 1px solid #dbe3ed; border-radius: 10px; background: #fff; }
+.profit-settings > div:first-child { display: grid; gap: 3px; min-width: 110px; }
+.profit-settings strong { color: #203b58; font-size: 10px; }
+.profit-settings small { color: #7b899b; font-size: 8px; text-transform: capitalize; }
+.profit-setting-values { display: flex; gap: 8px; }
+.profit-setting-values label { display: grid; gap: 3px; min-width: 92px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #fbfcfe; }
+.profit-setting-values span { overflow: hidden; color: #607089; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.profit-setting-values b { display: flex; align-items: center; color: #18324d; font-size: 15px; }
+.profit-setting-values input { width: 46px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; outline: none; }
+.profit-month-strip { display: flex; width: fit-content; overflow: hidden; border: 1px solid #dbe3ed; border-radius: 9px; background: #fff; }
+.profit-month-strip button { min-width: 88px; min-height: 34px; padding: 0 14px; border: 0; border-right: 1px solid #e3e8ef; background: #fff; color: #52647c; font-size: 10px; text-transform: capitalize; cursor: pointer; }
+.profit-month-strip button:last-child { border-right: 0; }
+.profit-month-strip button.active { background: #ffd54f; color: #172f49; font-weight: 750; box-shadow: inset 0 -2px #e0aa19; }
+.profit-page-v2 .profit-toolbar { margin: 0; }
+.profit-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+.profit-kpis article { position: relative; display: grid; align-content: start; min-width: 0; min-height: 92px; padding: 12px 13px; overflow: hidden; border: 1px solid #dbe3ed; border-radius: 10px; background: #fff; }
+.profit-kpis article > span { color: #52647c; font-size: 9px; font-weight: 700; }
+.profit-kpis article > strong { margin-top: 8px; color: #132f4c; font-size: 18px; font-variant-numeric: tabular-nums; }
+.profit-kpis article > small { margin-top: 6px; font-size: 8px; }
+.profit-kpis article > em { margin-top: 4px; color: #7b899b; font-size: 7px; font-style: normal; }
+.profit-chart-grid { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.25fr); gap: 12px; }
+.profit-panel { min-width: 0; padding: 12px 14px 8px; border: 1px solid #dbe3ed; border-radius: 11px; background: #fff; }
+.profit-panel > header { display: flex; align-items: start; justify-content: space-between; gap: 12px; min-height: 42px; }
+.profit-panel header span { color: #7b899b; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
+.profit-panel header h2 { margin: 3px 0 0; color: #1a3652; font-size: 13px; }
+.profit-panel header > small { color: #718097; font-size: 9px; text-transform: capitalize; }
+.profit-status-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.profit-status-tabs button { min-height: 31px; padding: 0 12px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #52647c; font-size: 9px; cursor: pointer; }
+.profit-status-tabs button.active { border-color: #e0aa19; background: #ffd54f; color: #17334f; font-weight: 750; }
+.profit-status-tabs button b { margin-left: 5px; padding: 2px 5px; border-radius: 999px; background: #eef2f6; font-size: 8px; }
+.profit-status-tabs label { display: flex; align-items: center; gap: 5px; margin-left: auto; color: #718097; font-size: 9px; }
+.profit-status-tabs input { width: 52px; min-height: 29px; border: 1px solid #dbe3ed; border-radius: 6px; padding: 0 6px; text-align: right; }
+.profit-page-v2 .profit-table-wrap { max-height: 620px; overflow: auto; border-radius: 10px; }
+.profit-table-v2 { min-width: 1240px; }
+.profit-table-v2 th { position: sticky; top: 0; z-index: 3; height: 34px; background: #f4f7fa; color: #607089; font-size: 8px; text-align: right; }
+.profit-table-v2 th:nth-child(1), .profit-table-v2 td:nth-child(1) { position: sticky; left: 0; z-index: 4; width: 34px; min-width: 34px; background: #fff; }
+.profit-table-v2 th:nth-child(2), .profit-table-v2 td:nth-child(2) { position: sticky; left: 34px; z-index: 4; width: 270px; min-width: 270px; max-width: 270px; background: #fff; box-shadow: 2px 0 5px rgba(31, 52, 77, .05); }
+.profit-table-v2 thead th:nth-child(-n+2) { z-index: 6; background: #f4f7fa; }
+.profit-table-v2 .profit-row td { height: 34px; font-size: 9px; }
+.profit-table-v2 .profit-cabinet td { background-color: #f6f8fb; font-weight: 750; }
+.profit-table-v2 .profit-category td { background-color: #fafbfd; font-weight: 650; }
+.profit-table-v2 .profit-group td { background-color: #fdfefe; font-weight: 600; }
+.profit-table-v2 .pt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profit-table-v2 .pt-name small { display: inline; margin-left: 7px; color: #7c899a; font-size: 8px; font-weight: 400; }
+.profit-table-v2 .profit-expand { display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid #dbe3ed; border-radius: 5px; background: #fff; color: #52647c; cursor: pointer; }
+.profit-value-bar { position: relative; display: block; z-index: 0; }
+.profit-value-bar i { position: absolute; z-index: -1; right: 0; bottom: -2px; height: 4px; border-radius: 999px; background: #41b883; opacity: .8; }
+.profit-row .down .profit-value-bar i { background: #e66770; }
+
+@media (max-width: 1300px) {
+  .profit-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .profit-chart-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .profit-page-v2 { padding: 12px; }
+  .profit-header { grid-template-columns: 1fr; }
+  .profit-settings { min-width: 0; width: 100%; }
+  .profit-month-strip { width: 100%; overflow-x: auto; }
+  .profit-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .profit-row {
   border-bottom: 1px solid #F0F0F0;
 }
