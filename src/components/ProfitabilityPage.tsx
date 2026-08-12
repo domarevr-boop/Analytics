@@ -16,6 +16,7 @@ const monthEnd = (month: string) => { const [year, number] = month.split('-').ma
 const fmt = (value: number) => Math.round(value).toLocaleString('ru-RU');
 const fmt1 = (value: number) => value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
 const monthLabel = (month: string) => new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(new Date(`${month}-01T00:00:00`));
+const monthTitle = (month: string) => new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(new Date(`${month}-01T00:00:00`));
 
 type Granularity = 'day' | 'week' | 'month';
 type StatusFilter = 'all' | 'profitable' | 'below' | 'loss' | 'no-sales';
@@ -57,6 +58,9 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const latestMonth = availableMonths.at(-1) || `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
   const [period, setPeriod] = useState<DatePeriod>(() => ({ start: monthStart(latestMonth), end: monthEnd(latestMonth) }));
   const [expenseMonth, setExpenseMonth] = useState(latestMonth);
+  const activeMonth = period.start === monthStart(monthOf(period.start)) && period.end === monthEnd(monthOf(period.start))
+    ? monthOf(period.start)
+    : expenseMonth;
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [threshold, setThreshold] = useState(0);
@@ -64,6 +68,11 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const comparison = useMemo(() => previousPeriod(period), [period]);
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
   const allowedIds = useMemo(() => getFilteredProductIds(products, memberships, filterProps), [products, memberships, filterProps]);
+  const selectMonth = (month: string) => {
+    setPeriod({ start: monthStart(month), end: monthEnd(month) });
+    setExpenseMonth(month);
+  };
+  const activeMonthIndex = availableMonths.indexOf(activeMonth);
 
   const aggregateRange = (range: DatePeriod) => {
     const byProduct = new Map<string, FinanceValue>();
@@ -163,7 +172,12 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   return <div className="profit-page profit-page-v2 analytics-page-shell">
     <header className="analytics-page-header profit-header"><div><span>БИЗНЕС-МЕТРИКИ</span><h1>Рентабельность</h1><p>Финансовый результат по периодам, кабинетам, категориям, склейкам и товарам.</p></div><aside className="profit-settings"><div><strong>Параметры расчёта</strong><small>{monthLabel(expenseMonth)} {expenseMonth.slice(0, 4)}</small></div><div className="profit-setting-values">{cabinets.map(cabinet => <label key={cabinet.id}><span>{cabinet.name}</span><b><input type="number" min="0" max="100" step="0.1" value={getExtraExpenses(expenseMonth)[cabinet.id] || 0} onChange={event => setExtraExpense(expenseMonth, cabinet.id, Number(event.target.value) || 0)} />%</b></label>)}</div></aside></header>
 
-    <div className="profit-month-strip">{availableMonths.slice(-8).map(month => <button key={month} className={period.start === monthStart(month) && period.end === monthEnd(month) ? 'active' : ''} onClick={() => { setPeriod({ start: monthStart(month), end: monthEnd(month) }); setExpenseMonth(month); }}>{monthLabel(month)}</button>)}</div>
+    <div className="profit-month-navigation" aria-label="Выбор месяца">
+      <button type="button" className="profit-month-arrow" aria-label="Предыдущий месяц" disabled={activeMonthIndex <= 0} onClick={() => selectMonth(availableMonths[activeMonthIndex - 1])}>‹</button>
+      <div className="profit-month-strip">{availableMonths.map(month => <button type="button" key={month} className={activeMonth === month ? 'active' : ''} aria-pressed={activeMonth === month} onClick={() => selectMonth(month)}>{monthLabel(month)}</button>)}</div>
+      <button type="button" className="profit-month-arrow" aria-label="Следующий месяц" disabled={activeMonthIndex < 0 || activeMonthIndex >= availableMonths.length - 1} onClick={() => selectMonth(availableMonths[activeMonthIndex + 1])}>›</button>
+      <strong className="profit-active-month">{monthTitle(activeMonth)}</strong>
+    </div>
     <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={period} onChange={next => { setPeriod(next); setExpenseMonth(monthOf(next.end)); }} maxDate={records.map(row => row.period_end).sort().at(-1) || period.end} /></div><FilterBar {...filterProps} variant="dashboard" /></div>
 
     <section className="profit-kpis">{kpis.map(kpi => <article key={kpi.label}><span>{kpi.label}</span><strong>{kpi.value}</strong><small className={(kpi.inverse ? kpi.delta <= 0 : kpi.delta >= 0) ? 'positive' : 'negative'}>{kpi.delta >= 0 ? '▲' : '▼'} {fmt1(Math.abs(kpi.delta))}{kpi.points ? ' п.п.' : '%'} к прошлому периоду</small>{kpi.sub && <em>{kpi.sub}</em>}</article>)}</section>
