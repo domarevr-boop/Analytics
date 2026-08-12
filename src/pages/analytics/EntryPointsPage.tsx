@@ -96,6 +96,43 @@ function Sparkline({ values, color = '#2563EB' }: { values: number[]; color?: st
   return <svg className="entry-sparkline" viewBox="0 0 62 26" aria-hidden="true"><polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
+type EntryMatrixRow = {
+  name: string;
+  section: string;
+  entryPoint: string;
+  total: ReturnType<typeof aggregate>;
+  daily: Map<string, ReturnType<typeof aggregate>>;
+};
+
+function CanonicalEntryMatrix({ rows, dates, absoluteMetric, relativeMetric, dayWindow, onAbsoluteMetricChange, onRelativeMetricChange, onDayWindowChange, onPointSelect }: {
+  rows: EntryMatrixRow[];
+  dates: string[];
+  absoluteMetric: AbsoluteMetric;
+  relativeMetric: RelativeMetric;
+  dayWindow: 7 | 14 | 30;
+  onAbsoluteMetricChange: (value: AbsoluteMetric) => void;
+  onRelativeMetricChange: (value: RelativeMetric) => void;
+  onDayWindowChange: (value: 7 | 14 | 30) => void;
+  onPointSelect: (row: EntryMatrixRow) => void;
+}) {
+  return <article className="entry-card entry-matrix-card entry-canonical-card">
+    <div className="entry-card-head entry-matrix-head"><div><span>АНАЛИТИЧЕСКИЙ ЛИСТ</span><h2>Матрица показателей</h2><p>Цвет сравнивает значения только внутри одной строки.</p></div><div className="entry-matrix-controls"><label>Основная<select value={absoluteMetric} onChange={event => onAbsoluteMetricChange(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Относительная<select value={relativeMetric} onChange={event => onRelativeMetricChange(event.target.value as RelativeMetric)}>{(['ctr', 'cartCr', 'clickOrderCr', 'impressionOrderCr'] as RelativeMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Дней<select value={dayWindow} onChange={event => onDayWindowChange(Number(event.target.value) as 7 | 14 | 30)}><option value={7}>7 дней</option><option value={14}>14 дней</option><option value={30}>30 дней</option></select></label></div></div>
+    <div className="entry-canonical-wrap"><table className="entry-canonical-table"><thead><tr><th>Точка входа / метрика</th><th>Тренд</th><th>Изменение</th>{dates.map(date => <th key={date} className={date === dates.at(-1) ? 'is-latest' : ''}>{date.slice(5).split('-').reverse().join('.')}</th>)}<th>Среднее</th><th>Изменение</th></tr></thead><tbody>{rows.map(row => {
+      const metricRows = [{ key: absoluteMetric as MetricKey, values: dates.map(date => (row.daily.get(date) || aggregate([]))[absoluteMetric]), format: fmt }, { key: relativeMetric as MetricKey, values: dates.map(date => (row.daily.get(date) || aggregate([]))[relativeMetric]), format: (value: number) => `${fmtRelative(relativeMetric, value)}%` }];
+      return <Fragment key={row.name}><tr className="entry-canonical-group" onClick={() => onPointSelect(row)}><td colSpan={dates.length + 5}><strong>{row.entryPoint}</strong><span>{row.section}</span></td></tr>{metricRows.map(metricRow => {
+        const first = metricRow.values[0] || 0;
+        const last = metricRow.values.at(-1) || 0;
+        const delta = last - first;
+        const relative = metricRow.key === relativeMetric;
+        const comparison = relative ? delta : first ? delta / first * 100 : last ? 100 : 0;
+        const average = metricRow.values.length ? metricRow.values.reduce((sum, value) => sum + value, 0) / metricRow.values.length : 0;
+        const [min, max] = range(metricRow.values);
+        return <tr key={`${row.name}-${metricRow.key}`}><td><strong>{metricLabels[metricRow.key]}</strong><small>мед. {metricRow.format(median(metricRow.values))}</small></td><td><Sparkline values={metricRow.values} color={comparison >= 0 ? '#10A778' : '#F97316'} /></td><td><span className={comparison >= 0 ? 'positive' : 'negative'}>{relative ? `${delta >= 0 ? '+' : ''}${fmt(delta)} п.п.` : `${comparison >= 0 ? '+' : ''}${fmt(comparison)}%`}</span></td>{metricRow.values.map((value, index) => <td key={`${row.name}-${metricRow.key}-${dates[index]}`} className={index === metricRow.values.length - 1 ? 'is-latest' : ''} style={heatStyle(value, min, max)}>{metricRow.format(value)}</td>)}<td className="entry-canonical-summary">{metricRow.format(average)}</td><td className={delta >= 0 ? 'positive' : 'negative'}>{relative ? `${delta >= 0 ? '+' : ''}${fmt(delta)} п.п.` : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}</td></tr>;
+      })}</Fragment>;
+    })}</tbody></table></div>
+  </article>;
+}
+
 export default function EntryPointsPage() {
   useSyncExternalStore(subscribe, getVersion);
   const rows = getEntryPoints();
@@ -403,7 +440,9 @@ export default function EntryPointsPage() {
         </article>
       </div>
 
-      <article className="entry-card entry-matrix-card">
+      <CanonicalEntryMatrix rows={matrixRows} dates={visibleDates} absoluteMetric={absoluteMetric} relativeMetric={relativeMetric} dayWindow={dayWindow} onAbsoluteMetricChange={setAbsoluteMetric} onRelativeMetricChange={setRelativeMetric} onDayWindowChange={setDayWindow} onPointSelect={row => { setSection(row.section); setEntryPoint(row.entryPoint); }} />
+
+      <article className="entry-card entry-matrix-card entry-legacy-matrix">
         <div className="entry-card-head entry-matrix-head"><div><h2>Точки входа по дням</h2></div><div className="entry-matrix-controls"><label>Основная<select value={absoluteMetric} onChange={event => setAbsoluteMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Относительная<select value={relativeMetric} onChange={event => setRelativeMetric(event.target.value as RelativeMetric)}>{(['ctr', 'cartCr', 'clickOrderCr', 'impressionOrderCr'] as RelativeMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label><label>Дней<select value={dayWindow} onChange={event => setDayWindow(Number(event.target.value) as 7 | 14 | 30)}><option value={7}>7 дней</option><option value={14}>14 дней</option><option value={30}>30 дней</option></select></label></div></div>
         <div className="entry-matrix-wrap"><table className="entry-matrix"><thead><tr><th className="entry-matrix-point">Точка входа</th>{visibleDates.map(date => { const day = new Date(`${date}T00:00:00`).getDay(); const weekend = day === 0 || day === 6; const latest = date === visibleDates.at(-1); return <th key={date} className={`entry-matrix-date${weekend ? ' entry-weekend' : ''}${latest ? ' entry-latest-day' : ''}`}><span>{date.slice(5).split('-').reverse().join('.')}</span><small>{dayFormatter.format(new Date(`${date}T00:00:00`)).replace('.', '')}</small></th>; })}<th className="entry-matrix-summary">Среднее</th><th className="entry-matrix-summary">Тренд</th></tr></thead>
           <tbody>{matrixRows.map(row => {

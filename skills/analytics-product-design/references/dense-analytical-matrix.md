@@ -62,3 +62,13 @@ Do not normalize currency, counts, percentages, and durations together.
 - Saturated red and green backgrounds behind small text.
 - Sparklines that use a different period than the visible cells.
 - Repeating the same insight in KPI, large chart, sparkline, and heatmap without a distinct purpose.
+# Эталонная матрица
+
+Канонический образец проекта — «Матрица показателей» страницы «Динамика ниши».
+
+- Контекст слева: сущность/метрика, trend sparkline, изменение.
+- В центре: общая фиксированная ось дат без растягивания.
+- Справа: среднее и абсолютное изменение периода.
+- Для составной сущности используется групповая строка, под ней — строки метрик.
+- Heatmap нормализуется внутри строки.
+- Все расчёты используют один отфильтрованный набор дат.
