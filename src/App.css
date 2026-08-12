@@ -6947,9 +6947,39 @@ thead .at-metric:last-child {
 .geo-page-v2 .geo-header p { margin-top: 3px; font-size: 9px; }
 .geo-page-v2 .geo-header > small { color: #7d8b9f; font-size: 9px; }
 .geo-page-v2 .geo-header > small b { color: #1b3653; }
-.geo-page-v2 .geo-toolbar { min-height: 54px; padding: 9px 10px; border-radius: 10px; }
-.geo-location-filters { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.geo-location-filters select { min-width: 150px; max-width: 220px; }
+.geo-page-v2 .geo-toolbar {
+  align-items: center;
+  flex-wrap: nowrap;
+  min-height: 54px;
+  padding: 9px 10px;
+  border-radius: 10px;
+}
+.geo-page-v2 .geo-toolbar > .date-filters { align-self: center; }
+.geo-page-v2 .geo-toolbar > .filterbar-dashboard {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.geo-page-v2 .geo-toolbar .filterbar-primary {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+}
+.geo-page-v2 .geo-toolbar .filter-control:first-child { flex: 0 1 132px; }
+.geo-page-v2 .geo-toolbar .filter-control:nth-child(2) { flex: 1 1 180px; }
+.geo-page-v2 .geo-toolbar .filter-control select { width: 100%; min-width: 0; }
+.geo-page-v2 .geo-toolbar .sku-search { flex: 1 1 220px; min-width: 170px; }
+.geo-page-v2 .geo-toolbar .filterbar-status {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding-left: 0;
+}
+.geo-page-v2 .geo-toolbar .filterbar-status:not(:has(.filter-reset)) { display: none; }
+.geo-page-v2 .geo-toolbar .filter-result-count { display: none; }
+.geo-page-v2 .geo-toolbar .filter-chips { display: none; }
+.geo-location-filters { display: flex; flex: 1 1 390px; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+.geo-location-filters select { flex: 1 1 125px; width: 100%; min-width: 105px; max-width: 180px; }
 
 .geo-page-v2 .geo-kpis {
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7060,6 +7090,11 @@ thead .at-metric:last-child {
 .geo-page-v2 .geo-comparison-card { padding: 14px; }
 
 @media (max-width: 1180px) {
+  .geo-page-v2 .geo-toolbar,
+  .geo-page-v2 .geo-toolbar > .filterbar-dashboard,
+  .geo-page-v2 .geo-toolbar .filterbar-primary { flex-wrap: wrap; }
+  .geo-page-v2 .geo-toolbar > .date-filters { align-self: auto; }
+  .geo-location-filters { flex: 1 1 100%; }
   .geo-page-v2 .geo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .geo-page-v2 .geo-content-grid,
   .geo-locality-grid,
