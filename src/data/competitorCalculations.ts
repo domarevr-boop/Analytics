@@ -1,10 +1,78 @@
-import type { CompetitorPositionRecord, CompetitorSearchRecord } from '../types';
+import type { CompetitorFunnelRecord, CompetitorPositionRecord, CompetitorSearchRecord } from '../types';
 
 export function weightedBuyoutRate(rows: ReadonlyArray<{ orders: number; buyout_rate: number }>): number {
   const valid = rows.filter(row => Number.isFinite(row.buyout_rate) && row.buyout_rate >= 0);
   const weight = valid.reduce((sum, row) => sum + Math.max(row.orders, 0), 0);
   if (weight > 0) return valid.reduce((sum, row) => sum + row.buyout_rate * Math.max(row.orders, 0), 0) / weight;
   return valid.length ? valid.reduce((sum, row) => sum + row.buyout_rate, 0) / valid.length : 0;
+}
+
+export interface CompetitorBrandSummary {
+  key: string;
+  brand: string;
+  seller: string;
+  own: boolean;
+  articles: number;
+  amount: number;
+  orders: number;
+  price: number;
+  buyerMedianPrice: number;
+  avgSearchPosition: number;
+  share: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  carts: number;
+  cartCr: number;
+  orderCr: number;
+  buyouts: number;
+  buyoutRate: number;
+}
+
+const normalizedBrand = (value: string) => value.trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/\s+/g, ' ');
+
+export function aggregateCompetitorBrands(rows: ReadonlyArray<CompetitorFunnelRecord>, ownArticles: ReadonlySet<string>): CompetitorBrandSummary[] {
+  const groups = new Map<string, { rows: CompetitorFunnelRecord[]; articles: Set<string>; own: boolean }>();
+  for (const row of rows) {
+    const own = ownArticles.has(row.wb_article);
+    const key = own ? '__own__' : normalizedBrand(row.brand || row.seller || 'Без бренда');
+    const group = groups.get(key) || { rows: [], articles: new Set<string>(), own };
+    group.rows.push(row);
+    group.articles.add(row.wb_article);
+    groups.set(key, group);
+  }
+  const totalAmount = rows.reduce((sum, row) => sum + row.ordered_amount, 0);
+  return [...groups.entries()].map(([key, group]) => {
+    const amount = group.rows.reduce((sum, row) => sum + row.ordered_amount, 0);
+    const orders = group.rows.reduce((sum, row) => sum + row.orders, 0);
+    const impressions = group.rows.reduce((sum, row) => sum + row.impressions, 0);
+    const clicks = group.rows.reduce((sum, row) => sum + row.clicks, 0);
+    const carts = group.rows.reduce((sum, row) => sum + row.carts, 0);
+    const buyouts = group.rows.reduce((sum, row) => sum + row.buyouts, 0);
+    const orderWeight = group.rows.reduce((sum, row) => sum + Math.max(row.orders, 0), 0);
+    const impressionWeight = group.rows.reduce((sum, row) => sum + Math.max(row.impressions, 0), 0);
+    return {
+      key,
+      brand: group.own ? 'Наш ассортимент' : group.rows[0].brand || 'Без бренда',
+      seller: group.rows[0].seller,
+      own: group.own,
+      articles: group.articles.size,
+      amount,
+      orders,
+      price: orderWeight ? group.rows.reduce((sum, row) => sum + row.discounted_price * Math.max(row.orders, 0), 0) / orderWeight : 0,
+      buyerMedianPrice: orderWeight ? group.rows.reduce((sum, row) => sum + row.buyer_median_price * Math.max(row.orders, 0), 0) / orderWeight : 0,
+      avgSearchPosition: impressionWeight ? group.rows.reduce((sum, row) => sum + row.avg_search_position * Math.max(row.impressions, 0), 0) / impressionWeight : 0,
+      share: totalAmount ? amount / totalAmount * 100 : 0,
+      impressions,
+      clicks,
+      ctr: impressions ? clicks / impressions * 100 : 0,
+      carts,
+      cartCr: impressions ? carts / impressions * 100 : 0,
+      orderCr: impressions ? orders / impressions * 100 : 0,
+      buyouts,
+      buyoutRate: weightedBuyoutRate(group.rows),
+    };
+  }).sort((left, right) => right.amount - left.amount);
 }
 
 export interface CompetitorQuerySummary {

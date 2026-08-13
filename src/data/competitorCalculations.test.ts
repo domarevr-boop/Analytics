@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aggregateCompetitorQueries, calculateCompetitorTopDynamics, weightedBuyoutRate } from './competitorCalculations.ts';
+import { aggregateCompetitorBrands, aggregateCompetitorQueries, calculateCompetitorTopDynamics, weightedBuyoutRate } from './competitorCalculations.ts';
 import { competitorNumber, competitorPercent } from './competitorValueParsing.ts';
 
 test('reads raw Excel numbers without applying display scaling', () => {
@@ -20,6 +20,22 @@ test('normalizes numeric Excel percentages to percentage points', () => {
 
 test('uses source buyout rate instead of dividing lagged buyouts by orders', () => {
   assert.equal(weightedBuyoutRate([{ orders: 2269, buyout_rate: 91 }, { orders: 7217, buyout_rate: 92 }]).toFixed(1), '91.8');
+});
+
+test('aggregates all competitor funnel metrics and keeps own assortment separate', () => {
+  const base = { date: '2026-08-11', position: 1, seller: 'Seller', buyer_median_price: 1200, avg_search_position: 25, ctr: 0, cart_conversion: 0, order_conversion: 0 };
+  const result = aggregateCompetitorBrands([
+    { ...base, wb_article: 'own', brand: 'Our brand', ordered_amount: 2000, discounted_price: 1000, impressions: 1000, clicks: 100, carts: 20, orders: 10, buyouts: 8, buyout_rate: 80 },
+    { ...base, wb_article: 'competitor', brand: 'Alpha', ordered_amount: 3000, discounted_price: 1500, impressions: 2000, clicks: 160, carts: 30, orders: 20, buyouts: 17, buyout_rate: 85 },
+  ], new Set(['own']));
+
+  const own = result.find(row => row.own)!;
+  assert.equal(own.brand, 'Наш ассортимент');
+  assert.equal(own.share, 40);
+  assert.equal(own.ctr, 10);
+  assert.equal(own.cartCr, 2);
+  assert.equal(own.orderCr, 1);
+  assert.equal(own.price, 1000);
 });
 
 test('deduplicates global search frequency repeated for several articles', () => {
