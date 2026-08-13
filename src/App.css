@@ -4104,6 +4104,44 @@ thead .at-metric:last-child {
 .profit-month-arrow:hover:not(:disabled) { border-color: #c6d2e0; background: #f7f9fc; }
 .profit-month-arrow:disabled { color: #b7c1ce; cursor: default; opacity: .6; }
 .profit-active-month { margin-left: 4px; color: #203a57; font-size: 11px; text-transform: capitalize; white-space: nowrap; }
+
+/* Market dynamics */
+.market-page { gap: 12px; padding: 18px 22px 28px; background: #f6f8fb; color: #132b46; }
+.market-page .analytics-page-header { align-items: end; }
+.market-page .analytics-page-header > small { color: #728096; font-size: 9px; }
+.market-toolbar { display: flex; align-items: center; gap: 10px; padding: 9px; }
+.market-header-actions { display: flex; align-items: center; gap: 12px; }
+.market-header-actions button { min-height: 32px; padding: 0 13px; border: 1px solid #d7e0eb; border-radius: 8px; background: #fff; color: #17304f; font-weight: 700; cursor: pointer; }
+.market-toolbar .entry-segmented { margin-left: auto; }
+.market-reset { height: 34px; padding: 0 14px; border: 1px solid #dbe3ed; border-radius: 8px; background: #fff; color: #607188; font-size: 9px; cursor: pointer; }
+.market-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.market-kpis article, .market-card, .market-empty { min-width: 0; border: 1px solid #dce4ed; border-radius: 11px; background: #fff; box-shadow: 0 1px 3px rgba(26, 46, 70, .04); }
+.market-kpis article { min-height: 88px; padding: 13px 14px; }
+.market-kpis article > span { color: #718198; font-size: 8px; font-weight: 750; text-transform: uppercase; }
+.market-kpis article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 5px; }
+.market-kpis strong { overflow: hidden; font-size: 18px; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.market-kpis svg { flex: 0 0 60px; width: 60px; height: 22px; overflow: visible; }
+.market-kpis small { color: #728096; font-size: 8px; font-weight: 700; }
+.market-kpis small em { color: #8c98a8; font-style: normal; font-weight: 400; }
+.market-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.market-card { padding: 13px 14px; }
+.market-card > header { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.market-card h2 { margin: 0; color: #172f4b; font-size: 13px; }
+.market-card header span, .market-card header p { margin: 3px 0 0; color: #7b899b; font-size: 8px; }
+.market-legend { display: flex; justify-content: center; gap: 14px; color: #66768b; font-size: 8px; }
+.market-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.market-legend i { width: 12px; height: 2px; border-radius: 2px; }
+.market-insights { padding: 0; overflow: hidden; }
+.market-insights > header { padding: 12px 14px 8px; }
+.market-insight-table { overflow-x: auto; }
+.market-insight-table > div { display: grid; grid-template-columns: minmax(220px, 1.1fr) minmax(150px, .75fr) minmax(130px, .65fr) 110px minmax(280px, 1.2fr); align-items: center; min-width: 950px; min-height: 33px; border-top: 1px solid #e7ecf2; font-size: 9px; }
+.market-insight-table > div > * { padding: 7px 12px; }
+.market-insight-table .head { min-height: 28px; background: #f5f7fa; color: #718096; font-size: 8px; text-transform: uppercase; }
+.market-insight-table svg { width: 80px; height: 22px; overflow: visible; }
+.market-empty { display: grid; place-items: center; gap: 6px; min-height: 240px; padding: 30px; color: #718096; text-align: center; }
+.market-empty strong { color: #203a57; font-size: 15px; }
+@media (max-width: 1280px) { .market-kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 860px) { .market-page { padding: 12px; }.market-toolbar { align-items: stretch; flex-wrap: wrap; }.market-toolbar .entry-segmented { margin-left: 0; }.market-kpis, .market-chart-grid { grid-template-columns: 1fr; } }
 .profit-page-v2 .profit-toolbar { margin: 0; }
 .profit-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .profit-kpis article { position: relative; display: grid; align-content: start; min-width: 0; min-height: 92px; padding: 12px 13px; overflow: hidden; border: 1px solid #dbe3ed; border-radius: 10px; background: #fff; }

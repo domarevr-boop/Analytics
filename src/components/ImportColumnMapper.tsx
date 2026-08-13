@@ -9,6 +9,7 @@ import { normalizeImportDate } from '../data/dateUtils';
 const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
   { value: 'reviews', label: 'Отзывы WB (Клиентский опыт)' },
   { value: 'niche_dynamics', label: 'Динамика ниши' },
+  { value: 'market_dynamics', label: 'Рынок' },
   { value: 'search_queries', label: 'Поисковые запросы WB' },
   { value: 'entry_points', label: 'Точки входа' },
   { value: 'geography', label: 'География заказов' },
@@ -70,6 +71,8 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
 
   const previewHeaders = source === 'niche_dynamics'
     ? ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_active_sellers', 'niche_revenue', 'niche_avg_check']
+    : source === 'market_dynamics'
+    ? ['date', 'market_ordered_amount', 'market_own_ordered_amount', 'market_amount_share', 'market_orders', 'market_own_orders', 'market_orders_share', 'market_own_avg_check', 'market_avg_check']
     : source === 'search_queries'
     ? ['date', 'search_query', 'search_category', 'search_requests', 'search_card_clicks', 'search_carts', 'search_orders']
     : source === 'reviews'
@@ -93,6 +96,8 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
         ? !row.search_query
         : source === 'niche_dynamics'
           ? !row.niche_subject
+          : source === 'market_dynamics'
+            ? !row.date
           : source === 'reviews'
             ? !row.review_id
             : !(row.sku || row.wb_sku)) continue;
