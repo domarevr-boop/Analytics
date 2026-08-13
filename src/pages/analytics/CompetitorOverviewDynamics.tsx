@@ -4,6 +4,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import { aggregateCompetitorBrands } from '../../data/competitorCalculations';
 import type { CompetitorBrandSummary } from '../../data/competitorCalculations';
 import type { CompetitorFunnelRecord } from '../../types';
+import CompetitorMultiChoice from './CompetitorMultiChoice';
 
 type TrendMetricKey = 'amount' | 'orders' | 'price' | 'share' | 'impressions' | 'ctr' | 'carts' | 'cartCr' | 'orderCr' | 'buyoutRate';
 type MetricKind = 'money' | 'count' | 'percent';
@@ -28,10 +29,6 @@ const metrics: Record<TrendMetricKey, { label: string; kind: MetricKind; value: 
 };
 const metricKeys = Object.keys(metrics) as TrendMetricKey[];
 const formatMetric = (value: number, kind: MetricKind) => kind === 'money' ? money(value) : kind === 'percent' ? percent(value) : number.format(value);
-
-function MultiChoice({ label, values, options, max, onChange }: { label: string; values: string[]; options: Array<{ value: string; label: string }>; max: number; onChange: (values: string[]) => void }) {
-  return <details className="competitor-multi-choice"><summary><span>{label}</span><strong>{values.length ? `${values.length} выбрано` : 'Не выбрано'}</strong></summary><div>{options.map(option => { const checked = values.includes(option.value); const disabled = !checked && values.length >= max; return <label key={option.value}><input type="checkbox" checked={checked} disabled={disabled} onChange={() => onChange(checked ? values.filter(value => value !== option.value) : [...values, option.value])} /><span>{option.label}</span></label>; })}<small>Можно выбрать до {max}</small></div></details>;
-}
 
 export default function CompetitorOverviewDynamics({ rows, ownArticles }: { rows: CompetitorFunnelRecord[]; ownArticles: Set<string> }) {
   const dates = useMemo(() => [...new Set(rows.map(row => row.date))].sort(), [rows]);
@@ -74,7 +71,7 @@ export default function CompetitorOverviewDynamics({ rows, ownArticles }: { rows
 
   return <section className="competitors-section competitor-overview-trend">
     <header><div><span>ДИНАМИКА ПОКАЗАТЕЛЕЙ</span><h2>Бренды и метрики во времени</h2><p>Чтобы сопоставлять рубли, штуки и проценты, каждый ряд показан индексом: первое ненулевое значение периода = 100.</p></div></header>
-    <div className="competitor-trend-toolbar"><DateRangeFilter label="Период графика" value={{ start: activeStart, end: activeEnd }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || activeEnd} /><MultiChoice label="Бренды" values={effectiveBrands} options={allBrands.map(row => ({ value: row.key, label: row.brand }))} max={4} onChange={setSelectedBrands} /><MultiChoice label="Метрики" values={effectiveMetrics} options={metricKeys.map(key => ({ value: key, label: metrics[key].label }))} max={2} onChange={setSelectedMetrics} /><span>{visibleDates.length} дней · {series.length} рядов</span></div>
+    <div className="competitor-trend-toolbar"><DateRangeFilter label="Период графика" value={{ start: activeStart, end: activeEnd }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || activeEnd} /><CompetitorMultiChoice label="Бренды" values={effectiveBrands} options={allBrands.map(row => ({ value: row.key, label: row.brand }))} max={4} onChange={setSelectedBrands} /><CompetitorMultiChoice label="Метрики" values={effectiveMetrics} options={metricKeys.map(key => ({ value: key, label: metrics[key].label }))} max={2} onChange={setSelectedMetrics} /><span>{visibleDates.length} дней · {series.length} рядов</span></div>
     {visibleDates.length > 1 && series.length ? <ResponsiveContainer width="100%" height={320}><LineChart data={chartData} margin={{ top: 12, right: 18, left: 2, bottom: 2 }}><CartesianGrid stroke="#E6ECF2" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" tickFormatter={shortDate} minTickGap={24} tick={{ fontSize: 9 }} /><YAxis tickFormatter={value => `${number.format(Number(value))}`} width={44} tick={{ fontSize: 9 }} /><Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; const actual = payload[0]?.payload?.actual as Record<string, number>; return <div className="competitor-tooltip competitor-trend-tooltip"><strong>{shortDate(String(label))}</strong>{payload.map(item => { const itemId = String(item.dataKey); const [brandKey, metricKey] = itemId.split('::') as [string, TrendMetricKey]; return <span key={itemId}><i style={{ background: item.color }} />{brandByKey.get(brandKey)?.brand} · {metrics[metricKey].label}: <b>{formatMetric(actual[itemId] || 0, metrics[metricKey].kind)}</b> <em>({number.format(Number(item.value))})</em></span>; })}</div>; }} />{series.map((item, index) => <Line key={item.id} type="monotone" dataKey={item.id} name={`${brandByKey.get(item.brandKey)?.brand} · ${metrics[item.metric].label}`} stroke={colors[index % colors.length]} strokeWidth={2} dot={visibleDates.length <= 10 ? { r: 2 } : false} connectNulls />)}</LineChart></ResponsiveContainer> : <div className="competitor-trend-empty">Для динамики нужны минимум две даты и хотя бы один выбранный бренд и показатель.</div>}
     <div className="competitor-trend-legend">{series.map((item, index) => <span key={item.id}><i style={{ background: colors[index % colors.length] }} />{brandByKey.get(item.brandKey)?.brand} · {metrics[item.metric].label}</span>)}</div>
   </section>;

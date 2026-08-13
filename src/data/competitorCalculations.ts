@@ -1,4 +1,4 @@
-import type { CompetitorFunnelRecord, CompetitorPositionRecord, CompetitorSearchRecord } from '../types';
+import type { CompetitorFunnelRecord, CompetitorPositionRecord, CompetitorSearchRecord, CompetitorStockRecord } from '../types';
 
 export function weightedBuyoutRate(rows: ReadonlyArray<{ orders: number; buyout_rate: number }>): number {
   const valid = rows.filter(row => Number.isFinite(row.buyout_rate) && row.buyout_rate >= 0);
@@ -73,6 +73,67 @@ export function aggregateCompetitorBrands(rows: ReadonlyArray<CompetitorFunnelRe
       buyoutRate: weightedBuyoutRate(group.rows),
     };
   }).sort((left, right) => right.amount - left.amount);
+}
+
+export interface CompetitorStockSlice {
+  dateStart: string;
+  dateEnd: string;
+  totalPrevious: number;
+  totalCurrent: number;
+  totalDelta: number;
+  warehouses: Array<{ key: string; warehouse: string; stock: number; share: number }>;
+  brands: Array<{ key: string; brand: string; previous: number; current: number; delta: number; deltaRate: number | null }>;
+}
+
+function stockRowsForDate(rows: ReadonlyArray<CompetitorStockRecord>, date: string): CompetitorStockRecord[] {
+  const byArticle = new Map<string, CompetitorStockRecord[]>();
+  rows.filter(row => row.date === date).forEach(row => byArticle.set(row.wb_article, [...(byArticle.get(row.wb_article) || []), row]));
+  return [...byArticle.values()].flatMap(articleRows => {
+    const detailed = articleRows.filter(row => normalizedBrand(row.warehouse) !== 'маркетплейс');
+    return detailed.length ? detailed : articleRows;
+  });
+}
+
+export function calculateCompetitorStockSlice(rows: ReadonlyArray<CompetitorStockRecord>, start: string, end: string, brandKeys: ReadonlySet<string> = new Set(), warehouseKeys: ReadonlySet<string> = new Set()): CompetitorStockSlice {
+  const dates = [...new Set(rows.map(row => row.date).filter(date => date >= start && date <= end))].sort();
+  const dateStart = dates[0] || '';
+  const dateEnd = dates.at(-1) || '';
+  const filterSnapshot = (date: string) => stockRowsForDate(rows, date).filter(row => {
+    const brandKey = normalizedBrand(row.brand || 'Без бренда');
+    const warehouseKey = normalizedBrand(row.warehouse || 'Без склада');
+    return (!brandKeys.size || brandKeys.has(brandKey)) && (!warehouseKeys.size || warehouseKeys.has(warehouseKey));
+  });
+  const previousRows = dateStart ? filterSnapshot(dateStart) : [];
+  const currentRows = dateEnd ? filterSnapshot(dateEnd) : [];
+  const totalPrevious = previousRows.reduce((sum, row) => sum + Math.max(row.stock, 0), 0);
+  const totalCurrent = currentRows.reduce((sum, row) => sum + Math.max(row.stock, 0), 0);
+  const warehouseMap = new Map<string, { warehouse: string; stock: number }>();
+  currentRows.forEach(row => {
+    const warehouse = row.warehouse.trim() || 'Без склада';
+    const key = normalizedBrand(warehouse);
+    const current = warehouseMap.get(key) || { warehouse, stock: 0 };
+    current.stock += Math.max(row.stock, 0);
+    warehouseMap.set(key, current);
+  });
+  const brandMap = new Map<string, { brand: string; previous: number; current: number }>();
+  const addBrands = (snapshot: CompetitorStockRecord[], field: 'previous' | 'current') => snapshot.forEach(row => {
+    const brand = row.brand.trim() || 'Без бренда';
+    const key = normalizedBrand(brand);
+    const current = brandMap.get(key) || { brand, previous: 0, current: 0 };
+    current[field] += Math.max(row.stock, 0);
+    brandMap.set(key, current);
+  });
+  addBrands(previousRows, 'previous');
+  addBrands(currentRows, 'current');
+  return {
+    dateStart,
+    dateEnd,
+    totalPrevious,
+    totalCurrent,
+    totalDelta: totalCurrent - totalPrevious,
+    warehouses: [...warehouseMap.entries()].map(([key, value]) => ({ key, ...value, share: totalCurrent ? value.stock / totalCurrent * 100 : 0 })).sort((left, right) => right.stock - left.stock),
+    brands: [...brandMap.entries()].map(([key, value]) => ({ key, ...value, delta: value.current - value.previous, deltaRate: value.previous ? (value.current - value.previous) / value.previous * 100 : null })).sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta)),
+  };
 }
 
 export interface CompetitorQuerySummary {

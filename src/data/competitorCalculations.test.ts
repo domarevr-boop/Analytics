@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aggregateCompetitorBrands, aggregateCompetitorQueries, calculateCompetitorTopDynamics, weightedBuyoutRate } from './competitorCalculations.ts';
+import { aggregateCompetitorBrands, aggregateCompetitorQueries, calculateCompetitorStockSlice, calculateCompetitorTopDynamics, weightedBuyoutRate } from './competitorCalculations.ts';
 import { competitorNumber, competitorPercent } from './competitorValueParsing.ts';
 
 test('reads raw Excel numbers without applying display scaling', () => {
@@ -36,6 +36,38 @@ test('aggregates all competitor funnel metrics and keeps own assortment separate
   assert.equal(own.cartCr, 2);
   assert.equal(own.orderCr, 1);
   assert.equal(own.price, 1000);
+});
+
+test('builds stock distribution from snapshots without double-counting marketplace aggregate', () => {
+  const row = { name: 'Product', subject: 'Lighting', region: '', in_transit_to_customer: 0, in_transit_from_customer: 0, avg_daily_orders: 10 };
+  const result = calculateCompetitorStockSlice([
+    { ...row, date: '2026-08-11', wb_article: 'a', brand: 'Alpha', warehouse: 'Маркетплейс', stock: 100 },
+    { ...row, date: '2026-08-11', wb_article: 'a', brand: 'Alpha', warehouse: 'Казань', stock: 60 },
+    { ...row, date: '2026-08-11', wb_article: 'a', brand: 'Alpha', warehouse: 'Москва', stock: 40 },
+    { ...row, date: '2026-08-12', wb_article: 'a', brand: 'Alpha', warehouse: 'Маркетплейс', stock: 120 },
+    { ...row, date: '2026-08-12', wb_article: 'a', brand: 'Alpha', warehouse: 'Казань', stock: 70 },
+    { ...row, date: '2026-08-12', wb_article: 'a', brand: 'Alpha', warehouse: 'Москва', stock: 50 },
+    { ...row, date: '2026-08-12', wb_article: 'b', brand: 'Beta', warehouse: 'Маркетплейс', stock: 30 },
+  ], '2026-08-11', '2026-08-12');
+
+  assert.equal(result.totalPrevious, 100);
+  assert.equal(result.totalCurrent, 150);
+  assert.equal(result.totalDelta, 50);
+  assert.deepEqual(result.warehouses.map(item => [item.warehouse, item.stock]), [['Казань', 70], ['Москва', 50], ['Маркетплейс', 30]]);
+  assert.deepEqual(result.brands.find(item => item.brand === 'Alpha'), { key: 'alpha', brand: 'Alpha', previous: 100, current: 120, delta: 20, deltaRate: 20 });
+});
+
+test('applies brand and warehouse filters to both stock comparison dates', () => {
+  const row = { name: 'Product', subject: 'Lighting', region: '', in_transit_to_customer: 0, in_transit_from_customer: 0, avg_daily_orders: 10 };
+  const result = calculateCompetitorStockSlice([
+    { ...row, date: '2026-08-11', wb_article: 'a', brand: 'Alpha', warehouse: 'Казань', stock: 60 },
+    { ...row, date: '2026-08-12', wb_article: 'a', brand: 'Alpha', warehouse: 'Казань', stock: 80 },
+    { ...row, date: '2026-08-12', wb_article: 'b', brand: 'Beta', warehouse: 'Москва', stock: 40 },
+  ], '2026-08-11', '2026-08-12', new Set(['alpha']), new Set(['казань']));
+
+  assert.equal(result.totalPrevious, 60);
+  assert.equal(result.totalCurrent, 80);
+  assert.equal(result.brands.length, 1);
 });
 
 test('deduplicates global search frequency repeated for several articles', () => {
