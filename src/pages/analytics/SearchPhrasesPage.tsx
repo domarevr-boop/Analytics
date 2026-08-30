@@ -1,8 +1,10 @@
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
-import { getNicheDynamics, getSearchQueries, getVersion, subscribe } from '../../data/store';
+import { getEntryPoints, getMarketDynamics, getProducts, getSearchQueries, getVersion, subscribe } from '../../data/store';
+import { addDays, daysBetween } from '../../data/dateUtils';
+import { getMarketAverageCheck } from '../../data/marketCalculations';
 import type { SearchQueryRecord } from '../../types';
 import { searchQueriesHelp } from './analyticsHelpContent';
 
@@ -27,7 +29,23 @@ interface Aggregate {
   orderAmount: number; orderAmountPrevious: number; avgCheck: number; cartCr: number; orderCr: number; growth: number; opportunity: number;
 }
 
-type EnrichedSearchRow = SearchQueryRecord & { order_amount: number; order_amount_previous: number; niche_avg_check: number };
+type RecommendationKey = 'scale' | 'promising' | 'threat' | 'overheated';
+type EnrichedSearchRow = SearchQueryRecord & { order_amount: number; order_amount_previous: number; market_avg_check: number };
+
+function competitionFor(products: number, thresholds: { low: number; high: number }) {
+  return !products ? 'none' : products <= thresholds.low ? 'low' : products <= thresholds.high ? 'medium' : 'high';
+}
+
+function recommendationKeysFor(row: Aggregate, totals: { requests: number; orders: number }, count: number, thresholds: { low: number; high: number }): RecommendationKey[] {
+  const highRequest = row.requests >= Math.max(100, totals.requests / Math.max(count, 1));
+  const averageOrders = totals.orders / Math.max(count, 1);
+  return [
+    highRequest && competitionFor(row.products, thresholds) === 'low' && row.orderCr >= 5 ? 'scale' : null,
+    row.growth > 20 && row.orders < averageOrders ? 'promising' : null,
+    row.growth < -10 ? 'threat' : null,
+    highRequest && competitionFor(row.products, thresholds) === 'high' && row.orderCr < 5 ? 'overheated' : null,
+  ].filter((key): key is RecommendationKey => key !== null);
+}
 
 function aggregateRows(rows: EnrichedSearchRow[]): Aggregate[] {
   const map = new Map<string, Aggregate>();
@@ -63,7 +81,9 @@ function Sparkline({ values, color = '#2563EB' }: { values: number[]; color?: st
 export default function SearchPhrasesPage() {
   useSyncExternalStore(subscribe, getVersion);
   const records = getSearchQueries();
-  const nicheRecords = getNicheDynamics();
+  const marketRecords = getMarketDynamics();
+  const entryPoints = getEntryPoints();
+  const products = getProducts();
   const dates = useMemo(() => [...new Set(records.map(row => row.date))].sort(), [records]);
   const [start, setStart] = useState(() => dates.at(0) || '2026-07-01');
   const [end, setEnd] = useState(() => dates.at(-1) || '2026-07-31');
@@ -74,26 +94,39 @@ export default function SearchPhrasesPage() {
   const [sortKey, setSortKey] = useState<SortKey>('requests');
   const [page, setPage] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
+  const [recommendationFilter, setRecommendationFilter] = useState<RecommendationKey | null>(null);
+  const tableRef = useRef<HTMLElement>(null);
 
   const categories = useMemo(() => [...new Set(records.map(row => row.category))].sort((a, b) => a.localeCompare(b, 'ru')), [records]);
-  const nicheCheckByMonthSubject = useMemo(() => {
-    const map = new Map<string, { date: string; value: number; previous: number }>();
-    for (const row of nicheRecords) {
-      const key = `${row.date.slice(0, 7)}|${row.subject.trim().toLocaleLowerCase('ru-RU')}`;
-      const existing = map.get(key);
-      if (!existing || row.date > existing.date) map.set(key, { date: row.date, value: row.avg_check, previous: row.avg_check_previous });
-    }
-    return map;
-  }, [nicheRecords]);
+  const marketCheckByDate = useMemo(() => new Map(marketRecords.map(row => [row.date, getMarketAverageCheck(row) || 0])), [marketRecords]);
+  const periodLength = daysBetween(start, end);
   const filtered = useMemo<EnrichedSearchRow[]>(() => records.filter(row => row.date >= start && row.date <= end && (!category || row.category === category) && (!search || row.query.includes(search.trim().toLocaleLowerCase('ru-RU')))).map(row => {
-    const nicheCheck = nicheCheckByMonthSubject.get(`${row.date.slice(0, 7)}|${row.category.trim().toLocaleLowerCase('ru-RU')}`);
-    const avgCheck = nicheCheck?.value || 0;
-    return { ...row, niche_avg_check: avgCheck, order_amount: row.orders * avgCheck, order_amount_previous: row.orders_previous * (nicheCheck?.previous || avgCheck) };
-  }), [records, start, end, category, search, nicheCheckByMonthSubject]);
+    const avgCheck = marketCheckByDate.get(row.date) || 0;
+    const previousAvgCheck = marketCheckByDate.get(addDays(row.date, -periodLength)) || 0;
+    return { ...row, market_avg_check: avgCheck, order_amount: row.orders * avgCheck, order_amount_previous: row.orders_previous * previousAvgCheck };
+  }), [records, start, end, category, search, marketCheckByDate, periodLength]);
   const aggregated = useMemo(() => aggregateRows(filtered), [filtered]);
   const queryOptions = useMemo(() => [...aggregated].sort((a, b) => b.requests - a.requests).slice(0, 1000), [aggregated]);
   const activeQuery = selectedQuery || queryOptions[0]?.query || '';
-  const totals = useMemo(() => aggregated.reduce((sum, row) => ({ requests: sum.requests + row.requests, requestsPrevious: sum.requestsPrevious + row.requestsPrevious, cardClicks: sum.cardClicks + row.cardClicks, carts: sum.carts + row.carts, orders: sum.orders + row.orders, orderAmount: sum.orderAmount + row.orderAmount, orderAmountPrevious: sum.orderAmountPrevious + row.orderAmountPrevious }), { requests: 0, requestsPrevious: 0, cardClicks: 0, carts: 0, orders: 0, orderAmount: 0, orderAmountPrevious: 0 }), [aggregated]);
+  const totals = useMemo(() => aggregated.reduce((sum, row) => ({
+    requests: sum.requests + row.requests, requestsPrevious: sum.requestsPrevious + row.requestsPrevious,
+    cardClicks: sum.cardClicks + row.cardClicks, cardClicksPrevious: sum.cardClicksPrevious + row.cardClicksPrevious,
+    carts: sum.carts + row.carts, cartsPrevious: sum.cartsPrevious + row.cartsPrevious,
+    orders: sum.orders + row.orders, ordersPrevious: sum.ordersPrevious + row.ordersPrevious,
+    orderAmount: sum.orderAmount + row.orderAmount, orderAmountPrevious: sum.orderAmountPrevious + row.orderAmountPrevious,
+  }), { requests: 0, requestsPrevious: 0, cardClicks: 0, cardClicksPrevious: 0, carts: 0, cartsPrevious: 0, orders: 0, ordersPrevious: 0, orderAmount: 0, orderAmountPrevious: 0 }), [aggregated]);
+  const ownSearch = useMemo(() => {
+    if (search.trim()) return null;
+    const productById = new Map(products.map(product => [product.id, product]));
+    return entryPoints.filter(row => row.date >= start && row.date <= end && row.section.toLocaleLowerCase('ru-RU').includes('поиск') && (!category || productById.get(row.product_id)?.category === category)).reduce((sum, row) => {
+      const attributedAmount = row.product_orders_total && row.product_ordered_amount
+        ? row.product_ordered_amount * row.orders / row.product_orders_total
+        : 0;
+      return { orders: sum.orders + row.orders, amount: sum.amount + attributedAmount };
+    }, { orders: 0, amount: 0 });
+  }, [entryPoints, products, start, end, category, search]);
+  const ownAmountShare = ownSearch && totals.orderAmount > 0 ? ownSearch.amount / totals.orderAmount * 100 : null;
+  const ownOrdersShare = ownSearch && totals.orders > 0 ? ownSearch.orders / totals.orders * 100 : null;
   const categoryTrend = useMemo(() => dates.filter(date => date >= start && date <= end).map(date => {
     const day = filtered.filter(row => row.date === date);
     const previousField = previousKey[metric];
@@ -105,18 +138,14 @@ export default function SearchPhrasesPage() {
     return { date, current: day.reduce((sum, row) => sum + Number(row[metric] || 0), 0), previous: day.reduce((sum, row) => sum + Number(metric === 'order_amount' ? row.order_amount_previous : previousField ? row[previousField] : 0), 0) };
   }), [dates, filtered, start, end, activeQuery, metric]);
 
-  const sorted = useMemo(() => [...aggregated].sort((a, b) => Number(b[sortKey]) - Number(a[sortKey])), [aggregated, sortKey]);
   const pageSize = 50;
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const rows = sorted.slice(page * pageSize, page * pageSize + pageSize);
   const competitionThresholds = useMemo(() => {
     const values = aggregated.map(row => row.products).filter(Boolean).sort((a, b) => a - b);
     return { low: values[Math.floor(values.length * .34)] || 0, high: values[Math.floor(values.length * .67)] || 0 };
   }, [aggregated]);
-  const competitionOf = (products: number) => !products ? 'none' : products <= competitionThresholds.low ? 'low' : products <= competitionThresholds.high ? 'medium' : 'high';
   const opportunities = useMemo(() => [...aggregated].filter(row => row.requests >= 100).sort((a, b) => b.opportunity - a.opportunity).slice(0, 5), [aggregated]);
   const growing = useMemo(() => [...aggregated].filter(row => row.requestsPrevious >= 50).sort((a, b) => b.growth - a.growth).slice(0, 5), [aggregated]);
-  const scatter = useMemo(() => [...aggregated].sort((a, b) => b.requests - a.requests).slice(0, 250).map(row => ({ ...row, x: row.requests, y: row.orderCr, z: Math.max(row.orderAmount, 2), competition: competitionOf(row.products) })), [aggregated, competitionThresholds]);
+  const scatter = useMemo(() => [...aggregated].sort((a, b) => b.requests - a.requests).slice(0, 250).map(row => ({ ...row, x: row.requests, y: row.orderCr, z: Math.max(row.orderAmount, 2), competition: competitionFor(row.products, competitionThresholds) })), [aggregated, competitionThresholds]);
   const queryDaily = useMemo(() => {
     const map = new Map<string, number[]>();
     const periodDates = dates.filter(date => date >= start && date <= end);
@@ -124,14 +153,18 @@ export default function SearchPhrasesPage() {
     return map;
   }, [aggregated, dates, filtered, start, end]);
   const recommendationGroups = useMemo(() => {
-    const highRequests = aggregated.filter(row => row.requests >= Math.max(100, totals.requests / Math.max(aggregated.length, 1)));
+    const count = (key: RecommendationKey) => aggregated.filter(row => recommendationKeysFor(row, totals, aggregated.length, competitionThresholds).includes(key)).length;
     return [
-      { tone: 'green', title: 'Масштабировать', text: 'Высокий спрос, высокая конверсия, низкая конкуренция', count: highRequests.filter(row => competitionOf(row.products) === 'low' && row.orderCr >= 5).length },
-      { tone: 'blue', title: 'Перспективные', text: 'Быстрый рост, пока мало заказов', count: aggregated.filter(row => row.growth > 20 && row.orders < totals.orders / Math.max(aggregated.length, 1)).length },
-      { tone: 'orange', title: 'Под угрозой', text: 'Падение спроса или ухудшение конверсии', count: aggregated.filter(row => row.growth < -10).length },
-      { tone: 'red', title: 'Перегретые', text: 'Высокая конкуренция при низкой отдаче', count: highRequests.filter(row => competitionOf(row.products) === 'high' && row.orderCr < 5).length },
+      { key: 'scale' as const, tone: 'green', title: 'Масштабировать', text: 'Высокий спрос, высокая конверсия, низкая конкуренция', count: count('scale') },
+      { key: 'promising' as const, tone: 'blue', title: 'Перспективные', text: 'Быстрый рост, пока мало заказов', count: count('promising') },
+      { key: 'threat' as const, tone: 'orange', title: 'Под угрозой', text: 'Падение спроса или ухудшение конверсии', count: count('threat') },
+      { key: 'overheated' as const, tone: 'red', title: 'Перегретые', text: 'Высокая конкуренция при низкой отдаче', count: count('overheated') },
     ];
   }, [aggregated, totals, competitionThresholds]);
+  const recommendationLabel: Record<RecommendationKey, string> = { scale: 'Масштабировать', promising: 'Перспективные', threat: 'Под угрозой', overheated: 'Перегретые' };
+  const sorted = useMemo(() => aggregated.filter(row => !recommendationFilter || recommendationKeysFor(row, totals, aggregated.length, competitionThresholds).includes(recommendationFilter)).sort((a, b) => Number(b[sortKey]) - Number(a[sortKey])), [aggregated, sortKey, recommendationFilter, totals, competitionThresholds]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const rows = sorted.slice(page * pageSize, page * pageSize + pageSize);
 
   const setPeriod = (period: { start: string; end: string }) => { setStart(period.start); setEnd(period.end); setPage(0); };
   const metricFormat = (value: number) => metric === 'order_amount' ? `${fmt(value)} ₽` : fmt(value);
@@ -157,9 +190,9 @@ export default function SearchPhrasesPage() {
       <div className="search-kpis">
         <article><div><span>Поисковые запросы</span><strong>{fmt(totals.requests)}</strong><small className={change(totals.requests, totals.requestsPrevious) >= 0 ? 'positive' : 'negative'}>{change(totals.requests, totals.requestsPrevious) >= 0 ? '+' : ''}{pct(change(totals.requests, totals.requestsPrevious))}% к прошлому периоду</small></div><Sparkline values={kpiDaily.map(row => row.requests)} color="#10A778" /></article>
         <article><div><span>Уникальные ключи</span><strong>{fmt(aggregated.length)}</strong><small>{fmt(categories.length)} предметов в базе</small></div><Sparkline values={kpiDaily.map(row => row.uniqueKeys)} color="#2563EB" /></article>
-        <article><div><span>Переходы в карточку</span><strong>{fmt(totals.cardClicks)}</strong><small>CTR {pct(ratio(totals.cardClicks, totals.requests))}%</small></div><Sparkline values={kpiDaily.map(row => row.cardClicks)} color="#2563EB" /></article>
-        <article><div><span>Добавили в корзину</span><strong>{fmt(totals.carts)}</strong><small>CR {pct(ratio(totals.carts, totals.cardClicks))}%</small></div><Sparkline values={kpiDaily.map(row => row.carts)} color="#10A778" /></article>
-        <article><div><span>Сумма заказов</span><strong>{fmt(totals.orderAmount)} ₽</strong><small>{fmt(totals.orders)} шт. · средний чек {fmt(totals.orders ? totals.orderAmount / totals.orders : 0)} ₽</small></div><Sparkline values={kpiDaily.map(row => row.orderAmount)} color="#8B5CF6" /></article>
+        <article><div><span>Переходы в карточку</span><strong>{fmt(totals.cardClicks)}</strong><small className={change(totals.cardClicks, totals.cardClicksPrevious) >= 0 ? 'positive' : 'negative'}>{change(totals.cardClicks, totals.cardClicksPrevious) >= 0 ? '+' : ''}{pct(change(totals.cardClicks, totals.cardClicksPrevious))}% к прошлому периоду</small></div><Sparkline values={kpiDaily.map(row => row.cardClicks)} color="#2563EB" /></article>
+        <article><div><span>Добавили в корзину</span><strong>{fmt(totals.carts)}</strong><small className={change(totals.carts, totals.cartsPrevious) >= 0 ? 'positive' : 'negative'}>{change(totals.carts, totals.cartsPrevious) >= 0 ? '+' : ''}{pct(change(totals.carts, totals.cartsPrevious))}% · CR {pct(ratio(totals.carts, totals.cardClicks))}%</small></div><Sparkline values={kpiDaily.map(row => row.carts)} color="#10A778" /></article>
+        <article><div><span>Сумма заказов</span><strong>{totals.orderAmount ? `${fmt(totals.orderAmount)} ₽` : '—'}</strong><small className={change(totals.orderAmount, totals.orderAmountPrevious) >= 0 ? 'positive' : 'negative'}>{totals.orderAmount ? `${change(totals.orderAmount, totals.orderAmountPrevious) >= 0 ? '+' : ''}${pct(change(totals.orderAmount, totals.orderAmountPrevious))}% · ` : 'Нет данных отчёта «Рынок» · '}{fmt(totals.orders)} шт. · чек {totals.orders && totals.orderAmount ? `${fmt(totals.orderAmount / totals.orders)} ₽` : '—'}</small><small>Наша доля из «Точек входа → Поиск»: сумма {ownAmountShare === null ? '—' : `${pct(ownAmountShare)}%`} · шт. {ownOrdersShare === null ? '—' : `${pct(ownOrdersShare)}%`}</small></div><Sparkline values={kpiDaily.map(row => row.orderAmount)} color="#8B5CF6" /></article>
       </div>
 
       <div className="search-demand-grid">
@@ -168,11 +201,11 @@ export default function SearchPhrasesPage() {
       </div>
 
       <div className="search-opportunity-grid">
-        <article className="search-card search-recommendations"><div className="search-card-head"><div><h2>Рекомендации</h2></div></div><div className="search-recommendation-grid">{recommendationGroups.map(item => <section key={item.title} className={item.tone}><i /><strong>{item.title}</strong><p>{item.text}</p><b>{fmt(item.count)}</b><small>ключей</small></section>)}</div></article>
+        <article className="search-card search-recommendations"><div className="search-card-head"><div><h2>Рекомендации</h2><p>Нажмите на группу, чтобы открыть соответствующие запросы в таблице.</p></div></div><div className="search-recommendation-grid">{recommendationGroups.map(item => <button type="button" key={item.title} className={`${item.tone} ${recommendationFilter === item.key ? 'active' : ''}`} aria-pressed={recommendationFilter === item.key} onClick={() => { setRecommendationFilter(current => current === item.key ? null : item.key); setPage(0); requestAnimationFrame(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }}><i /><strong>{item.title}</strong><p>{item.text}</p><b>{fmt(item.count)}</b><small>ключей</small></button>)}</div></article>
         <div className="search-rank-stack"><article className="search-card search-ranking"><h2>Растущие запросы</h2>{growing.map(row => <button key={`${row.query}-${row.category}`} onClick={() => setSelectedQuery(row.query)}><span><strong>{row.query}</strong><small>{row.category}</small></span><em>+{pct(row.growth)}%</em><b>{pct(row.orderCr)}%</b></button>)}</article><article className="search-card search-ranking"><h2>Возможности</h2>{opportunities.map(row => <button key={`${row.query}-${row.category}`} onClick={() => setSelectedQuery(row.query)}><span><strong>{row.query}</strong><small>{fmt(row.requests)} запросов</small></span><em>{'●'.repeat(Math.max(1, Math.min(5, Math.round(row.opportunity / Math.max(opportunities[0]?.opportunity || 1, 1) * 5))))}</em><b>{pct(row.orderCr)}%</b></button>)}</article></div>
       </div>
 
-      <article className="search-card search-table-card"><div className="search-card-head"><div><h2>Ключевые запросы</h2><p>{fmt(sorted.length)} строк после агрегации · сумма заказов рассчитана по среднему чеку предмета</p></div><select value={sortKey} onChange={event => { setSortKey(event.target.value as SortKey); setPage(0); }}><option value="requests">По запросам</option><option value="growth">По росту</option><option value="orderAmount">По сумме заказов</option><option value="orders">По заказам, шт.</option><option value="cartCr">По CR корзины</option><option value="orderCr">По CR заказа</option><option value="opportunity">По потенциалу</option><option value="products">По конкуренции</option></select></div><div className="search-table-wrap"><table><thead><tr><th>Запрос / предмет</th><th>Динамика</th><th>Запросы</th><th>Δ</th><th>Переходы</th><th>Корзины</th><th>CR корзины</th><th>Сумма заказов</th><th>Заказы, шт.</th><th>Средний чек</th><th>CR заказа</th><th>Конкуренция</th><th>Потенциал</th></tr></thead><tbody>{rows.map(row => { const competition = competitionOf(row.products); const stars = Math.max(1, Math.min(5, Math.round(row.opportunity / Math.max(opportunities[0]?.opportunity || 1, 1) * 5))); return <tr key={`${row.query}-${row.category}`} onClick={() => setSelectedQuery(row.query)}><td><strong>{row.query}</strong><small>{row.category}</small></td><td className="search-table-trend"><Sparkline values={queryDaily.get(`${row.query}|${row.category}`) || []} /></td><td>{fmt(row.requests)}</td><td className={row.growth >= 0 ? 'positive' : 'negative'}>{row.growth >= 0 ? '+' : ''}{pct(row.growth)}%</td><td>{fmt(row.cardClicks)}</td><td>{fmt(row.carts)}</td><td>{pct(row.cartCr)}%</td><td><strong>{fmt(row.orderAmount)} ₽</strong></td><td>{fmt(row.orders)}</td><td>{row.avgCheck ? `${fmt(row.avgCheck)} ₽` : '—'}</td><td>{pct(row.orderCr)}%</td><td><span className={`search-competition-badge ${competition}`}>{competition === 'low' ? 'Низкая' : competition === 'medium' ? 'Средняя' : competition === 'high' ? 'Высокая' : 'Нет данных'}</span></td><td><span className="search-potential-stars">{'★'.repeat(stars)}<i>{'★'.repeat(5 - stars)}</i></span></td></tr>; })}</tbody></table></div><footer><button disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>←</button><span>{page + 1} / {pageCount}</span><button disabled={page + 1 >= pageCount} onClick={() => setPage(value => Math.min(pageCount - 1, value + 1))}>→</button></footer></article>
+      <article ref={tableRef} className="search-card search-table-card"><div className="search-card-head"><div><h2>Ключевые запросы</h2><p>{fmt(sorted.length)} строк после агрегации · сумма заказов рассчитана по среднему чеку отчёта «Рынок»{recommendationFilter ? ` · фильтр: ${recommendationLabel[recommendationFilter]}` : ''}</p></div><div className="search-table-actions">{recommendationFilter && <button type="button" onClick={() => { setRecommendationFilter(null); setPage(0); }}>Сбросить группу</button>}<select value={sortKey} onChange={event => { setSortKey(event.target.value as SortKey); setPage(0); }}><option value="requests">По запросам</option><option value="growth">По росту</option><option value="orderAmount">По сумме заказов</option><option value="orders">По заказам, шт.</option><option value="cartCr">По CR корзины</option><option value="orderCr">По CR заказа</option><option value="opportunity">По потенциалу</option><option value="products">По конкуренции</option></select></div></div><div className="search-table-wrap"><table><thead><tr><th>Запрос / предмет</th><th>Группа рекомендации</th><th>Динамика</th><th>Запросы</th><th>Δ</th><th>Переходы</th><th>Корзины</th><th>CR корзины</th><th>Сумма заказов</th><th>Заказы, шт.</th><th>Средний чек</th><th>CR заказа</th><th>Конкуренция</th><th>Потенциал</th></tr></thead><tbody>{rows.map(row => { const competition = competitionFor(row.products, competitionThresholds); const groups = recommendationKeysFor(row, totals, aggregated.length, competitionThresholds); const stars = Math.max(1, Math.min(5, Math.round(row.opportunity / Math.max(opportunities[0]?.opportunity || 1, 1) * 5))); return <tr key={`${row.query}-${row.category}`} onClick={() => setSelectedQuery(row.query)}><td><strong>{row.query}</strong><small>{row.category}</small></td><td><div className="search-recommendation-badges">{groups.length ? groups.map(group => <span key={group}>{recommendationLabel[group]}</span>) : '—'}</div></td><td className="search-table-trend"><Sparkline values={queryDaily.get(`${row.query}|${row.category}`) || []} /></td><td>{fmt(row.requests)}</td><td className={row.growth >= 0 ? 'positive' : 'negative'}>{row.growth >= 0 ? '+' : ''}{pct(row.growth)}%</td><td>{fmt(row.cardClicks)}</td><td>{fmt(row.carts)}</td><td>{pct(row.cartCr)}%</td><td><strong>{row.orderAmount ? `${fmt(row.orderAmount)} ₽` : '—'}</strong></td><td>{fmt(row.orders)}</td><td>{row.avgCheck ? `${fmt(row.avgCheck)} ₽` : '—'}</td><td>{pct(row.orderCr)}%</td><td><span className={`search-competition-badge ${competition}`}>{competition === 'low' ? 'Низкая' : competition === 'medium' ? 'Средняя' : competition === 'high' ? 'Высокая' : 'Нет данных'}</span></td><td><span className="search-potential-stars">{'★'.repeat(stars)}<i>{'★'.repeat(5 - stars)}</i></span></td></tr>; })}</tbody></table></div><footer><button disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>←</button><span>{page + 1} / {pageCount}</span><button disabled={page + 1 >= pageCount} onClick={() => setPage(value => Math.min(pageCount - 1, value + 1))}>→</button></footer></article>
     </>}
   </section>;
 }

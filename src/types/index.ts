@@ -112,7 +112,7 @@ export interface TableRow {
 export type EntityType = 'cabinet' | 'group' | 'product';
 
 export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'profitability' | 'admin' | 'dev'
-  | 'funnel' | 'entry-points' | 'search-phrases' | 'niche' | 'geography' | 'client-experience' | 'competitors' | 'product';
+  | 'funnel' | 'entry-points' | 'search-phrases' | 'niche' | 'market' | 'geography' | 'client-experience' | 'competitors' | 'product';
 
 export interface PlanRecord {
   entityId: string;
@@ -240,6 +240,18 @@ export interface NicheDynamicsRecord {
   avg_rating: number;
 }
 
+export interface MarketDynamicsRecord {
+  date: string;
+  market_ordered_amount: number;
+  own_ordered_amount: number;
+  amount_share: number;
+  market_orders: number;
+  own_orders: number;
+  orders_share: number;
+  own_avg_check: number;
+  market_avg_check: number;
+}
+
 export interface CompetitorFunnelRecord {
   date: string;
   position: number;
@@ -295,7 +307,7 @@ export interface CompetitorPositionRecord {
   brand: string;
 }
 
-export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'competitors' | 'reviews' | 'plan_template';
+export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'market_dynamics' | 'competitors' | 'reviews' | 'plan_template';
 
 export interface ImportFileLog {
   id: string;
@@ -327,6 +339,7 @@ export interface DataSnapshot {
   entryPoints: EntryPointRecord[];
   searchQueries: SearchQueryRecord[];
   nicheDynamics: NicheDynamicsRecord[];
+  marketDynamics: MarketDynamicsRecord[];
   competitorFunnel: CompetitorFunnelRecord[];
   competitorSearch: CompetitorSearchRecord[];
   competitorStocks: CompetitorStockRecord[];
@@ -349,6 +362,7 @@ export interface DataChanges {
   entryPoints: ChangeSet<EntryPointRecord>;
   searchQueries: ChangeSet<SearchQueryRecord>;
   nicheDynamics: ChangeSet<NicheDynamicsRecord>;
+  marketDynamics: ChangeSet<MarketDynamicsRecord>;
   competitorFunnel: ChangeSet<CompetitorFunnelRecord>;
   competitorSearch: ChangeSet<CompetitorSearchRecord>;
   competitorStocks: ChangeSet<CompetitorStockRecord>;

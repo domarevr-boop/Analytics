@@ -280,6 +280,9 @@ export const FIELD_LABELS: Record<string, string> = {
   niche_avg_check: 'Средний чек, ₽', niche_avg_check_previous: 'Средний чек — предыдущий период', niche_product_cards: 'Карточек товара', niche_active_product_cards: 'Карточек с заказами',
   niche_active_product_cards_previous: 'Карточек с заказами — предыдущий период', niche_active_product_cards_share: 'Доля карточек с заказами', niche_weekly_turnover_days: 'Оборачиваемость, дни',
   niche_availability: 'Доступность', niche_avg_stock: 'Средние остатки', niche_buyout_rate: 'Процент выкупа', niche_buyout_rate_previous: 'Выкуп — предыдущий период', niche_avg_rating: 'Средний рейтинг',
+  market_ordered_amount: 'Заказы рынка, ₽', market_own_ordered_amount: 'Наши заказы, ₽', market_amount_share: 'Наша доля по сумме',
+  market_orders: 'Заказы рынка, шт', market_own_orders: 'Наши заказы, шт', market_orders_share: 'Наша доля в заказах',
+  market_own_avg_check: 'Средний чек, мы', market_avg_check: 'Средний чек рынка',
 };
 
 const WB_FUNNEL_OVERRIDES: Record<string, string> = {
@@ -293,6 +296,18 @@ const WB_FUNNEL_OVERRIDES: Record<string, string> = {
 const NICHE_OVERRIDES: Record<string, string> = {
   'категория': 'niche_category',
   'предмет': 'niche_subject',
+};
+
+const MARKET_OVERRIDES: Record<string, string> = {
+  'дата': 'date',
+  'заказы рынок': 'market_ordered_amount',
+  'наши заказы': 'market_own_ordered_amount',
+  'наша доля': 'market_amount_share',
+  'заказы, шт, рынок': 'market_orders',
+  'заказы, шт, мы': 'market_own_orders',
+  'наша доля в заказах': 'market_orders_share',
+  'средний чек, мы': 'market_own_avg_check',
+  'средний чек рынок': 'market_avg_check',
 };
 
 const REVIEW_OVERRIDES: Record<string, string> = {
@@ -321,6 +336,7 @@ const REVIEW_OVERRIDES: Record<string, string> = {
 export function getRequiredFields(source?: ImportSource): string[] {
   if (source === 'reviews') return ['review_cabinet', 'review_id', 'date', 'review_rating'];
   if (source === 'niche_dynamics') return ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_revenue'];
+  if (source === 'market_dynamics') return ['date', 'market_ordered_amount', 'market_own_ordered_amount', 'market_orders', 'market_own_orders'];
   if (source === 'search_queries') return ['date', 'search_query', 'search_requests', 'search_category', 'search_card_clicks', 'search_carts', 'search_orders'];
   if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total', 'geo_product_local_orders', 'geo_product_nonlocal_orders'];
   if (source === 'entry_points') return ['sku', 'date', 'entry_section', 'entry_point', 'entry_impressions', 'entry_clicks', 'entry_carts', 'entry_orders'];
@@ -342,6 +358,7 @@ export function detectSourceFromHeaders(headers: string[]): ImportSource | null 
 
   if (nhs.includes('поисковый запрос') && nhs.includes('количество запросов')) return 'search_queries';
   if (nhs.includes('продавцы') && nhs.some(header => header.includes('монополизация')) && nhs.some(header => header.includes('карточек товара'))) return 'niche_dynamics';
+  if (nhs.includes('заказы рынок') && nhs.includes('наши заказы') && nhs.includes('заказы, шт, рынок')) return 'market_dynamics';
 
   const geoRegion = '\u0440\u0435\u0433\u0438\u043e\u043d';
   const geoOrders = '\u0438\u0442\u043e\u0433\u043e\u0437\u0430\u043a\u0430\u0437\u043e\u0432';
@@ -386,6 +403,8 @@ export function autoDetectMapping(headers: string[], source?: ImportSource): Col
       : DICT[nh] || COMPACT_DICT[compactHeader(h)];
     const override = source === 'niche_dynamics'
       ? NICHE_OVERRIDES[nh]
+      : source === 'market_dynamics'
+      ? MARKET_OVERRIDES[nh]
       : source === 'reviews'
       ? REVIEW_OVERRIDES[nh]
       : source === 'xway'

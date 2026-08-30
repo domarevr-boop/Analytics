@@ -4,7 +4,7 @@ type StoreName = keyof DataSnapshot;
 
 export const DATA_STORE_NAMES: StoreName[] = [
   'cabinets', 'brands', 'groups', 'products', 'memberships',
-  'metrics', 'plans', 'monthlyPlans', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics',
+  'metrics', 'plans', 'monthlyPlans', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics', 'marketDynamics',
   'competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions', 'importLogs',
 ];
 
@@ -19,6 +19,7 @@ function recordKey(store: StoreName, record: Record<string, unknown>): IDBValidK
     case 'entryPoints': return [record.date, record.product_id, record.section, record.entry_point] as IDBValidKey;
     case 'searchQueries': return [record.date, record.query, record.category] as IDBValidKey;
     case 'nicheDynamics': return [record.date, record.category, record.subject] as IDBValidKey;
+    case 'marketDynamics': return record.date as string;
     case 'competitorFunnel': return [record.date, record.wb_article] as IDBValidKey;
     case 'competitorSearch': return [record.date, record.wb_article, record.query] as IDBValidKey;
     case 'competitorStocks': return [record.date, record.wb_article, record.region || '', record.warehouse || ''] as IDBValidKey;

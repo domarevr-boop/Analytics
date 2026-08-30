@@ -158,6 +158,7 @@ export class CloudRepository implements IDataRepository {
       entryPoints: [],
       searchQueries: [],
       nicheDynamics: [],
+      marketDynamics: [],
       competitorFunnel: [],
       competitorSearch: [],
       competitorStocks: [],
