@@ -1,7 +1,10 @@
 import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
 
 const DB_NAME = 'analytics-db';
-const DB_VERSION = 6;
+// IndexedDB versions are permanent in a browser profile. Version 7 was used by
+// an earlier published build, so the active schema must stay above it even
+// though that build's additional store is not part of the current data model.
+const DB_VERSION = 8;
 const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
 
 function openDB(): Promise<IDBDatabase> {
