@@ -23,6 +23,7 @@
 | Точки входа | [ENTRY_POINTS](ENTRY_POINTS.md) |
 | Поисковые запросы WB | [SEARCH_QUERIES](SEARCH_QUERIES.md) |
 | Динамика ниши | [NICHE_DYNAMICS](NICHE_DYNAMICS.md) |
+| Управленческая отчётность | встроенная справка страницы и паттерн в [DESIGN_SYSTEM](DESIGN_SYSTEM.md) |
 | Рынок | [IMPORTS](IMPORTS.md#рынок), встроенная справка страницы |
 | Товарный справочник и изображения | [PRODUCT_REGISTRY](PRODUCT_REGISTRY.md), [PRODUCT_IMAGES](PRODUCT_IMAGES.md) |
 | Визуальные правила и общие контролы | [DESIGN_SYSTEM](DESIGN_SYSTEM.md), [UI_COMPONENTS](UI_COMPONENTS.md) |

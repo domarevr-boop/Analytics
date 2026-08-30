@@ -19,8 +19,12 @@ interface DropdownGroup {
 const GROUPS: DropdownGroup[] = [
   {
     label: 'Аналитика',
-    matchPages: ['funnel', 'entry-points', 'search-phrases', 'niche', 'market', 'geography', 'client-experience', 'competitors'],
+    matchPages: ['funnel', 'entry-points', 'search-phrases', 'niche', 'market', 'geography', 'client-experience', 'competitors', 'reporting'],
     sections: [
+      {
+        label: 'Управление',
+        items: [{ page: 'reporting', label: 'Отчётность' }],
+      },
       {
         label: 'Клиентский опыт',
         items: [{ page: 'client-experience', label: 'Отзывы' }],
