@@ -6,13 +6,10 @@ import {
   Cell,
   ComposedChart,
   Line,
-  Scatter,
-  ScatterChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
@@ -21,6 +18,7 @@ import { getEntryPoints, getMemberships, getProducts, getVersion, subscribe } fr
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
 import { entryPointsHelp } from './analyticsHelpContent';
 import { appendToMap } from '../../data/collectionUtils';
+import { addDays, daysBetween } from '../../data/dateUtils';
 import type { EntryPointRecord, Product } from '../../types';
 
 type AbsoluteMetric = 'impressions' | 'clicks' | 'carts' | 'orders';
@@ -73,6 +71,24 @@ function heatStyle(value: number, min: number, max: number): React.CSSProperties
 
 function range(values: number[]): [number, number] {
   return [Math.min(...values, 0), Math.max(...values, 0)];
+}
+
+function previousPeriod(start: string, end: string) {
+  if (!start || !end) return { start: '', end: '' };
+  const days = daysBetween(start, end);
+  const previousEnd = addDays(start, -1);
+  return { start: addDays(previousEnd, -days + 1), end: previousEnd };
+}
+
+function percentDelta(current: number, previous: number): number | null {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return (current - previous) / Math.abs(previous) * 100;
+}
+
+function KpiDelta({ current, previous, neutral = false }: { current: number; previous: number; neutral?: boolean }) {
+  const delta = percentDelta(current, previous);
+  const tone = delta === null || neutral ? 'neutral' : delta >= 0 ? 'positive' : 'negative';
+  return <small className={`entry-kpi-delta ${tone}`}>{delta === null ? '— нет базы' : `${delta > 0 ? '+' : ''}${fmt(delta)}%`} к прошлому периоду</small>;
 }
 
 function median(values: number[]): number {
@@ -208,6 +224,21 @@ export default function EntryPointsPage() {
       && (!search || [product?.sku, product?.wb_sku, product?.name].some(value => value?.toLowerCase().includes(search)));
   }), [rows, productMap, groupIdsByProduct, start, end, section, entryPoint, category, groupId, cabinet, brand, query]);
 
+  const comparisonPeriod = useMemo(() => previousPeriod(start, end), [start, end]);
+  const previousFiltered = useMemo(() => rows.filter(row => {
+    const product = productMap.get(row.product_id);
+    const search = query.trim().toLowerCase();
+    return (!comparisonPeriod.start || row.date >= comparisonPeriod.start)
+      && (!comparisonPeriod.end || row.date <= comparisonPeriod.end)
+      && (!section || row.section === section)
+      && (!entryPoint || row.entry_point === entryPoint)
+      && (!category || product?.category === category)
+      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && (!cabinet || product?.cabinet_id === cabinet)
+      && (!brand || product?.brand_id === brand)
+      && (!search || [product?.sku, product?.wb_sku, product?.name].some(value => value?.toLowerCase().includes(search)));
+  }), [rows, productMap, groupIdsByProduct, comparisonPeriod, section, entryPoint, category, groupId, cabinet, brand, query]);
+
   const topFiltered = useMemo(() => rows.filter(row => {
     const product = productMap.get(row.product_id);
     return (!start || row.date >= start)
@@ -216,6 +247,15 @@ export default function EntryPointsPage() {
       && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
       && (!cabinet || product?.cabinet_id === cabinet);
   }), [rows, productMap, groupIdsByProduct, start, end, category, groupId, cabinet]);
+
+  const previousTopFiltered = useMemo(() => rows.filter(row => {
+    const product = productMap.get(row.product_id);
+    return (!comparisonPeriod.start || row.date >= comparisonPeriod.start)
+      && (!comparisonPeriod.end || row.date <= comparisonPeriod.end)
+      && (!category || product?.category === category)
+      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && (!cabinet || product?.cabinet_id === cabinet);
+  }), [rows, productMap, groupIdsByProduct, comparisonPeriod, category, groupId, cabinet]);
 
   const financeBaseRows = useMemo(() => rows.filter(row => {
     const product = productMap.get(row.product_id);
@@ -247,6 +287,7 @@ export default function EntryPointsPage() {
       .sort((left, right) => right.total[absoluteMetric] - left.total[absoluteMetric]);
   }, [filtered, dates, absoluteMetric]);
   const totals = useMemo(() => aggregate(filtered), [filtered]);
+  const previousTotals = useMemo(() => aggregate(previousFiltered), [previousFiltered]);
   const visibleDates = useMemo(() => dates.slice(-dayWindow), [dates, dayWindow]);
   const rowRanges = useMemo(() => new Map(matrixRows.map(row => [row.name, {
     absolute: range(visibleDates.map(date => (row.daily.get(date) || aggregate([]))[absoluteMetric])),
@@ -256,6 +297,8 @@ export default function EntryPointsPage() {
   const topProducts = useMemo(() => topSections.map(channel => {
     const byProduct = new Map<string, EntryPointRecord[]>();
     topFiltered.filter(row => channel.match(row.section)).forEach(row => appendToMap(byProduct, row.product_id, row));
+    const previousByProduct = new Map<string, EntryPointRecord[]>();
+    previousTopFiltered.filter(row => channel.match(row.section)).forEach(row => appendToMap(previousByProduct, row.product_id, row));
     const items = [...byProduct.entries()].map(([productId, records]) => {
       const finance = records.reduce((result, row) => {
         const share = row.product_orders_total ? row.orders / row.product_orders_total : 0;
@@ -267,12 +310,13 @@ export default function EntryPointsPage() {
       return {
         product: productMap.get(productId),
         metrics: aggregate(records),
+        previousMetrics: aggregate(previousByProduct.get(productId) || []),
         orderedAmount: finance.orderedAmount,
         profitability: finance.profitRevenue ? finance.profit / finance.profitRevenue * 100 : 0,
       };
     });
     return { ...channel, items: items.sort((left, right) => right.metrics[topMetric] - left.metrics[topMetric]).slice(0, 5) };
-  }), [topFiltered, productMap, topMetric]);
+  }), [topFiltered, previousTopFiltered, productMap, topMetric]);
 
   const trendData = useMemo(() => dates.map(date => {
     const dailyRows = filtered.filter(row => row.date === date);
@@ -382,29 +426,9 @@ export default function EntryPointsPage() {
     points: trendData.map(row => filtered.filter(item => item.date === row.date).length),
   }), [trendData, filtered]);
 
-  const channelSummaries = useMemo(() => {
-    const grouped = new Map<string, EntryPointRecord[]>();
-    filtered.forEach(row => appendToMap(grouped, row.section, row));
-    return [...grouped.entries()].map(([name, records]) => ({ name, ...aggregate(records) })).sort((left, right) => right.orders - left.orders);
-  }, [filtered]);
-
-  const insights = useMemo(() => {
-    const leader = channelSummaries[0];
-    const ctrLeader = [...channelSummaries].sort((left, right) => right.ctr - left.ctr)[0];
-    const conversionLeader = [...channelSummaries].sort((left, right) => right.clickOrderCr - left.clickOrderCr)[0];
-    const growthPoint = [...channelSummaries].filter(row => row.impressions > 0).sort((left, right) => right.impressions * Math.max(0, totals.impressionOrderCr - right.impressionOrderCr) - left.impressions * Math.max(0, totals.impressionOrderCr - left.impressionOrderCr))[0];
-    return [
-      { tone: 'blue', title: leader?.name || 'Лидер не определён', text: leader ? `${fmt(leader.orders)} заказов · ${fmt(leader.orders / Math.max(totals.orders, 1) * 100)}% структуры` : 'Нет данных в выбранном срезе' },
-      { tone: 'orange', title: ctrLeader?.name || 'CTR не определён', text: ctrLeader ? `CTR ${fmt(ctrLeader.ctr)}% · CR заказа ${fmt(ctrLeader.clickOrderCr)}%` : 'Нет данных в выбранном срезе' },
-      { tone: 'violet', title: conversionLeader?.name || 'Конверсия не определена', text: conversionLeader ? `CR переход → заказ ${fmt(conversionLeader.clickOrderCr)}%` : 'Нет данных в выбранном срезе' },
-      { tone: 'yellow', title: 'Потенциал роста', text: growthPoint ? `${growthPoint.name}: высокий трафик при CR ${fmt(growthPoint.impressionOrderCr)}%` : 'Недостаточно данных для оценки' },
-    ];
-  }, [channelSummaries, totals]);
-
-  const efficiencyData = useMemo(() => finance.points.slice(0, 18).map((row, index) => {
-    const metrics = matrixRows.find(item => item.name === row.name)?.total || aggregate([]);
-    return { name: row.entryPoint, section: row.section, ctr: metrics.ctr, profitability: row.profitability, orders: row.orders, fill: chartColors[index % chartColors.length] };
-  }), [finance.points, matrixRows]);
+  const previousActivePointCount = useMemo(() => new Set(previousFiltered
+    .filter(row => row.impressions > 0)
+    .map(row => pointName(row))).size, [previousFiltered]);
 
   const structureDataKey = structureMetric;
   const structureMetricLabel = structureMetric === 'orders' ? 'Заказы' : structureMetric === 'clicks' ? 'Переходы' : 'Чистая прибыль';
@@ -426,19 +450,26 @@ export default function EntryPointsPage() {
       </article>
 
       <div className="entry-kpis">
-        <article><div><span>Показы</span><strong>{fmt(totals.impressions)}</strong><small>CTR {fmt(totals.ctr)}%</small></div><Sparkline values={kpiSparklines.impressions} color="#10A778" /></article>
-        <article><div><span>Переходы</span><strong>{fmt(totals.clicks)}</strong><small>В корзину {fmt(totals.cartCr)}%</small></div><Sparkline values={kpiSparklines.clicks} color="#2563EB" /></article>
-        <article><div><span>Заказы</span><strong>{fmt(totals.orders)}</strong><small>CR показ → заказ {fmt(totals.impressionOrderCr)}%</small></div><Sparkline values={kpiSparklines.orders} color="#10A778" /></article>
-        <article><div><span>Точки входа</span><strong>{matrixRows.length}</strong><small>Активных в выбранном срезе</small></div><Sparkline values={kpiSparklines.points} color="#F59E0B" /></article>
+        <article><div><span>Показы</span><strong>{fmt(totals.impressions)}</strong><small>CTR {fmt(totals.ctr)}%</small><KpiDelta current={totals.impressions} previous={previousTotals.impressions} /></div><Sparkline values={kpiSparklines.impressions} color="#10A778" /></article>
+        <article><div><span>Переходы</span><strong>{fmt(totals.clicks)}</strong><small>В корзину {fmt(totals.cartCr)}%</small><KpiDelta current={totals.clicks} previous={previousTotals.clicks} /></div><Sparkline values={kpiSparklines.clicks} color="#2563EB" /></article>
+        <article><div><span>Заказы</span><strong>{fmt(totals.orders)}</strong><small>CR показ → заказ {fmt(totals.impressionOrderCr)}%</small><KpiDelta current={totals.orders} previous={previousTotals.orders} /></div><Sparkline values={kpiSparklines.orders} color="#10A778" /></article>
+        <article><div><span>Точки входа</span><strong>{matrixRows.length}</strong><small>Активных в выбранном срезе</small><KpiDelta current={matrixRows.length} previous={previousActivePointCount} neutral /></div><Sparkline values={kpiSparklines.points} color="#F59E0B" /></article>
       </div>
 
-      <div className="entry-overview-grid">
-        <article className="entry-card entry-insights-card"><div className="entry-card-head"><div><h2>Главные выводы</h2></div></div><div className="entry-insights-list">{insights.map(item => <div key={`${item.title}-${item.tone}`} className={`entry-insight ${item.tone}`}><i aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.text}</small></span></div>)}</div></article>
-        <article className="entry-card entry-top-card">
-          <div className="entry-card-head"><div><h2>Топ-5 по каналам</h2></div><label className="entry-inline-control">Метрика<select value={topMetric} onChange={event => setTopMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div>
-          <div className="entry-top-grid">{topProducts.map(channel => <section key={channel.key}><h3>{channel.label}</h3>{channel.items.length ? <ol>{channel.items.map(({ product, metrics }, index) => <li key={product?.id || index} onClick={() => product && setQuery(product.sku)}><span className="entry-top-rank">{index + 1}</span><span className="entry-product-thumb"><ProductThumb product={product} /></span><span className="entry-top-product"><strong>{product?.sku || product?.name || 'Неизвестный товар'}</strong><small>{product?.name || `SKU ${product?.sku || '—'}`}</small></span><span className="entry-top-value"><strong>{fmt(metrics[topMetric])}</strong><em>{metrics[topMetric] >= median(channel.items.map(item => item.metrics[topMetric])) ? '↑ лидер' : '• стабильно'}</em></span></li>)}</ol> : <div className="entry-empty">Нет данных в выбранном срезе</div>}</section>)}</div>
-        </article>
-      </div>
+      <article className="entry-card entry-top-card">
+        <div className="entry-card-head"><div><h2>Топ-5 по каналам</h2><p>Текущий рейтинг и динамика заказов к предыдущему равному периоду.</p></div><label className="entry-inline-control">Метрика<select value={topMetric} onChange={event => setTopMetric(event.target.value as AbsoluteMetric)}>{(['impressions', 'clicks', 'carts', 'orders'] as AbsoluteMetric[]).map(key => <option key={key} value={key}>{metricLabels[key]}</option>)}</select></label></div>
+        <div className="entry-top-grid">{topProducts.map(channel => <section key={channel.key}><h3>{channel.label}</h3>{channel.items.length ? <ol>{channel.items.map(({ product, metrics, previousMetrics, orderedAmount, profitability }, index) => {
+          const orderDelta = percentDelta(metrics.orders, previousMetrics.orders);
+          const orderDeltaText = orderDelta === null ? '—' : `${orderDelta > 0 ? '+' : ''}${fmt(orderDelta)}%`;
+          const orderDeltaTone = orderDelta === null ? 'neutral' : orderDelta >= 0 ? 'positive' : 'negative';
+          return <li key={product?.id || index} onClick={() => product && setQuery(product.sku)}>
+            <span className="entry-top-rank">{index + 1}</span>
+            <span className="entry-product-thumb"><ProductThumb product={product} /></span>
+            <span className="entry-top-product"><strong>{product?.sku || product?.name || 'Неизвестный товар'}</strong><small>{product?.name || `SKU ${product?.sku || '—'}`}</small></span>
+            <span className="entry-top-value"><small>{metricLabels[topMetric]}</small><strong>{fmt(metrics[topMetric])}</strong><span className="entry-top-meta"><span><i>Заказы</i><b>{fmt(metrics.orders)}</b></span><span><i>Динамика</i><b className={orderDeltaTone}>{orderDeltaText}</b></span><span><i>Сумма</i><b>{fmt(orderedAmount)} ₽</b></span><span><i>Рент-сть</i><b>{fmt(profitability)}%</b></span></span></span>
+          </li>;
+        })}</ol> : <div className="entry-empty">Нет данных в выбранном срезе</div>}</section>)}</div>
+      </article>
 
       <CanonicalEntryMatrix rows={matrixRows} dates={visibleDates} absoluteMetric={absoluteMetric} relativeMetric={relativeMetric} dayWindow={dayWindow} onAbsoluteMetricChange={setAbsoluteMetric} onRelativeMetricChange={setRelativeMetric} onDayWindowChange={setDayWindow} onPointSelect={row => { setSection(row.section); setEntryPoint(row.entryPoint); }} />
 
@@ -463,18 +494,11 @@ export default function EntryPointsPage() {
         <article className="entry-card entry-chart-card"><div className="entry-card-head"><div><h2>Структура по источникам</h2></div><div className="entry-chart-head-controls"><div className="entry-segmented"><button className={structureLevel === 'section' ? 'active' : ''} onClick={() => setStructureLevel('section')}>Разделы</button><button className={structureLevel === 'point' ? 'active' : ''} onClick={() => setStructureLevel('point')}>Точки</button></div><div className="entry-segmented"><button className={structureMetric === 'orders' ? 'active' : ''} onClick={() => setStructureMetric('orders')}>Заказы</button><button className={structureMetric === 'clicks' ? 'active' : ''} onClick={() => setStructureMetric('clicks')}>Переходы</button><button className={structureMetric === 'profit' ? 'active' : ''} onClick={() => setStructureMetric('profit')}>Прибыль</button></div></div></div><div className="entry-chart-area"><ResponsiveContainer width="100%" height={250}><BarChart data={structureData} layout="vertical" margin={{ top: 8, right: 48, left: 18, bottom: 4 }}><XAxis type="number" hide /><YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 9, fill: '#52647C' }} tickLine={false} axisLine={false} tickFormatter={value => String(value).length > 22 ? `${String(value).slice(0, 20)}…` : String(value)} /><Tooltip formatter={value => [`${fmt(Number(value || 0))}${structureMetric === 'profit' ? ' ₽' : ''}`, structureMetricLabel]} /><Bar dataKey={structureDataKey} radius={[0, 5, 5, 0]} maxBarSize={16} label={{ position: 'right', fontSize: 9, fill: '#52647C', formatter: (value: unknown) => fmt(Number(value || 0)) }}>{structureData.map((item, index) => <Cell key={item.name} fill={item.name === 'Остальные' ? '#CBD5E1' : chartColors[index % chartColors.length]} />)}</Bar></BarChart></ResponsiveContainer></div></article>
       </div>
 
-      <div className="entry-bottom-grid">
-      <article className="entry-card entry-efficiency-card">
-        <div className="entry-card-head"><div><h2>Эффективность точек входа</h2><p>Размер круга — число заказов, цвет — отдельный источник.</p></div></div>
-        <div className="entry-efficiency-chart"><ResponsiveContainer width="100%" height={330}><ScatterChart margin={{ top: 18, right: 24, bottom: 12, left: 4 }}><CartesianGrid stroke="#E7ECF2" strokeDasharray="3 3" /><XAxis type="number" dataKey="ctr" name="CTR" unit="%" tick={{ fontSize: 10, fill: '#7B889B' }} /><YAxis type="number" dataKey="profitability" name="Рентабельность" unit="%" tick={{ fontSize: 10, fill: '#7B889B' }} width={44} /><ZAxis type="number" dataKey="orders" range={[55, 520]} /><Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value, name) => [`${fmt(Number(value || 0))}${name === 'CTR' || name === 'Рентабельность' ? '%' : ''}`, name]} /><Scatter data={efficiencyData}>{efficiencyData.map(item => <Cell key={`${item.name}-${item.section}`} fill={item.fill} />)}</Scatter></ScatterChart></ResponsiveContainer></div>
-        <div className="entry-efficiency-legend">{efficiencyData.slice(0, 7).map(item => <span key={`${item.name}-${item.section}`}><i style={{ background: item.fill }} />{item.name}</span>)}</div>
-      </article>
       <article className="entry-card entry-finance-card">
         <div className="entry-card-head"><div><h2>Экономика точек входа</h2><p>Суммы распределены по доле заказов каждой точки внутри комбинации «дата + товар».</p></div><div className={`entry-reconciliation${finance.reconciliation.unallocated || finance.reconciliation.excess || finance.reconciliation.matchedKeys < finance.reconciliation.totalKeys ? ' warning' : ''}`}><strong>{finance.reconciliation.funnelOrders ? fmt(finance.reconciliation.entryOrders / finance.reconciliation.funnelOrders * 100) : '0'}%</strong><span>покрытие заказов · сопоставлено {finance.reconciliation.matchedKeys}/{finance.reconciliation.totalKeys} SKU-дней</span>{finance.reconciliation.unallocated > 0 && <small>Нераспределено: {fmt(finance.reconciliation.unallocated)} шт.</small>}{finance.reconciliation.excess > 0 && <small>Сверх воронки: {fmt(finance.reconciliation.excess)} шт.</small>}</div></div>
         <div className="entry-finance-table-wrap"><table className="entry-finance-table"><thead><tr><th>Раздел / точка входа</th><th>Заказы, шт.</th><th>Сумма заказов</th><th>Доля</th><th>Чистая прибыль</th><th>Доля</th><th>Реклама</th><th>Доля</th><th>ДРР</th><th>Рентабельность</th></tr></thead><tbody>{finance.points.map(row => <tr key={row.name}><td><strong>{row.entryPoint}</strong><small>{row.section}</small></td><td>{fmt(row.orders)}</td><td>{fmt(row.orderedAmount)} ₽</td><td className="entry-share-cell">{finance.totals.orderedAmount ? fmt(row.orderedAmount / finance.totals.orderedAmount * 100) : '0'}%</td><td className={row.profit < 0 ? 'negative' : 'positive'}>{fmt(row.profit)} ₽</td><td className="entry-share-cell">{finance.totals.profit ? fmt(row.profit / finance.totals.profit * 100) : '0'}%</td><td>{fmt(row.adSpend)} ₽</td><td className="entry-share-cell">{finance.totals.adSpend ? fmt(row.adSpend / finance.totals.adSpend * 100) : '0'}%</td><td>{fmt(row.drr)}%</td><td className={row.profitability < 0 ? 'negative' : 'positive'}>{fmt(row.profitability)}%</td></tr>)}</tbody></table>{!finance.points.length && <div className="entry-empty">Нет данных для распределения в выбранном срезе</div>}</div>
         <p className="entry-finance-note">Это управленческая пропорциональная модель, а не подтверждённая рекламная атрибуция. Процентные показатели рассчитаны заново из распределённых денежных сумм.</p>
       </article>
-      </div>
     </section>
   );
 }
