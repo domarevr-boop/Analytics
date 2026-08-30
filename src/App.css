@@ -4740,6 +4740,21 @@ thead .at-metric:last-child {
   background: #FFFCED;
 }
 
+.at-th.at-metric-drr {
+  background: #FFF4D8;
+  color: #8A5A00;
+}
+
+.at-td.at-drr-cell {
+  background: #FFFBF1;
+}
+
+.at-row-product:hover .at-drr-cell { background: #FFF7E4; }
+.at-row-group .at-drr-cell { background: #FFF8E8; }
+.at-row-cabinet .at-drr-cell { background: #FFF3D6; }
+.at-th.at-metric-drr.at-metric-focused { background: #FFF0A6; color: #584500; }
+.at-td.at-drr-cell.at-metric-focused { background: #FFFCED; }
+
 .at-photo-img,
 .at-image-fallback {
   border-radius: 8px;

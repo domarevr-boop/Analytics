@@ -140,6 +140,7 @@ function DashboardContent(props: DashboardContentProps) {
         <FilterBar
           {...filterBarProps}
           variant="dashboard"
+          showCategoryFilter={false}
           afterControls={<MetricColumnPicker selected={props.visibleTableMetrics} onChange={props.onVisibleTableMetricsChange} />}
         />
       </div>

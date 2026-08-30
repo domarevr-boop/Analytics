@@ -19,6 +19,10 @@ const addTo = (a: MetricValues, b: MetricValues) => {
 
 const f = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const f1 = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+const f2 = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatMetricValue = (n: number, metricKey: string, decimals: boolean) => metricKey === 'cr_order'
+  ? f2(n)
+  : decimals ? f1(n) : f(n);
 const shortFmt = (n: number): string => {
   if (n >= 1000000) return f1(n / 1000000) + 'м';
   if (n >= 1000) return f1(n / 1000) + 'к';
@@ -149,7 +153,7 @@ function MiniBarChart({ values, dates, metricKey }: { values: number[]; dates: s
   const [hover, setHover] = useState<{ text: string; cx: number } | null>(null);
   const maxVal = Math.max(...values, 1);
   const cfg = METRIC_CFG[metricKey];
-  const fmt = (v: number) => (cfg.decimals ? f1(v) : f(v)) + cfg.suffix;
+  const fmt = (v: number) => formatMetricValue(v, metricKey, cfg.decimals) + cfg.suffix;
   const isTrend = TREND_METRICS.has(metricKey);
   const minValue = Math.min(...values, 0);
   const maxValue = Math.max(...values, 0);
@@ -544,12 +548,12 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     const prev = (row.previous as any)[key] as number;
     const change = pctChange(curr, prev);
     const cfg = METRIC_CFG[key];
-    const v = cfg.decimals ? f1(curr) : f(curr);
+    const v = formatMetricValue(curr, key, cfg.decimals);
     const display = v + cfg.suffix;
     const isGood = change !== null && (cfg.rev ? change < 0 : change >= 0);
 
     return (
-      <td key={key} className={`at-td at-mcell${focusedMetric === key ? ' at-metric-focused' : ''}`}>
+      <td key={key} className={`at-td at-mcell${key === 'drr' ? ' at-drr-cell' : ''}${focusedMetric === key ? ' at-metric-focused' : ''}`}>
         <span className={`at-mv${cfg.primary ? ' primary' : ''}`}>{display}</span>
         {change !== null && (
           <span className={`at-mc ${isGood ? 'up' : 'down'} ${Math.abs(change) < 0.01 ? 'flat' : ''}`}>
@@ -579,7 +583,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
               const chartActive = chartMetrics.has(key);
               const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
               return [
-                <th key={key} className={`at-th at-metric${chartActive ? ' at-metric-chart-on' : ''}${focusedMetric === key ? ' at-metric-focused' : ''}`}>
+                <th key={key} className={`at-th at-metric${key === 'drr' ? ' at-metric-drr' : ''}${chartActive ? ' at-metric-chart-on' : ''}${focusedMetric === key ? ' at-metric-focused' : ''}`}>
                   {TABLE_METRIC_LABELS[key]}
                   <span className={`at-chart-btn${chartActive ? ' active' : ''}`} onClick={() => toggleChart(key)}>
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">

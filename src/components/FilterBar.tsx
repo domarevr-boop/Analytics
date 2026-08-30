@@ -16,6 +16,7 @@ export interface FilterBarProps {
   onGroupChange: (v: string) => void;
   onSkuChange: (v: string) => void;
   variant?: 'compact' | 'dashboard';
+  showCategoryFilter?: boolean;
   afterControls?: ReactNode;
 }
 
@@ -23,6 +24,7 @@ export default function FilterBar({
   cabinetFilter, categoryFilter = '', brandFilter, groupFilter, skuFilter,
   onCabinetChange, onCategoryChange = () => undefined, onBrandChange, onGroupChange, onSkuChange,
   variant = 'compact',
+  showCategoryFilter = true,
   afterControls,
 }: FilterBarProps) {
   useSyncExternalStore(subscribe, getVersion);
@@ -164,13 +166,15 @@ export default function FilterBar({
               {cabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}
             </select>
           </label>
-          <label className="filter-control">
-            <span className="filter-control-label">Категория</span>
-            <select value={categoryFilter} onChange={e => { onCategoryChange(e.target.value); onBrandChange(''); onGroupChange(''); clearSku(); }}>
-              <option value="">Все категории</option>
-              {categories.map(category => <option key={category} value={category}>{category}</option>)}
-            </select>
-          </label>
+          {showCategoryFilter && (
+            <label className="filter-control">
+              <span className="filter-control-label">Категория</span>
+              <select value={categoryFilter} onChange={e => { onCategoryChange(e.target.value); onBrandChange(''); onGroupChange(''); clearSku(); }}>
+                <option value="">Все категории</option>
+                {categories.map(category => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
+          )}
           {search}
           <div className="filter-more-wrap">
             <button
