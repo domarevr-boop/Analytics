@@ -127,6 +127,7 @@ DICT['\u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0442\u043e\u0432\u0430\
 DICT['\u0431\u0440\u0435\u043d\u0434'] = 'brand';
 DICT['\u043a\u0430\u0431\u0438\u043d\u0435\u0442'] = 'cabinet';
 DICT['\u0440\u0435\u0433\u0438\u043e\u043d'] = 'region';
+DICT['\u043a\u043b\u0430\u0441\u0442\u0435\u0440'] = 'region';
 DICT['\u043e\u0431\u043b\u0430\u0441\u0442\u044c'] = 'area';
 DICT['\u0433\u043e\u0440\u043e\u0434'] = 'city';
 DICT['\u0432\u0440\u0435\u043c\u044f \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438'] = 'delivery_time';
@@ -261,7 +262,7 @@ export const FIELD_LABELS: Record<string, string> = {
   cpc: 'CPC, руб.',
   cpo: 'CPO, руб.',
   drr: 'ДРР, %',
-  region: 'Федеральный округ', area: 'Регион / область', city: 'Населённый пункт', delivery_time: 'Время доставки', geo_orders_total: 'Заказы, шт',
+  region: 'Кластер / федеральный округ', area: 'Регион / область', city: 'Населённый пункт', delivery_time: 'Время доставки', geo_orders_total: 'Заказы, шт',
   geo_product_local_orders: 'Локальные заказы, шт', geo_product_nonlocal_orders: 'Не локальные заказы, шт',
   geo_wb_local_orders: 'WB локально, шт', geo_wb_nonlocal_orders: 'WB не локально, шт',
   geo_mp_local_orders: 'МП локально, шт', geo_mp_nonlocal_orders: 'МП не локально, шт',
@@ -338,7 +339,7 @@ export function getRequiredFields(source?: ImportSource): string[] {
   if (source === 'niche_dynamics') return ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_revenue'];
   if (source === 'market_dynamics') return ['date', 'market_ordered_amount', 'market_own_ordered_amount', 'market_orders', 'market_own_orders'];
   if (source === 'search_queries') return ['date', 'search_query', 'search_requests', 'search_category', 'search_card_clicks', 'search_carts', 'search_orders'];
-  if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total', 'geo_product_local_orders', 'geo_product_nonlocal_orders'];
+  if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total'];
   if (source === 'entry_points') return ['sku', 'date', 'entry_section', 'entry_point', 'entry_impressions', 'entry_clicks', 'entry_carts', 'entry_orders'];
   if (source === 'profitability') return ['sku', 'profit_revenue', 'actual_profit', 'actual_margin'];
   if (source === 'xway') return ['sku'];
@@ -360,9 +361,9 @@ export function detectSourceFromHeaders(headers: string[]): ImportSource | null 
   if (nhs.includes('продавцы') && nhs.some(header => header.includes('монополизация')) && nhs.some(header => header.includes('карточек товара'))) return 'niche_dynamics';
   if (nhs.includes('заказы рынок') && nhs.includes('наши заказы') && nhs.includes('заказы, шт, рынок')) return 'market_dynamics';
 
-  const geoRegion = '\u0440\u0435\u0433\u0438\u043e\u043d';
+  const geoRegion = ['\u0440\u0435\u0433\u0438\u043e\u043d', '\u043a\u043b\u0430\u0441\u0442\u0435\u0440'];
   const geoOrders = '\u0438\u0442\u043e\u0433\u043e\u0437\u0430\u043a\u0430\u0437\u043e\u0432';
-  if (nhs.some(header => compactHeader(header) === geoRegion) && nhs.some(header => compactHeader(header).includes(geoOrders))) return 'geography';
+  if (nhs.some(header => geoRegion.includes(compactHeader(header))) && nhs.some(header => compactHeader(header).includes(geoOrders))) return 'geography';
   if (nhs.some(header => compactHeader(header) === 'точкавхода') && nhs.some(header => compactHeader(header) === 'раздел')) return 'entry_points';
 
   // Profitability: себестоимость, валовая прибыль, рентабельность

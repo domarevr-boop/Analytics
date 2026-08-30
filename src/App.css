@@ -7153,7 +7153,7 @@ thead .at-metric:last-child {
 .geo-page-v2 .geo-card > h2 { font-size: 14px; }
 .geo-page-v2 .geo-card-head p,
 .geo-page-v2 .geo-card > p { font-size: 8px; }
-.geo-page-v2 .geo-content-grid { grid-template-columns: 260px minmax(0, 1fr); gap: 12px; }
+.geo-page-v2 .geo-content-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .geo-insights-card { min-height: 350px; }
 .geo-insights { display: grid; gap: 12px; margin-top: 14px; }
 .geo-insights > div { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 10px; }
@@ -7170,7 +7170,7 @@ thead .at-metric:last-child {
 .geo-segmented button { min-width: 55px; min-height: 27px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: #667991; font: inherit; font-size: 8px; cursor: pointer; }
 .geo-segmented button.active { background: #ffe7a1; color: #453811; font-weight: 800; }
 
-.geo-locality-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.geo-map-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .geo-map-card { min-height: 470px; overflow: hidden; }
 .geo-map-metric { display: grid; gap: 4px; min-width: 190px; color: #718097; font-size: 8px; }
 .geo-map-metric select { min-height: 32px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #18324d; padding: 0 9px; font: inherit; }
@@ -7226,6 +7226,12 @@ thead .at-metric:last-child {
 .geo-ranking-bars i b { display: block; height: 100%; border-radius: inherit; }
 .geo-ranking-bars strong { color: #233d59; font-size: 10px; text-align: right; }
 .geo-page-v2 .geo-comparison-card { padding: 14px; }
+.geo-page-v2 .geo-bottom-rankings { grid-template-columns: minmax(220px, .72fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.geo-ranking-filter { display: grid; align-content: start; gap: 14px; min-height: 330px; }
+.geo-ranking-filter label { display: grid; gap: 5px; color: #718097; font-size: 8px; }
+.geo-ranking-filter select { min-height: 34px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #18324d; padding: 0 9px; font: inherit; }
+.geo-ranking-filter-note { padding: 10px; border-radius: 7px; background: #f7f9fc; color: #718097; font-size: 8px; line-height: 1.45; }
+.geo-page-v2 .geo-region-pie .recharts-legend-item-text { display: inline-block; max-width: 150px; overflow: hidden; vertical-align: bottom; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1180px) {
   .geo-page-v2 .geo-toolbar,
@@ -7235,8 +7241,9 @@ thead .at-metric:last-child {
   .geo-location-filters { flex: 1 1 100%; }
   .geo-page-v2 .geo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .geo-page-v2 .geo-content-grid,
-  .geo-locality-grid,
+  .geo-map-grid,
   .geo-page-v2 .geo-finance-grid { grid-template-columns: 1fr; }
+  .geo-page-v2 .geo-bottom-rankings { grid-template-columns: 1fr 1fr; }
   .geo-insights-card { min-height: 0; }
   .geo-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -7254,7 +7261,7 @@ thead .at-metric:last-child {
   .geo-detail-sort select { width: 100%; }
   .geo-map-metric { width: 100%; }
   .russia-metric-map-stage { min-height: 250px; padding-inline: 0; }
-  .geo-locality-cell { grid-template-columns: 36px 54px; }
+  .geo-page-v2 .geo-bottom-rankings { grid-template-columns: 1fr; }
 }
 
 /* Search queries analytics — demand and opportunity workspace */
