@@ -9,7 +9,7 @@ import { getFilteredProductIds } from '../../data/productFilters';
 import { getCabinetExtraExpense } from '../../data/profitStore';
 import { getReportNetProfit } from '../../data/profitabilityCalculations';
 import { appendToMap } from '../../data/collectionUtils';
-import { amountShare, orderShare, toMillions, topFiveWithOther } from './geographyCalculations';
+import { aggregateGeography, amountShare, getFulfillmentCoverage, getFulfillmentOrders, geographyFulfillmentLabels, orderShare, toMillions, topFiveWithOther, type GeographyFulfillment } from './geographyCalculations';
 import { hasKnownGeoArea, hasKnownGeoCity, normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from '../../data/geographyHierarchy';
 import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
@@ -66,18 +66,7 @@ function previousPeriod(start: string, end: string) {
   const previousEnd = shiftDate(start, -1);
   return { start: shiftDate(previousEnd, -(days - 1)), end: previousEnd };
 }
-function aggregate(records: GeographyOrderRecord[]) {
-  const total = records.reduce((sum, record) => sum + record.orders_total, 0);
-  const withDelivery = records.filter(record => record.delivery_hours !== null && record.orders_total > 0);
-  const coveredOrders = withDelivery.reduce((sum, record) => sum + record.orders_total, 0);
-  const deliveryHours = coveredOrders > 0
-    ? withDelivery.reduce((sum, record) => sum + (record.delivery_hours || 0) * record.orders_total, 0) / coveredOrders
-    : null;
-  const stock = records.reduce((sum, record) => sum + record.stock_wb + record.stock_marketplace, 0);
-  return { total, deliveryHours, coveredOrders, stock };
-}
-
-function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: GeographyOrderRecord[], productById: Map<string, ReturnType<typeof getProducts>[number]>) {
+function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: GeographyOrderRecord[], productById: Map<string, ReturnType<typeof getProducts>[number]>, fulfillment: GeographyFulfillment) {
   const dailyMetrics = getMetrics();
   const profitability = getProfitabilityRecords();
   const geographyTotals = new Map<string, number>();
@@ -91,8 +80,9 @@ function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: Geography
   filtered.forEach(record => {
     const key = `${record.date}|${record.product_id}`;
     const denominator = geographyTotals.get(key) || 0;
-    if (!denominator || !record.orders_total) return;
-    const share = record.orders_total / denominator;
+    const orders = getFulfillmentOrders(record, fulfillment);
+    if (!denominator || !orders) return;
+    const share = orders / denominator;
     const product = productById.get(record.product_id);
     const profitRecord = profitabilityByKey.get(key);
     const extraExpense = getCabinetExtraExpense(record.date.slice(0, 7), product?.cabinet_id || '');
@@ -100,7 +90,7 @@ function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: Geography
     const normalizedCity = normalizeGeoCity(record.city);
     const locationKey = `${record.region}|${normalizedArea}|${normalizedCity}`;
     const current = byLocation.get(locationKey) || { region: record.region, area: normalizedArea, city: normalizedCity, orders: 0, orderedAmount: 0, netProfit: 0, profitRevenue: 0 };
-    current.orders += record.orders_total;
+    current.orders += orders;
     current.orderedAmount += (amountByKey.get(key) || 0) * share;
     if (profitRecord) {
       current.netProfit += getReportNetProfit(profitRecord, extraExpense) * share;
@@ -128,6 +118,7 @@ export default function GeographyPage() {
   const [brandId, setBrandId] = useState('');
   const [groupId, setGroupId] = useState('');
   const [query, setQuery] = useState('');
+  const [fulfillment, setFulfillment] = useState<GeographyFulfillment>('all');
   const [metric, setMetric] = useState<ChartMetric>('orders');
   const [granularity, setGranularity] = useState<'day' | 'week'>('day');
   const [showAllRegions, setShowAllRegions] = useState(false);
@@ -158,8 +149,8 @@ export default function GeographyPage() {
     if (city && record.city !== city) return false;
     return true;
   }), [baseFiltered, region, area, city]);
-  const baseTotals = useMemo(() => aggregate(baseFiltered), [baseFiltered]);
-  const totals = useMemo(() => aggregate(filtered), [filtered]);
+  const baseTotals = useMemo(() => aggregateGeography(baseFiltered, fulfillment), [baseFiltered, fulfillment]);
+  const totals = useMemo(() => aggregateGeography(filtered, fulfillment), [filtered, fulfillment]);
   const comparisonPeriod = useMemo(() => previousPeriod(start, end), [start, end]);
   const previousFiltered = useMemo(() => records.filter(record => {
     if (comparisonPeriod.start && record.date < comparisonPeriod.start) return false;
@@ -169,7 +160,7 @@ export default function GeographyPage() {
     if (city && record.city !== city) return false;
     return allowedProductIds.has(record.product_id);
   }), [records, allowedProductIds, comparisonPeriod, region, area, city]);
-  const previousTotals = useMemo(() => aggregate(previousFiltered), [previousFiltered]);
+  const previousTotals = useMemo(() => aggregateGeography(previousFiltered, fulfillment), [previousFiltered, fulfillment]);
 
   const chartData = useMemo(() => {
     const byDate = new Map<string, GeographyOrderRecord[]>();
@@ -178,26 +169,26 @@ export default function GeographyPage() {
       appendToMap(byDate, bucket, record);
     });
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => {
-      const values = aggregate(rows);
+      const values = aggregateGeography(rows, fulfillment);
       return { date: date.slice(5), value: metric === 'orders' ? values.total : metric === 'deliveryHours' ? values.deliveryHours || 0 : values.stock };
     });
-  }, [filtered, metric, granularity, start]);
+  }, [filtered, metric, granularity, start, fulfillment]);
 
   const financeLeaves = useMemo(() => {
-    return buildFinanceLeaves(filtered, records, productById);
-  }, [filtered, records, productById]);
-  const previousFinanceLeaves = useMemo(() => buildFinanceLeaves(previousFiltered, records, productById), [previousFiltered, records, productById]);
+    return buildFinanceLeaves(filtered, records, productById, fulfillment);
+  }, [filtered, records, productById, fulfillment]);
+  const previousFinanceLeaves = useMemo(() => buildFinanceLeaves(previousFiltered, records, productById, fulfillment), [previousFiltered, records, productById, fulfillment]);
   const financeTotals = useMemo(() => sumFinance(financeLeaves), [financeLeaves]);
   const previousFinanceTotals = useMemo(() => sumFinance(previousFinanceLeaves), [previousFinanceLeaves]);
   const regionRows = useMemo(() => {
     const financeByRegion = new Map<string, FinanceGeoRow[]>();
     financeLeaves.forEach(row => appendToMap(financeByRegion, row.region, row));
     return regions.map(name => {
-      const summary = aggregate(filtered.filter(record => record.region === name));
+      const summary = aggregateGeography(filtered.filter(record => record.region === name), fulfillment);
       const finance = sumFinance(financeByRegion.get(name) || []);
       return { region: name, ...summary, orderedAmount: finance.orderedAmount, amountShare: amountShare(finance.orderedAmount, financeTotals.orderedAmount) };
     }).filter(row => row.total > 0).sort((a, b) => b.orderedAmount - a.orderedAmount);
-  }, [filtered, regions, financeLeaves, financeTotals.orderedAmount]);
+  }, [filtered, regions, financeLeaves, financeTotals.orderedAmount, fulfillment]);
   const financeHierarchy = useMemo(() => {
     const districts = [...new Set(financeLeaves.map(row => row.region))].map(regionName => {
       const districtLeaves = financeLeaves.filter(row => row.region === regionName);
@@ -225,19 +216,19 @@ export default function GeographyPage() {
       appendToMap(financeByCity, `${row.region}|${row.area}|${row.city}`, row);
     });
     const rows = [...recordsByArea.entries()].map(([areaKey, entry]) => {
-      const summary = aggregate(entry.rows);
+      const summary = aggregateGeography(entry.rows, fulfillment);
       const finance = sumFinance(financeByArea.get(areaKey) || []);
       const recordsByCity = new Map<string, GeographyOrderRecord[]>();
       entry.rows.filter(record => hasKnownGeoCity(record.city)).forEach(record => appendToMap(recordsByCity, normalizeGeoCity(record.city), record));
       const citiesForArea = [...recordsByCity.entries()].map(([cityName, cityRecords]) => {
-        const citySummary = aggregate(cityRecords);
+        const citySummary = aggregateGeography(cityRecords, fulfillment);
         const cityFinance = sumFinance(financeByCity.get(`${areaKey}|${cityName}`) || []);
         return { name: cityName, orders: citySummary.total, deliveryHours: citySummary.deliveryHours, orderedAmount: cityFinance.orderedAmount, profitability: cityFinance.profitability, share: orderShare(citySummary.total, baseTotals.total) };
-      }).sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
+      }).filter(row => row.orders > 0).sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
       return { key: areaKey, district: entry.district, name: entry.area, orders: summary.total, deliveryHours: summary.deliveryHours, orderedAmount: finance.orderedAmount, netProfit: finance.netProfit, profitability: finance.profitability, share: orderShare(summary.total, baseTotals.total), cities: citiesForArea };
-    });
+    }).filter(row => row.orders > 0);
     return rows.sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
-  }, [filtered, financeLeaves, baseTotals.total, detailSort]);
+  }, [filtered, financeLeaves, baseTotals.total, detailSort, fulfillment]);
   const mapRows = useMemo<RussiaMapAreaRow[]>(() => {
     const totalOrderedAmount = detailAreas.reduce((sum, row) => sum + row.orderedAmount, 0);
     const totalNetProfit = detailAreas.reduce((sum, row) => sum + row.netProfit, 0);
@@ -273,12 +264,12 @@ export default function GeographyPage() {
     const byDate = new Map<string, GeographyOrderRecord[]>();
     filtered.forEach(record => appendToMap(byDate, record.date, record));
     return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, rows]) => {
-      const delivery = aggregate(rows).deliveryHours || 0;
+      const delivery = aggregateGeography(rows, fulfillment).deliveryHours || 0;
       const sums = rows.reduce((result, row) => {
         const key = `${row.date}|${row.product_id}`;
         const funnel = funnelByKey.get(key);
         const denominator = allGeoTotals.get(key) || 0;
-        const share = denominator ? row.orders_total / denominator : 0;
+        const share = denominator ? getFulfillmentOrders(row, fulfillment) / denominator : 0;
         if (!funnel || !share) return result;
         result.orderedAmount += funnel.ordered_amount * share;
         result.impressions += funnel.impressions * share;
@@ -290,7 +281,7 @@ export default function GeographyPage() {
       const rates = { ctr: sums.impressions ? sums.clicks / sums.impressions * 100 : 0, cartCr: sums.clicks ? sums.carts / sums.clicks * 100 : 0, impressionOrderCr: sums.impressions ? sums.orders / sums.impressions * 100 : 0 };
       return { date: date.slice(5), deliveryHours: delivery, comparison: comparisonMetric in sums ? sums[comparisonMetric as keyof typeof sums] : rates[comparisonMetric as keyof typeof rates] };
     });
-  }, [filtered, records, comparisonMetric]);
+  }, [filtered, records, comparisonMetric, fulfillment]);
   const topRegions = useMemo(() => financeHierarchy.slice(0, 7).map(row => ({ name: row.name, value: row.orderedAmount })), [financeHierarchy]);
   const rankingFinanceLeaves = useMemo(() => rankingRegion ? financeLeaves.filter(row => row.region === rankingRegion) : financeLeaves, [financeLeaves, rankingRegion]);
   const rankingAmount = useMemo(() => sumFinance(rankingFinanceLeaves).orderedAmount, [rankingFinanceLeaves]);
@@ -313,18 +304,18 @@ export default function GeographyPage() {
     return topFiveWithOther(ranked.map(item => ({ name: item.label, value: item.value })), rankingAmount);
   }, [rankingFinanceLeaves, rankingAmount]);
   const selectedGeoRecords = useMemo(() => selectedGeo ? filtered.filter(row => row.region === selectedGeo.district && (!selectedGeo.area || row.area === selectedGeo.area) && (!selectedGeo.city || row.city === selectedGeo.city)) : [], [filtered, selectedGeo]);
-  const selectedGeoSummary = useMemo(() => aggregate(selectedGeoRecords), [selectedGeoRecords]);
+  const selectedGeoSummary = useMemo(() => aggregateGeography(selectedGeoRecords, fulfillment), [selectedGeoRecords, fulfillment]);
   const selectedGeoFinance = useMemo(() => selectedGeo ? sumFinance(financeLeaves.filter(row => row.region === selectedGeo.district && (!selectedGeo.area || row.area === selectedGeo.area) && (!selectedGeo.city || row.city === selectedGeo.city))) : null, [financeLeaves, selectedGeo]);
   const selectedGeoProducts = useMemo(() => {
     const byProduct = new Map<string, GeographyOrderRecord[]>();
     selectedGeoRecords.forEach(row => appendToMap(byProduct, row.product_id, row));
-    return [...byProduct.entries()].map(([productId, rows]) => ({ product: productById.get(productId), ...aggregate(rows) })).sort((left, right) => right.total - left.total);
-  }, [selectedGeoRecords, productById]);
+    return [...byProduct.entries()].map(([productId, rows]) => ({ product: productById.get(productId), ...aggregateGeography(rows, fulfillment) })).filter(row => row.total > 0).sort((left, right) => right.total - left.total);
+  }, [selectedGeoRecords, productById, fulfillment]);
   const selectedGeoTrend = useMemo(() => {
     const byDate = new Map<string, GeographyOrderRecord[]>();
-    selectedGeoRecords.forEach(row => appendToMap(byDate, row.date, row));
-    return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, rows]) => { const values = aggregate(rows); return { date: date.slice(5), delivery: values.deliveryHours || 0, orders: values.total }; });
-  }, [selectedGeoRecords]);
+    selectedGeoRecords.filter(row => getFulfillmentOrders(row, fulfillment) > 0).forEach(row => appendToMap(byDate, row.date, row));
+    return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, rows]) => { const values = aggregateGeography(rows, fulfillment); return { date: date.slice(5), delivery: values.deliveryHours || 0, orders: values.total }; });
+  }, [selectedGeoRecords, fulfillment]);
   const visibleRegionRows = showAllRegions ? regionRows : regionRows.slice(0, 8);
   const filteredProductCount = new Set(filtered.map(record => record.product_id)).size;
   const deliveryDelta = totals.deliveryHours !== null && previousTotals.deliveryHours !== null ? totals.deliveryHours - previousTotals.deliveryHours : 0;
@@ -334,6 +325,10 @@ export default function GeographyPage() {
   const averageCheck = financeTotals.orders ? financeTotals.orderedAmount / financeTotals.orders : null;
   const previousAverageCheck = previousFinanceTotals.orders ? previousFinanceTotals.orderedAmount / previousFinanceTotals.orders : null;
   const averageCheckDelta = averageCheck !== null && previousAverageCheck ? (averageCheck - previousAverageCheck) / previousAverageCheck * 100 : null;
+  const fulfillmentCoverage = useMemo(() => getFulfillmentCoverage(baseFiltered), [baseFiltered]);
+  const fulfillmentCoverageText = fulfillmentCoverage.coverage === null
+    ? 'Нет заказов для проверки разметки FBO/FBS.'
+    : `Размечено FBO/FBS: ${formatNumber(fulfillmentCoverage.coverage)}% (${formatNumber(fulfillmentCoverage.distributed)} из ${formatNumber(fulfillmentCoverage.total)} заказов).`;
 
   if (showHelp) return <section className="geo-page"><AnalyticsHelp data={geographyHelp} onClose={() => setShowHelp(false)} /></section>;
 
@@ -344,7 +339,8 @@ export default function GeographyPage() {
 
   return <section className="geo-page geo-page-v2">
     <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Объём заказов, сроки доставки и распределение спроса по территориям.</p></div><div className="analytics-page-header-actions"><small>Найдено товаров: <b>{formatNumber(filteredProductCount)}</b></small><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></div></header>
-    <div className="geo-toolbar table-toolbar entry-analytics-toolbar page-card"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); setDetailPage(0); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinetId} categoryFilter={category} brandFilter={brandId} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinetId} onCategoryChange={setCategory} onBrandChange={setBrandId} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" afterControls={<div className="geo-location-filters"><select className="entry-context-select" aria-label="Федеральный округ" value={region} onChange={event => { setRegion(event.target.value); setArea(''); setCity(''); setDetailPage(0); }}><option value="">Все ФО</option>{regions.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Регион" value={area} onChange={event => { setArea(event.target.value); setCity(''); setDetailPage(0); }}><option value="">Все регионы</option>{areas.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Населённый пункт" value={city} onChange={event => { setCity(event.target.value); setDetailPage(0); }}><option value="">Все города</option>{cities.map(item => <option key={item} value={item}>{item}</option>)}</select></div>} /></div>
+    <div className="geo-toolbar table-toolbar entry-analytics-toolbar page-card"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); setDetailPage(0); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinetId} categoryFilter={category} brandFilter={brandId} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinetId} onCategoryChange={setCategory} onBrandChange={setBrandId} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" afterControls={<div className="geo-context-controls"><div className="geo-fulfillment-filter" role="group" aria-label="Тип выполнения заказа">{(Object.keys(geographyFulfillmentLabels) as GeographyFulfillment[]).map(value => <button type="button" key={value} className={fulfillment === value ? 'active' : ''} aria-pressed={fulfillment === value} onClick={() => { setFulfillment(value); setDetailPage(0); }}>{geographyFulfillmentLabels[value]}</button>)}</div><div className="geo-location-filters"><select className="entry-context-select" aria-label="Федеральный округ" value={region} onChange={event => { setRegion(event.target.value); setArea(''); setCity(''); setDetailPage(0); }}><option value="">Все ФО</option>{regions.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Регион" value={area} onChange={event => { setArea(event.target.value); setCity(''); setDetailPage(0); }}><option value="">Все регионы</option>{areas.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Населённый пункт" value={city} onChange={event => { setCity(event.target.value); setDetailPage(0); }}><option value="">Все города</option>{cities.map(item => <option key={item} value={item}>{item}</option>)}</select></div></div>} /></div>
+    {fulfillment !== 'all' && <div className={`geo-fulfillment-note${fulfillmentCoverage.coverage !== null && Math.abs(fulfillmentCoverage.residual) > 0.0001 ? ' warning' : ''}`} role="status"><strong>{geographyFulfillmentLabels[fulfillment]}</strong><span>{fulfillmentCoverageText}</span></div>}
     <div className="geo-kpis">
       <article className="geo-kpi"><span>Заказы</span><strong>{formatNumber(totals.total)} шт.</strong><small className={orderDelta === null || orderDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{orderDelta === null ? 'Нет прошлого периода' : `${orderDelta >= 0 ? '+' : ''}${formatNumber(orderDelta)}% к прошлому периоду`}</small><small>Количество заказов в выбранном срезе</small></article>
       <article className="geo-kpi"><span>Сумма заказов</span><strong>{formatMillions(financeTotals.orderedAmount)} млн ₽</strong><small className={amountDelta === null || amountDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{amountDelta === null ? 'Нет прошлого периода' : `${amountDelta >= 0 ? '+' : ''}${formatNumber(amountDelta)}% к прошлому периоду`}</small><small>Расчётная сумма, распределённая по географии</small></article>

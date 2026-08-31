@@ -7116,8 +7116,15 @@ thead .at-metric:last-child {
 .geo-page-v2 .geo-toolbar .filterbar-status:not(:has(.filter-reset)) { display: none; }
 .geo-page-v2 .geo-toolbar .filter-result-count { display: none; }
 .geo-page-v2 .geo-toolbar .filter-chips { display: none; }
+.geo-context-controls { display: flex; flex: 1 1 560px; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.geo-fulfillment-filter { display: flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid #dbe3ed; border-radius: 8px; background: #f7f9fc; }
+.geo-fulfillment-filter button { min-height: 29px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: #657790; font: inherit; font-size: 9px; cursor: pointer; white-space: nowrap; }
+.geo-fulfillment-filter button.active { background: #ffe7a1; color: #453811; font-weight: 800; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
 .geo-location-filters { display: flex; flex: 1 1 390px; flex-wrap: nowrap; gap: 8px; min-width: 0; }
 .geo-location-filters select { flex: 1 1 125px; width: 100%; min-width: 105px; max-width: 180px; }
+.geo-fulfillment-note { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border: 1px solid #dbe3ed; border-radius: 8px; background: #f8fbff; color: #63758d; font-size: 10px; }
+.geo-fulfillment-note strong { color: #183a5d; }
+.geo-fulfillment-note.warning { border-color: #f0c36a; background: #fffaf0; color: #7a5a1a; }
 
 .geo-page-v2 .geo-kpis {
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7238,6 +7245,7 @@ thead .at-metric:last-child {
   .geo-page-v2 .geo-toolbar > .filterbar-dashboard,
   .geo-page-v2 .geo-toolbar .filterbar-primary { flex-wrap: wrap; }
   .geo-page-v2 .geo-toolbar > .date-filters { align-self: auto; }
+  .geo-context-controls { flex: 1 1 100%; }
   .geo-location-filters { flex: 1 1 100%; }
   .geo-page-v2 .geo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .geo-page-v2 .geo-content-grid,
@@ -7255,6 +7263,8 @@ thead .at-metric:last-child {
   .geo-insights { grid-template-columns: 1fr; }
   .geo-card-head { align-items: flex-start; flex-direction: column; }
   .geo-chart-controls { align-items: stretch; flex-direction: column; width: 100%; }
+  .geo-fulfillment-filter { width: 100%; }
+  .geo-fulfillment-filter button { flex: 1 1 0; }
   .geo-location-filters { width: 100%; }
   .geo-location-filters select { flex: 1 1 150px; max-width: none; }
   .geo-detail-table-card .geo-card-head { align-items: stretch; }
