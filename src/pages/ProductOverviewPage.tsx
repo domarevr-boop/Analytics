@@ -1,11 +1,12 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { getBrands, getCabinets, getEntryPoints, getGeographyOrders, getGroups, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getRelatedProductIds, getVersion, subscribe } from '../data/store';
+import { getBrands, getCabinets, getEntryPoints, getGeographyOrders, getGroupMembershipHistory, getGroups, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getRelatedProductIds, getVersion, subscribe } from '../data/store';
 import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { getWbImageUrls } from '../data/images';
 import type { DailyMetrics, EntryPointRecord, GeographyOrderRecord, ProfitabilityRecord } from '../types';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 
 const fmt = (value: number, digits = 0) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: digits }).format(value);
 const money = (value: number) => `${fmt(value)} ₽`;
@@ -211,13 +212,13 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const profitabilityRows = getProfitabilityRecords();
   const geographyRows = getGeographyOrders();
   const entryPointRows = getEntryPoints();
+  const groupHistory = getGroupMembershipHistory();
   const product = products.find(item => item.id === productId);
   const relatedIds = useMemo(() => new Set(getRelatedProductIds(productId)), [productId, products]);
   const cabinet = getCabinets().find(item => item.id === product?.cabinet_id);
   const brand = getBrands().find(item => item.id === product?.brand_id);
   const groupIds = getMemberships().filter(item => relatedIds.has(item.product_id)).map(item => item.group_id);
   const productGroups = getGroups().filter(item => groupIds.includes(item.id));
-  const groupProductIds = useMemo(() => new Set(getMemberships().filter(item => groupIds.includes(item.group_id)).map(item => item.product_id)), [groupIds, products]);
   const allMetrics = useMemo(() => metricRows.filter(row => relatedIds.has(row.product_id)).sort((a, b) => a.date.localeCompare(b.date)), [metricRows, relatedIds]);
   const allProfitability = useMemo(() => profitabilityRows.filter(row => relatedIds.has(row.product_id)), [profitabilityRows, relatedIds]);
   const allGeography = useMemo(() => geographyRows.filter(row => relatedIds.has(row.product_id)), [geographyRows, relatedIds]);
@@ -230,6 +231,19 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
     setPeriod(nextPeriod);
     setComparison(previousPeriod(nextPeriod));
   };
+  const groupProductIds = useMemo(() => {
+    if (groupHistory.length === 0) return new Set(getMemberships().filter(item => groupIds.includes(item.group_id)).map(item => item.product_id));
+    const result = new Set<string>();
+    const memberships = getMemberships();
+    metricRows
+      .filter(row => relatedIds.has(row.product_id) && row.date >= period.start && row.date <= period.end)
+      .forEach(row => {
+        const selected = resolveGroupAtDate(productId, row.date, groupHistory, memberships);
+        const candidate = resolveGroupAtDate(row.product_id, row.date, groupHistory, memberships);
+        if (selected.known && candidate.known && selected.groupId === candidate.groupId) result.add(row.product_id);
+      });
+    return result;
+  }, [groupHistory, groupIds, metricRows, period, productId, relatedIds]);
   const [primaryMetric, setPrimaryMetric] = useState<ProductMetric>('revenue');
   const [secondaryMetric, setSecondaryMetric] = useState<ProductMetric>('profit');
   const [granularity, setGranularity] = useState<'day' | 'week'>('day');

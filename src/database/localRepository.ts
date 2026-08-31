@@ -1,11 +1,11 @@
-import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
+import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
 
 const DB_NAME = 'analytics-db';
 // IndexedDB versions are permanent in a browser profile. Published versions
-// must never be reused or decreased; version 9 restores market_dynamics on top
-// of the current schema without touching existing stores.
-const DB_VERSION = 9;
-const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'market_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
+// must never be reused or decreased; version 10 adds dated group membership
+// history without touching existing stores.
+const DB_VERSION = 10;
+const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'group_membership_history', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'market_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -23,6 +23,10 @@ function openDB(): Promise<IDBDatabase> {
           if (s === 'market_dynamics') store.createIndex('date', 'date', { unique: true });
           if (s.startsWith('competitor_')) store.createIndex('date', 'date', { unique: false });
           if (s === 'products') store.createIndex('sku', 'sku', { unique: false });
+          if (s === 'group_membership_history') {
+            store.createIndex('date', 'date', { unique: false });
+            store.createIndex('product_id', 'product_id', { unique: false });
+          }
         }
       }
     };
@@ -55,6 +59,7 @@ function getKey(store: string, obj: Record<string, unknown>): IDBValidKey {
   switch (store) {
     case 'daily_metrics': return [obj.date, obj.product_id] as IDBValidKey;
     case 'group_memberships': return [obj.product_id, obj.group_id] as IDBValidKey;
+    case 'group_membership_history': return [obj.date, obj.product_id] as IDBValidKey;
     case 'plans': return [obj.entityId, obj.entityType] as IDBValidKey;
     case 'monthly_plans': return [obj.sku, obj.month] as IDBValidKey;
     case 'geography_orders': return [obj.date, obj.product_id, obj.region, obj.area || '', obj.city || ''] as IDBValidKey;
@@ -91,7 +96,7 @@ export class LocalRepository implements IDataRepository {
 
     const tx = getTX(db, [...STORES], 'readonly');
     const [
-      cabinets, brands, groups, products, memberships, metrics,
+      cabinets, brands, groups, products, memberships, groupHistory, metrics,
       plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics,
       competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs,
     ] = await Promise.all([
@@ -100,6 +105,7 @@ export class LocalRepository implements IDataRepository {
       getAll<ProductGroup>(tx.objectStore('product_groups')),
       getAll<Product>(tx.objectStore('products')),
       getAll<GroupMembership>(tx.objectStore('group_memberships')),
+      getAll<GroupMembershipHistory>(tx.objectStore('group_membership_history')),
       getAll<DailyMetrics>(tx.objectStore('daily_metrics')),
       getAll<PlanRecord>(tx.objectStore('plans')),
       getAll<MonthlyPlanRecord>(tx.objectStore('monthly_plans')),
@@ -117,7 +123,7 @@ export class LocalRepository implements IDataRepository {
       getAll<ImportFileLog>(tx.objectStore('import_logs')),
     ]);
 
-    return { cabinets, brands, groups, products, memberships, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics, competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs };
+    return { cabinets, brands, groups, products, memberships, groupHistory, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics, competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs };
   }
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
@@ -128,6 +134,7 @@ export class LocalRepository implements IDataRepository {
       { store: 'product_groups', rows: data.groups as unknown as DBRecord[] },
       { store: 'products', rows: data.products as unknown as DBRecord[] },
       { store: 'group_memberships', rows: data.memberships as unknown as DBRecord[] },
+      { store: 'group_membership_history', rows: data.groupHistory as unknown as DBRecord[] },
       { store: 'daily_metrics', rows: data.metrics as unknown as DBRecord[] },
       { store: 'plans', rows: data.plans as unknown as DBRecord[] },
       { store: 'monthly_plans', rows: data.monthlyPlans as unknown as DBRecord[] },
@@ -186,6 +193,7 @@ export class LocalRepository implements IDataRepository {
         const changeName = storeName === 'product_groups' ? 'groups'
           : storeName === 'daily_metrics' ? 'metrics'
           : storeName === 'group_memberships' ? 'memberships'
+          : storeName === 'group_membership_history' ? 'groupHistory'
           : storeName === 'monthly_plans' ? 'monthlyPlans'
           : storeName === 'profitability_reports' ? 'profitability'
           : storeName === 'geography_orders' ? 'geography'

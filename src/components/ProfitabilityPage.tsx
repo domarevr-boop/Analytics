@@ -1,6 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getMetrics, getProfitabilityRecords } from '../data/store';
+import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getGroupMembershipHistory, getMetrics, getProfitabilityRecords } from '../data/store';
 import { subscribeExtraExpenses, getExtraExpensesVersion, getExtraExpenses, getCabinetExtraExpense, setExtraExpense } from '../data/profitStore';
 import FilterBar from './FilterBar';
 import type { FilterBarProps } from './FilterBar';
@@ -8,6 +8,7 @@ import { getFilteredProductIds } from '../data/productFilters';
 import { getReportGrossProfit } from '../data/profitabilityCalculations';
 import DateRangeFilter from './DateRangeFilter';
 import type { DatePeriod } from '../data/mock';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const monthOf = (date: string) => date.slice(0, 7);
@@ -50,6 +51,7 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const expenseVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
   const products = getProducts();
   const memberships = getMemberships();
+  const groupHistory = getGroupMembershipHistory();
   const groups = getGroups();
   const cabinets = getCabinets();
   const records = getProfitabilityRecords();
@@ -67,7 +69,8 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const comparison = useMemo(() => previousPeriod(period), [period]);
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
-  const allowedIds = useMemo(() => getFilteredProductIds(products, memberships, filterProps), [products, memberships, filterProps]);
+  const allowedIds = useMemo(() => getFilteredProductIds(products, memberships, filterProps, { groupHistory, period: { start: comparison.start, end: period.end } }), [products, memberships, groupHistory, filterProps, comparison, period]);
+  const matchesSelectedGroup = (productId: string, date: string) => !filterProps.groupFilter || (() => { const resolution = resolveGroupAtDate(productId, date, groupHistory, memberships); return resolution.known && resolution.groupId === filterProps.groupFilter; })();
   const selectMonth = (month: string) => {
     setPeriod({ start: monthStart(month), end: monthEnd(month) });
     setExpenseMonth(month);
@@ -78,7 +81,7 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
     const byProduct = new Map<string, FinanceValue>();
     const reportProductDates = new Set<string>();
     records.forEach(record => {
-      if (!allowedIds.has(record.product_id) || record.period_end < range.start || record.period_start > range.end) return;
+      if (!allowedIds.has(record.product_id) || record.period_end < range.start || record.period_start > range.end || !matchesSelectedGroup(record.product_id, record.period_start)) return;
       const product = productMap.get(record.product_id); if (!product) return;
       const revenue = record.profit_revenue;
       const grossProfit = getReportGrossProfit(record);
@@ -89,7 +92,7 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       reportProductDates.add(`${record.product_id}|${record.period_start}`);
     });
     metrics.forEach(row => {
-      if (!allowedIds.has(row.product_id) || row.date < range.start || row.date > range.end || reportProductDates.has(`${row.product_id}|${row.date}`)) return;
+      if (!allowedIds.has(row.product_id) || row.date < range.start || row.date > range.end || reportProductDates.has(`${row.product_id}|${row.date}`) || !matchesSelectedGroup(row.product_id, row.date)) return;
       const product = productMap.get(row.product_id); if (!product || !row.profit_revenue) return;
       const revenue = row.profit_revenue;
       const grossProfit = revenue - row.cost - row.agent_fee - row.logistics_cost - row.marketing_cost - row.storage_cost;
@@ -109,7 +112,7 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const dailyData = useMemo(() => {
     const byDate = new Map<string, FinanceValue>();
     records.forEach(record => {
-      if (!allowedIds.has(record.product_id) || record.period_start < period.start || record.period_start > period.end) return;
+      if (!allowedIds.has(record.product_id) || record.period_start < period.start || record.period_start > period.end || !matchesSelectedGroup(record.product_id, record.period_start)) return;
       const product = productMap.get(record.product_id); if (!product) return;
       const key = bucketDate(record.period_start, granularity);
       const revenue = record.profit_revenue; const grossProfit = getReportGrossProfit(record);
@@ -178,7 +181,7 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       <button type="button" className="profit-month-arrow" aria-label="Следующий месяц" disabled={activeMonthIndex < 0 || activeMonthIndex >= availableMonths.length - 1} onClick={() => selectMonth(availableMonths[activeMonthIndex + 1])}>›</button>
       <strong className="profit-active-month">{monthTitle(activeMonth)}</strong>
     </div>
-    <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={period} onChange={next => { setPeriod(next); setExpenseMonth(monthOf(next.end)); }} maxDate={records.map(row => row.period_end).sort().at(-1) || period.end} /></div><FilterBar {...filterProps} variant="dashboard" /></div>
+    <div className="table-toolbar workspace-toolbar profit-toolbar analytics-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={period} onChange={next => { setPeriod(next); setExpenseMonth(monthOf(next.end)); }} maxDate={records.map(row => row.period_end).sort().at(-1) || period.end} /></div><FilterBar {...filterProps} period={period} variant="dashboard" /></div>
 
     <section className="profit-kpis">{kpis.map(kpi => <article key={kpi.label}><span>{kpi.label}</span><strong>{kpi.value}</strong><small className={(kpi.inverse ? kpi.delta <= 0 : kpi.delta >= 0) ? 'positive' : 'negative'}>{kpi.delta >= 0 ? '▲' : '▼'} {fmt1(Math.abs(kpi.delta))}{kpi.points ? ' п.п.' : '%'} к прошлому периоду</small>{kpi.sub && <em>{kpi.sub}</em>}</article>)}</section>
 

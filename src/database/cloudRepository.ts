@@ -148,6 +148,7 @@ export class CloudRepository implements IDataRepository {
         data_source: product.data_source ?? 'seed',
       })) as Product[],
       memberships: (memberships.data || []) as GroupMembership[],
+      groupHistory: [],
       metrics: metrics.map(toMetrics),
       plans: (plans.data || []).map(r => toPlan(r as PlanRow)),
       monthlyPlans: (monthlyPlans.data || []).map(r => toMonthlyPlan(r as MonthlyPlanRow)),

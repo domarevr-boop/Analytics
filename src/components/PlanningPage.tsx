@@ -1,10 +1,11 @@
 import { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getMonthlyPlans, upsertMonthlyPlan, upsertMonthlyPlans, findOrCreateProduct, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getGroups, getProducts, getMemberships, getGroupMembershipHistory, getMonthlyPlans, upsertMonthlyPlan, upsertMonthlyPlans, findOrCreateProduct, UNGROUPED_GROUP_ID } from '../data/store';
 import type { MonthlyPlanRecord } from '../types';
 import * as XLSX from 'xlsx';
 import FilterBar from './FilterBar';
 import type { FilterBarProps } from './FilterBar';
 import { getFilteredProductIds, hasProductFilters, isUngroupedFilter } from '../data/productFilters';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 
 const PLAN_FIELDS: { key: string; label: string; suffix: string; decimals: number }[] = [
   { key: 'avgQtyPerDay', label: 'Ср шт/день', suffix: '', decimals: 1 },
@@ -33,16 +34,25 @@ export default function PlanningPage(filterProps: FilterBarProps) {
   const groups = useMemo(() => getGroups(), [version]);
   const products = useMemo(() => getProducts(), [version]);
   const memberships = useMemo(() => getMemberships(), [version]);
+  const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const selectedMonthEnd = `${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate().toString().padStart(2, '0')}`;
   const monthlyPlans = useMemo(() => getMonthlyPlans(), [version]);
   const filteredProductIds = useMemo(
-    () => getFilteredProductIds(products, memberships, filterProps),
-    [products, memberships, filterProps],
+    () => getFilteredProductIds(products, memberships, filterProps, { groupHistory, period: { start: `${selectedMonth}-01`, end: selectedMonthEnd } }),
+    [products, memberships, groupHistory, filterProps, selectedMonth, selectedMonthEnd],
   );
   const filtering = hasProductFilters(filterProps);
   const filteredProducts = useMemo(
     () => products.filter(product => filteredProductIds.has(product.id)),
     [products, filteredProductIds],
   );
+  const productGroupMatches = (productId: string, groupId: string) => groupHistory.length > 0
+    ? (() => { const resolution = resolveGroupAtDate(productId, selectedMonthEnd, groupHistory, memberships); return resolution.known && resolution.groupId === groupId; })()
+    : memberships.some(membership => membership.product_id === productId && membership.group_id === groupId);
   const filteredCabinets = useMemo(
     () => cabinets.filter(cabinet =>
       (!filterProps.cabinetFilter || cabinet.id === filterProps.cabinetFilter)
@@ -55,19 +65,15 @@ export default function PlanningPage(filterProps: FilterBarProps) {
       filteredCabinets.some(cabinet => cabinet.id === group.cabinet_id)
       && (!filterProps.groupFilter || group.id === filterProps.groupFilter)
       && (!filtering || filteredProducts.some(product =>
-        memberships.some(membership => membership.group_id === group.id && membership.product_id === product.id)
+        productGroupMatches(product.id, group.id)
       )),
     ),
-    [groups, filteredCabinets, filterProps.groupFilter, filtering, filteredProducts, memberships],
+    [groups, filteredCabinets, filterProps.groupFilter, filtering, filteredProducts, memberships, groupHistory, selectedMonthEnd],
   );
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<CellEdit | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
   const [importStatus, setImportStatus] = useState('');
   const toggle = (id: string) => {
     setExpanded(prev => {
@@ -110,7 +116,7 @@ export default function PlanningPage(filterProps: FilterBarProps) {
 
       for (const grp of cabGroups) {
         const grpProducts = filteredProducts.filter(p =>
-          memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
+          productGroupMatches(p.id, grp.id)
         );
         const grpTotal = init();
 
@@ -148,7 +154,7 @@ export default function PlanningPage(filterProps: FilterBarProps) {
       totals.set(cab.id, { ...cabTotal });
     }
     return totals;
-  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, planMap, selectedMonth, monthProfitability]);
+  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, groupHistory, selectedMonthEnd, planMap, selectedMonth, monthProfitability]);
 
   // Grand summary for the top bar
   const planSummary = useMemo(() => {
@@ -170,14 +176,14 @@ export default function PlanningPage(filterProps: FilterBarProps) {
 
   const treeRows = useMemo(() => {
     const rows: { id: string; sku: string; name: string; depth: number; type: 'cabinet' | 'group' | 'product'; parent: string | null }[] = [];
-    const ungroupedIds = new Set(memberships.filter(m => m.group_id === UNGROUPED_GROUP_ID).map(m => m.product_id));
+    const ungroupedIds = new Set(filteredProducts.filter(p => productGroupMatches(p.id, UNGROUPED_GROUP_ID)).map(p => p.id));
 
     for (const cab of filteredCabinets) {
       rows.push({ id: cab.id, sku: '', name: cab.name, depth: 0, type: 'cabinet', parent: null });
       const cabGroups = filteredGroups.filter(g => g.cabinet_id === cab.id).sort((a, b) => a.name.localeCompare(b.name));
       for (const grp of cabGroups) {
         const grpProducts = filteredProducts.filter(p =>
-          memberships.some(m => m.product_id === p.id && m.group_id === grp.id)
+          productGroupMatches(p.id, grp.id)
         ).sort((a, b) => a.sku.localeCompare(b.sku));
         rows.push({ id: grp.id, sku: '', name: grp.name, depth: 1, type: 'group', parent: cab.id });
         if (expanded.has(grp.id)) {
@@ -200,7 +206,7 @@ export default function PlanningPage(filterProps: FilterBarProps) {
       }
     }
     return rows;
-  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, expanded, filterProps.groupFilter]);
+  }, [filteredCabinets, filteredGroups, filteredProducts, memberships, groupHistory, selectedMonthEnd, expanded, filterProps.groupFilter]);
 
   const handleStartEdit = (sku: string, field: string) => {
     if (field !== 'avgQtyPerDay' && field !== 'checkAmount') return;
@@ -362,6 +368,7 @@ export default function PlanningPage(filterProps: FilterBarProps) {
           </div>
           <FilterBar
             {...filterProps}
+            period={{ start: `${selectedMonth}-01`, end: `${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate().toString().padStart(2, '0')}` }}
             variant="dashboard"
             afterControls={(
               <div className="pl-import-area">

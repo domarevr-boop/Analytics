@@ -1,5 +1,5 @@
-import type { GroupMembership, Product } from '../types';
-import { UNGROUPED_GROUP_ID } from './store';
+import type { GroupMembership, GroupMembershipHistory, Product } from '../types';
+import { groupMatchesAtDate, productHasGroupInPeriod, UNGROUPED_GROUP_ID } from './groupMembershipHistory';
 
 export interface ProductFilterValues {
   cabinetFilter?: string;
@@ -13,8 +13,9 @@ export function getFilteredProductIds(
   products: Product[],
   memberships: GroupMembership[],
   filters: ProductFilterValues,
+  options?: { groupHistory?: GroupMembershipHistory[]; period?: { start: string; end: string } },
 ): Set<string> {
-  const groupProductIds = filters.groupFilter
+  const groupProductIds = filters.groupFilter && !options?.groupHistory
     ? new Set(
         memberships
           .filter(membership => membership.group_id === filters.groupFilter)
@@ -28,7 +29,16 @@ export function getFilteredProductIds(
       .filter(product => !filters.categoryFilter || (product.category || 'Без категории') === filters.categoryFilter)
       .filter(product => !filters.brandFilter || product.brand_id === filters.brandFilter)
       .filter(product => !filters.skuFilter || product.sku === filters.skuFilter)
-      .filter(product => !groupProductIds || groupProductIds.has(product.id))
+      .filter(product => {
+        if (!filters.groupFilter) return true;
+        if (options?.groupHistory) {
+          const period = options.period;
+          return period
+            ? productHasGroupInPeriod(product.id, period.start, period.end, filters.groupFilter, options.groupHistory, memberships)
+            : groupMatchesAtDate(product.id, [...options.groupHistory].sort((left, right) => right.date.localeCompare(left.date))[0]?.date || '', filters.groupFilter, options.groupHistory, memberships);
+        }
+        return !groupProductIds || groupProductIds.has(product.id);
+      })
       .map(product => product.id),
   );
 }

@@ -3,7 +3,7 @@ import type { DataChanges, DataSnapshot, ChangeSet } from '../types';
 type StoreName = keyof DataSnapshot;
 
 export const DATA_STORE_NAMES: StoreName[] = [
-  'cabinets', 'brands', 'groups', 'products', 'memberships',
+  'cabinets', 'brands', 'groups', 'products', 'memberships', 'groupHistory',
   'metrics', 'plans', 'monthlyPlans', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics', 'marketDynamics',
   'competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions', 'importLogs',
 ];
@@ -12,6 +12,7 @@ function recordKey(store: StoreName, record: Record<string, unknown>): IDBValidK
   switch (store) {
     case 'metrics': return [record.date, record.product_id] as IDBValidKey;
     case 'memberships': return [record.product_id, record.group_id] as IDBValidKey;
+    case 'groupHistory': return [record.date, record.product_id] as IDBValidKey;
     case 'plans': return [record.entityId, record.entityType] as IDBValidKey;
     case 'monthlyPlans': return [record.sku, record.month] as IDBValidKey;
     case 'geography': return [record.date, record.product_id, record.region, record.area || '', record.city || ''] as IDBValidKey;

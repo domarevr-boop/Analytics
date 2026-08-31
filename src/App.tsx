@@ -97,6 +97,7 @@ function DashboardContent(props: DashboardContentProps) {
     onBrandChange: props.onBrandChange,
     onGroupChange: props.onGroupChange,
     onSkuChange: props.onSkuChange,
+    period: props.periodA,
   };
   const exportDashboardData = () => {
     const columns = ['Дата', 'Заказы, ₽', 'Заказы, шт', 'Выручка, ₽', 'Прибыль, ₽', 'Рентабельность, %', 'Расходы на рекламу, ₽', 'ДРР, %'];

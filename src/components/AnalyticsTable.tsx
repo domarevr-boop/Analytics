@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo, useSyncExternalStore } from 'react';
 import type { MetricValues, TableRow } from '../types';
 import type { DailyMetrics } from '../types';
-import { subscribe, getVersion, getProducts, getMetrics, getProfitabilityRecords } from '../data/store';
+import { subscribe, getVersion, getProducts, getMetrics, getProfitabilityRecords, getGroupMembershipHistory, getMemberships } from '../data/store';
 import { getTableData, sumForProduct, toMetrics as mockToMetrics, getPlanMap } from '../data/mock';
 import type { DatePeriod } from '../data/mock';
 import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
 import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 
 const emptyMetrics = (): MetricValues => ({ impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, avg_price: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, plan_orders_qty: 0, plan_sum: 0, plan_price: 0, plan_net_profit: 0, plan_profitability: 0, plan_revenue: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 });
 const addTo = (a: MetricValues, b: MetricValues) => {
@@ -337,7 +338,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     if (hasProductFilter) {
       for (const row of allRows) {
         if (row.type !== 'product') continue;
-        if (productsMatchingBrand && !productsMatchingBrand.has(row.id)) continue;
+        if (productsMatchingBrand && !productsMatchingBrand.has(row.productId || row.id)) continue;
         if (skuFilter && row.sku !== skuFilter) continue;
 
         let current: TableRow | undefined = row;
@@ -379,6 +380,8 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
 
   // Raw daily data per product (last 7 days of periodA)
   const rawMetrics = useMemo(() => getMetrics(), [version]);
+  const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
+  const memberships = useMemo(() => getMemberships(), [version]);
   const productDays = useMemo(() => {
     const map = new Map<string, AggDay[]>();
     for (const m of rawMetrics) {
@@ -411,7 +414,16 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
 
   // Get AggDay[] for a row (product: direct, group/cabinet: aggregate children)
   function getRowDays(rowId: string, rowType: string): AggDay[] {
-    if (rowType === 'product') return productDays.get(rowId) || [];
+    if (rowType === 'product') {
+      const row = allRows.find(item => item.id === rowId);
+      const productId = row?.productId || rowId;
+      const days = productDays.get(productId) || [];
+      if (!row?.groupId) return days;
+      return days.filter(day => {
+        const resolution = resolveGroupAtDate(productId, day.date, groupHistory, memberships);
+        return resolution.known && resolution.groupId === row.groupId;
+      });
+    }
     const children = allRows.filter(r => r.parent === rowId);
     if (!children.length) return [];
     const merged = new Map<string, AggDay>();
@@ -441,7 +453,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       cache.set(row.id, perMetric);
     }
     return cache;
-  }, [visible, productDays, chartMetrics]);
+  }, [visible, productDays, chartMetrics, groupHistory, memberships]);
 
   const rowDateCache = useMemo(() => {
     const cache = new Map<string, string[]>();
@@ -449,7 +461,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       cache.set(row.id, getRowDays(row.id, row.type).map(d => d.date));
     }
     return cache;
-  }, [visible, productDays]);
+  }, [visible, productDays, groupHistory, memberships]);
 
   // Per-product month metrics (monthStart – periodA.end)
   const productMonthMetrics = useMemo(() => {
@@ -469,7 +481,15 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       const cached = cache.get(rowId);
       if (cached) return cached;
       if (rowType === 'product') {
-        const m = productMonthMetrics.get(rowId);
+        const row = allRows.find(item => item.id === rowId);
+        const productId = row?.productId || rowId;
+        const m = row?.groupId
+          ? (() => {
+            const product = products.find(item => item.id === productId);
+            const sum = product ? sumForProduct(productId, monthStart, periodA.end, getPlanMap(monthStart), product.sku, undefined, row.groupId, groupHistory, memberships) : null;
+            return sum ? mockToMetrics(sum) : undefined;
+          })()
+          : productMonthMetrics.get(productId);
         const r = m ? { ...m } : emptyMetrics();
         cache.set(rowId, r);
         return r;
@@ -489,7 +509,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     }
     for (const row of visible) getMM(row.id, row.type);
     return cache;
-  }, [productMonthMetrics, allRows, visible]);
+  }, [productMonthMetrics, allRows, visible, products, monthStart, periodA, groupHistory, memberships]);
 
   const daysInMonth = (dateStr: string) => new Date(dateStr.slice(0, 4) + '-' + dateStr.slice(5, 7) + '-01').getMonth() === 1 ? 28 : 31;
   const daysInPeriod = (start: string, end: string) => {
@@ -613,7 +633,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
             const children = allRows.filter(r => r.parent === row.id);
             const hasChildren = children.length > 0;
             const isExpanded = expanded.has(row.id);
-            const imgSku = row.type === 'product' ? productToWbSku.get(row.id) : undefined;
+            const imgSku = row.type === 'product' ? productToWbSku.get(row.productId || row.id) : undefined;
             const hasDistinctProductName = row.type !== 'product'
               || Boolean(row.name?.trim() && row.name.trim() !== row.sku?.trim());
 
@@ -630,7 +650,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
                     >
                       {hasChildren ? (isExpanded ? '−' : '+') : ''}
                     </button>
-                    <div className={`at-product-media${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.id)}>
+                    <div className={`at-product-media${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.productId || row.id)}>
                       {row.type === 'product' && row.sku ? (
                         <>
                           <span className="at-image-fallback" aria-hidden="true">Т</span>
@@ -663,7 +683,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
                         <span className={`at-entity-icon at-entity-${row.type}`}>{row.type === 'cabinet' ? 'К' : 'Г'}</span>
                       )}
                     </div>
-                    <div className={`at-product-info${hasDistinctProductName ? '' : ' at-product-info-compact'}${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.id)}>
+                    <div className={`at-product-info${hasDistinctProductName ? '' : ' at-product-info-compact'}${row.type === 'product' ? ' at-product-open' : ''}`} onClick={() => row.type === 'product' && onProductOpen?.(row.productId || row.id)}>
                       {hasDistinctProductName && <span className={`at-product-name at-product-name-${row.type}`}>{row.name}</span>}
                       <span className="at-product-meta">
                         {row.type === 'product'

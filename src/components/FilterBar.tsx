@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getCabinets, getBrands, getGroups, getProducts, getMemberships, UNGROUPED_GROUP_ID } from '../data/store';
+import { subscribe, getVersion, getCabinets, getBrands, getGroups, getProducts, getMemberships, getGroupMembershipHistory, UNGROUPED_GROUP_ID } from '../data/store';
 import { getFilteredProductIds } from '../data/productFilters';
+import { groupsActiveInPeriod, productHasGroupInPeriod } from '../data/groupMembershipHistory';
 
 export interface FilterBarProps {
   cabinetFilter: string;
@@ -10,6 +11,7 @@ export interface FilterBarProps {
   brandFilter: string;
   groupFilter: string;
   skuFilter: string;
+  period?: { start: string; end: string };
   onCabinetChange: (v: string) => void;
   onCategoryChange?: (v: string) => void;
   onBrandChange: (v: string) => void;
@@ -23,7 +25,7 @@ export interface FilterBarProps {
 export default function FilterBar({
   cabinetFilter, categoryFilter = '', brandFilter, groupFilter, skuFilter,
   onCabinetChange, onCategoryChange = () => undefined, onBrandChange, onGroupChange, onSkuChange,
-  variant = 'compact',
+  variant = 'compact', period,
   showCategoryFilter = true,
   afterControls,
 }: FilterBarProps) {
@@ -33,6 +35,7 @@ export default function FilterBar({
   const groups = getGroups();
   const products = getProducts();
   const memberships = getMemberships();
+  const groupHistory = getGroupMembershipHistory();
   const categories = [...new Set(products
     .filter(product => !cabinetFilter || product.cabinet_id === cabinetFilter)
     .map(product => product.category || 'Без категории'))]
@@ -42,20 +45,22 @@ export default function FilterBar({
     categoryFilter,
     brandFilter,
   });
+  const activeGroupIds = period ? groupsActiveInPeriod(products, period.start, period.end, groupHistory, memberships) : new Set(groups.map(group => group.id));
   const filteredGroups = groups.filter(group => {
     if (group.id === UNGROUPED_GROUP_ID) return false;
     if (cabinetFilter && group.cabinet_id !== cabinetFilter) return false;
+    if (groupHistory.length > 0 && !activeGroupIds.has(group.id)) return false;
     if (!brandFilter) return true;
-    return memberships.some(membership =>
-      membership.group_id === group.id && productsBeforeGroup.has(membership.product_id)
-    );
+    return products.some(product => productsBeforeGroup.has(product.id)
+      && activeGroupIds.has(group.id)
+      && (!period || productHasGroupInPeriod(product.id, period.start, period.end, group.id, groupHistory, memberships)));
   });
   const filteredProductIds = getFilteredProductIds(products, memberships, {
     cabinetFilter,
     categoryFilter,
     brandFilter,
     groupFilter,
-  });
+  }, { groupHistory, period });
   const productOptions = products
     .filter(product => filteredProductIds.has(product.id))
     .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
@@ -98,7 +103,7 @@ export default function FilterBar({
     brandFilter,
     groupFilter,
     skuFilter,
-  }).size;
+  }, { groupHistory, period }).size;
 
   const clearSku = () => {
     onSkuChange('');

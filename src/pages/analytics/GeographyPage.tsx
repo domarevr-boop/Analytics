@@ -4,7 +4,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
 import RussiaMetricMap, { type RussiaMapAreaRow } from '../../components/RussiaMetricMap';
-import { getGeographyOrders, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
+import { getGeographyOrders, getGroupMembershipHistory, getMemberships, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
 import { getFilteredProductIds } from '../../data/productFilters';
 import { getCabinetExtraExpense } from '../../data/profitStore';
 import { getReportNetProfit } from '../../data/profitabilityCalculations';
@@ -13,6 +13,7 @@ import { aggregateGeography, amountShare, getFulfillmentCoverage, getFulfillment
 import { hasKnownGeoArea, hasKnownGeoCity, normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from '../../data/geographyHierarchy';
 import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
+import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
 
 type ChartMetric = 'orders' | 'deliveryHours' | 'stock';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
@@ -107,6 +108,7 @@ export default function GeographyPage() {
   const records = useMemo(() => selectDetailedGeographyRows(geographyRecords), [geographyRecords]);
   const products = getProducts();
   const memberships = getMemberships();
+  const groupHistory = getGroupMembershipHistory();
   const dates = records.map(record => record.date).sort();
   const [start, setStart] = useState(() => dates[0] || '');
   const [end, setEnd] = useState(() => dates[dates.length - 1] || '');
@@ -134,12 +136,15 @@ export default function GeographyPage() {
   const [selectedGeo, setSelectedGeo] = useState<{ level: 'district' | 'area' | 'city'; district: string; area?: string; city?: string } | null>(null);
 
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
-  const allowedProductIds = useMemo(() => getFilteredProductIds(products, memberships, { cabinetFilter: cabinetId, categoryFilter: category, brandFilter: brandId, groupFilter: groupId, skuFilter: query }), [products, memberships, cabinetId, category, brandId, groupId, query]);
+  const allowedProductIds = useMemo(() => getFilteredProductIds(products, memberships, { cabinetFilter: cabinetId, categoryFilter: category, brandFilter: brandId, groupFilter: groupId, skuFilter: query }, { groupHistory, period: { start, end } }), [products, memberships, groupHistory, cabinetId, category, brandId, groupId, query, start, end]);
   const baseFiltered = useMemo(() => records.filter(record => {
     if (start && record.date < start) return false;
     if (end && record.date > end) return false;
-    return allowedProductIds.has(record.product_id);
-  }), [records, allowedProductIds, start, end]);
+    if (!allowedProductIds.has(record.product_id)) return false;
+    if (!groupId) return true;
+    const resolution = resolveGroupAtDate(record.product_id, record.date, groupHistory, memberships);
+    return resolution.known && resolution.groupId === groupId;
+  }), [records, allowedProductIds, start, end, groupId, groupHistory, memberships]);
   const regions = useMemo(() => [...new Set(baseFiltered.map(record => record.region))].sort(), [baseFiltered]);
   const areas = useMemo(() => [...new Set(baseFiltered.filter(record => (!region || record.region === region) && hasKnownGeoArea(record.area)).map(record => normalizeGeoArea(record.area)))].sort(), [baseFiltered, region]);
   const cities = useMemo(() => [...new Set(baseFiltered.filter(record => (!region || record.region === region) && (!area || normalizeGeoArea(record.area) === area) && hasKnownGeoCity(record.city)).map(record => normalizeGeoCity(record.city)))].sort(), [baseFiltered, region, area]);

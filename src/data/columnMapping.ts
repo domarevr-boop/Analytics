@@ -146,6 +146,7 @@ DICT['\u043f\u0435\u0440\u0435\u0445\u043e\u0434\u044b \u0432 \u043a\u0430\u0440
 DICT['\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 \u043a\u043e\u0440\u0437\u0438\u043d\u0443'] = 'entry_carts';
 DICT['\u0437\u0430\u043a\u0430\u0437\u044b'] = 'entry_orders';
 DICT['\u043f\u043e\u043a\u0430\u0437\u044b'] = 'entry_impressions';
+DICT['\u0441\u043a\u043b\u0435\u0439\u043a\u0430'] = 'group_code';
 
 Object.assign(DICT, {
   'продавцы': 'niche_sellers',
@@ -284,6 +285,7 @@ export const FIELD_LABELS: Record<string, string> = {
   market_ordered_amount: 'Заказы рынка, ₽', market_own_ordered_amount: 'Наши заказы, ₽', market_amount_share: 'Наша доля по сумме',
   market_orders: 'Заказы рынка, шт', market_own_orders: 'Наши заказы, шт', market_orders_share: 'Наша доля в заказах',
   market_own_avg_check: 'Средний чек, мы', market_avg_check: 'Средний чек рынка',
+  group_code: 'Код склейки',
 };
 
 const WB_FUNNEL_OVERRIDES: Record<string, string> = {
@@ -334,6 +336,12 @@ const REVIEW_OVERRIDES: Record<string, string> = {
   'id дополнительного отзыва': 'review_additional_id',
 };
 
+const GROUP_HISTORY_OVERRIDES: Record<string, string> = {
+  'склейка': 'group_code',
+  'код склейки': 'group_code',
+  'группа': 'group_code',
+};
+
 export function getRequiredFields(source?: ImportSource): string[] {
   if (source === 'reviews') return ['review_cabinet', 'review_id', 'date', 'review_rating'];
   if (source === 'niche_dynamics') return ['date', 'niche_category', 'niche_subject', 'niche_sellers', 'niche_revenue'];
@@ -342,6 +350,7 @@ export function getRequiredFields(source?: ImportSource): string[] {
   if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total'];
   if (source === 'entry_points') return ['sku', 'date', 'entry_section', 'entry_point', 'entry_impressions', 'entry_clicks', 'entry_carts', 'entry_orders'];
   if (source === 'profitability') return ['sku', 'profit_revenue', 'actual_profit', 'actual_margin'];
+  if (source === 'group_history') return ['date', 'sku'];
   if (source === 'xway') return ['sku'];
   return ['sku', 'date'];
 }
@@ -354,6 +363,8 @@ export interface ColumnMapping {
 
 export function detectSourceFromHeaders(headers: string[]): ImportSource | null {
   const nhs = headers.map(h => normHeader(h));
+
+  if (nhs.includes('склейка') && (nhs.includes('артикул wb') || nhs.includes('артикул продавца') || nhs.includes('артикул'))) return 'group_history';
 
   if (nhs.includes('id отзыва') && nhs.includes('количество звезд')) return 'reviews';
 
@@ -410,6 +421,8 @@ export function autoDetectMapping(headers: string[], source?: ImportSource): Col
       ? REVIEW_OVERRIDES[nh]
       : source === 'xway'
       ? XWAY_OVERRIDES[nh]
+      : source === 'group_history'
+      ? GROUP_HISTORY_OVERRIDES[nh]
       : source === 'wb_funnel'
         ? WB_FUNNEL_OVERRIDES[nh]
         : undefined;

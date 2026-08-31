@@ -14,12 +14,13 @@ import {
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
-import { getEntryPoints, getMemberships, getProducts, getVersion, subscribe } from '../../data/store';
+import { getEntryPoints, getMemberships, getGroupMembershipHistory, getProducts, getVersion, subscribe } from '../../data/store';
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
 import { entryPointsHelp } from './analyticsHelpContent';
 import { appendToMap } from '../../data/collectionUtils';
 import { addDays, daysBetween } from '../../data/dateUtils';
 import type { EntryPointRecord, Product } from '../../types';
+import { groupMatchesAtDate } from '../../data/groupMembershipHistory';
 
 type AbsoluteMetric = 'impressions' | 'clicks' | 'carts' | 'orders';
 type RelativeMetric = 'ctr' | 'cartCr' | 'clickOrderCr' | 'impressionOrderCr';
@@ -154,6 +155,7 @@ export default function EntryPointsPage() {
   const rows = getEntryPoints();
   const products = getProducts();
   const memberships = getMemberships();
+  const groupHistory = getGroupMembershipHistory();
   const availableDates = rows.map(row => row.date).sort();
 
   const [start, setStart] = useState(() => availableDates[0] || '');
@@ -209,6 +211,7 @@ export default function EntryPointsPage() {
   }, [memberships]);
   const sections = useMemo(() => [...new Set(rows.map(row => row.section))].sort(), [rows]);
   const points = useMemo(() => [...new Set(rows.filter(row => !section || row.section === section).map(row => row.entry_point))].sort(), [rows, section]);
+  const matchesGroup = (productId: string, date: string, selectedGroup: string) => !selectedGroup || groupMatchesAtDate(productId, date, selectedGroup, groupHistory, memberships);
 
   const filtered = useMemo(() => rows.filter(row => {
     const product = productMap.get(row.product_id);
@@ -218,7 +221,7 @@ export default function EntryPointsPage() {
       && (!section || row.section === section)
       && (!entryPoint || row.entry_point === entryPoint)
       && (!category || product?.category === category)
-      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && matchesGroup(row.product_id, row.date, groupId)
       && (!cabinet || product?.cabinet_id === cabinet)
       && (!brand || product?.brand_id === brand)
       && (!search || [product?.sku, product?.wb_sku, product?.name].some(value => value?.toLowerCase().includes(search)));
@@ -233,7 +236,7 @@ export default function EntryPointsPage() {
       && (!section || row.section === section)
       && (!entryPoint || row.entry_point === entryPoint)
       && (!category || product?.category === category)
-      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && matchesGroup(row.product_id, row.date, groupId)
       && (!cabinet || product?.cabinet_id === cabinet)
       && (!brand || product?.brand_id === brand)
       && (!search || [product?.sku, product?.wb_sku, product?.name].some(value => value?.toLowerCase().includes(search)));
@@ -244,7 +247,7 @@ export default function EntryPointsPage() {
     return (!start || row.date >= start)
       && (!end || row.date <= end)
       && (!category || product?.category === category)
-      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && matchesGroup(row.product_id, row.date, groupId)
       && (!cabinet || product?.cabinet_id === cabinet);
   }), [rows, productMap, groupIdsByProduct, start, end, category, groupId, cabinet]);
 
@@ -253,7 +256,7 @@ export default function EntryPointsPage() {
     return (!comparisonPeriod.start || row.date >= comparisonPeriod.start)
       && (!comparisonPeriod.end || row.date <= comparisonPeriod.end)
       && (!category || product?.category === category)
-      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && matchesGroup(row.product_id, row.date, groupId)
       && (!cabinet || product?.cabinet_id === cabinet);
   }), [rows, productMap, groupIdsByProduct, comparisonPeriod, category, groupId, cabinet]);
 
@@ -263,7 +266,7 @@ export default function EntryPointsPage() {
     return (!start || row.date >= start)
       && (!end || row.date <= end)
       && (!category || product?.category === category)
-      && (!groupId || groupIdsByProduct.get(row.product_id)?.has(groupId))
+      && matchesGroup(row.product_id, row.date, groupId)
       && (!cabinet || product?.cabinet_id === cabinet)
       && (!brand || product?.brand_id === brand)
       && (!search || [product?.sku, product?.wb_sku, product?.name].some(value => value?.toLowerCase().includes(search)));
@@ -446,7 +449,7 @@ export default function EntryPointsPage() {
 
       <article className="entry-card entry-filter-card table-toolbar entry-analytics-toolbar">
         <div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={availableDates.at(-1) || end} /></div>
-        <FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" afterControls={<><select className="entry-context-select" aria-label="Раздел" value={section} onChange={event => { setSection(event.target.value); setEntryPoint(''); }}><option value="">Все разделы</option>{sections.map(item => <option key={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Точка входа" value={entryPoint} onChange={event => setEntryPoint(event.target.value)}><option value="">Все точки входа</option>{points.map(item => <option key={item}>{item}</option>)}</select></>} />
+        <FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroupId} onSkuChange={setQuery} period={{ start, end }} variant="dashboard" afterControls={<><select className="entry-context-select" aria-label="Раздел" value={section} onChange={event => { setSection(event.target.value); setEntryPoint(''); }}><option value="">Все разделы</option>{sections.map(item => <option key={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Точка входа" value={entryPoint} onChange={event => setEntryPoint(event.target.value)}><option value="">Все точки входа</option>{points.map(item => <option key={item}>{item}</option>)}</select></>} />
       </article>
 
       <div className="entry-kpis">

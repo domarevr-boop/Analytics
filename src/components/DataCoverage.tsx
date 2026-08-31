@@ -92,6 +92,7 @@ export default function DataCoverage() {
       coverageFromLogs('search_queries', 'Поисковые запросы WB', logs),
       coverageFromLogs('niche_dynamics', 'Динамика ниши', logs),
       coverageFromLogs('competitors', 'Конкуренты', logs),
+      coverageFromLogs('group_history', 'История склеек', logs),
       coverageFromIntervals('plan_template', 'План', planIntervals),
     ];
   }, [version]);

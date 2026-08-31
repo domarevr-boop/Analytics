@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getProducts, getMemberships } from '../data/store';
+import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getProducts, getMemberships, getGroupMembershipHistory } from '../data/store';
 import type { DailyMetrics } from '../types';
 import { getFilteredProductIds } from '../data/productFilters';
 import { subscribeExtraExpenses, getExtraExpensesVersion, getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 
 export interface ChartDataPoint {
   date: string;
@@ -71,16 +72,19 @@ export function useChartData(
     const productsById = new Map(getProducts().map(product => [product.id, product]));
     if (!allMetrics.length && !allProfitability.length) return [];
 
-    const productIds = getFilteredProductIds(getProducts(), getMemberships(), {
+    const memberships = getMemberships();
+    const groupHistory = getGroupMembershipHistory();
+    const productIds = getFilteredProductIds(getProducts(), memberships, {
       cabinetFilter,
       categoryFilter,
       brandFilter,
       groupFilter,
       skuFilter,
-    });
+    }, { groupHistory, period: { start: periodStart, end: periodEnd } });
 
     const reportRows = allProfitability.filter(record =>
       productIds.has(record.product_id)
+      && (!groupFilter || (() => { const resolution = resolveGroupAtDate(record.product_id, record.period_start, groupHistory, memberships); return resolution.known && resolution.groupId === groupFilter; })())
       && record.period_start >= periodStart
       && record.period_start <= periodEnd
     );
@@ -88,6 +92,10 @@ export function useChartData(
     const dateMap = new Map<string, DailyMetrics[]>();
     for (const m of allMetrics) {
       if (!productIds.has(m.product_id)) continue;
+      if (groupFilter) {
+        const resolution = resolveGroupAtDate(m.product_id, m.date, groupHistory, memberships);
+        if (!resolution.known || resolution.groupId !== groupFilter) continue;
+      }
       if (m.date < periodStart || m.date > periodEnd) continue;
       const row = reportKeys.has(`${m.date}|${m.product_id}`)
         ? { ...m, actual_profit: 0, actual_margin: 0, profit_revenue: 0, cost: 0, agent_fee: 0, logistics_cost: 0, marketing_cost: 0, storage_cost: 0 }

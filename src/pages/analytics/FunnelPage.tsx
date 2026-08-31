@@ -4,8 +4,9 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import { appendToMap } from '../../data/collectionUtils';
 import { getFilteredProductIds } from '../../data/productFilters';
-import { getCabinets, getGroups, getMemberships, getMetrics, getProducts, getVersion, subscribe, UNGROUPED_GROUP_ID } from '../../data/store';
+import { getCabinets, getGroups, getGroupMembershipHistory, getMemberships, getMetrics, getProducts, getVersion, subscribe, UNGROUPED_GROUP_ID } from '../../data/store';
 import type { DailyMetrics, Product } from '../../types';
+import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
 import { aggregateFunnel as aggregate } from './funnelCalculations';
 
 type Grouping = 'product' | 'group' | 'cabinet';
@@ -13,7 +14,7 @@ type Volume = 'impressions' | 'clicks' | 'carts' | 'orders' | 'ordered_amount';
 type Rate = 'ctr' | 'cartCr' | 'cartOrderCr' | 'clickOrderCr' | 'impressionOrderCr';
 type SortKey = Volume | Rate;
 type FunnelSummary = ReturnType<typeof aggregate>;
-type MapRow = FunnelSummary & { id: string; name: string; product?: Product };
+type MapRow = FunnelSummary & { id: string; name: string; product?: Product; groupId?: string };
 type TreeRow = MapRow & { depth: number; type: 'cabinet' | 'group' | 'product'; parent: string | null; hasChildren: boolean };
 
 const numberFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
@@ -40,7 +41,7 @@ function stageColor(index: number) {
 
 export default function FunnelPage() {
   useSyncExternalStore(subscribe, getVersion);
-  const metrics = getMetrics(); const products = getProducts(); const groups = getGroups(); const memberships = getMemberships(); const cabinets = getCabinets();
+  const metrics = getMetrics(); const products = getProducts(); const groups = getGroups(); const memberships = getMemberships(); const groupHistory = getGroupMembershipHistory(); const cabinets = getCabinets();
   const dates = useMemo(() => [...new Set(metrics.map(metric => metric.date))].sort(), [metrics]);
   const [start, setStart] = useState(() => dates[0] || ''); const [end, setEnd] = useState(() => dates.at(-1) || '');
   const [cabinet, setCabinet] = useState(''); const [category, setCategory] = useState(''); const [brand, setBrand] = useState(''); const [group, setGroup] = useState(''); const [query, setQuery] = useState('');
@@ -51,13 +52,13 @@ export default function FunnelPage() {
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
   const groupMap = useMemo(() => new Map(groups.map(item => [item.id, item])), [groups]);
   const cabinetMap = useMemo(() => new Map(cabinets.map(item => [item.id, item])), [cabinets]);
-  const groupIdsByProduct = useMemo(() => {
-    const result = new Map<string, string[]>();
-    memberships.forEach(link => appendToMap(result, link.product_id, link.group_id));
-    return result;
-  }, [memberships]);
-  const allowedProductIds = useMemo(() => getFilteredProductIds(products, memberships, { cabinetFilter: cabinet, categoryFilter: category, brandFilter: brand, groupFilter: group, skuFilter: query }), [products, memberships, cabinet, category, brand, group, query]);
-  const filtered = useMemo(() => metrics.filter(row => (!start || row.date >= start) && (!end || row.date <= end) && allowedProductIds.has(row.product_id)), [metrics, allowedProductIds, start, end]);
+  const allowedProductIds = useMemo(() => getFilteredProductIds(products, memberships, { cabinetFilter: cabinet, categoryFilter: category, brandFilter: brand, groupFilter: group, skuFilter: query }, { groupHistory, period: { start, end } }), [products, memberships, groupHistory, cabinet, category, brand, group, query, start, end]);
+  const filtered = useMemo(() => metrics.filter(row => {
+    if ((!start || row.date < start) || (!end || row.date > end) || !allowedProductIds.has(row.product_id)) return false;
+    if (!group) return true;
+    const resolution = resolveGroupAtDate(row.product_id, row.date, groupHistory, memberships);
+    return resolution.known && resolution.groupId === group;
+  }), [metrics, allowedProductIds, start, end, group, groupHistory, memberships]);
   const totals = useMemo(() => aggregate(filtered), [filtered]);
 
   const productRows = useMemo<MapRow[]>(() => {
@@ -69,22 +70,43 @@ export default function FunnelPage() {
     }).filter(row => row.impressions || row.clicks || row.carts || row.orders || row.ordered_amount);
   }, [filtered, productMap]);
 
+  const groupProductRows = useMemo(() => {
+    const byKey = new Map<string, DailyMetrics[]>();
+    filtered.forEach(row => {
+      const resolution = resolveGroupAtDate(row.product_id, row.date, groupHistory, memberships);
+      const groupId = resolution.known && resolution.groupId ? resolution.groupId : UNGROUPED_GROUP_ID;
+      appendToMap(byKey, `${row.product_id}|${groupId}`, row);
+    });
+    return [...byKey.entries()].map(([key, rows]) => {
+      const [productId, ...groupParts] = key.split('|');
+      const groupId = groupParts.join('|');
+      const product = productMap.get(productId);
+      return { id: key, name: product?.sku || productId, product, groupId, ...aggregate(rows) };
+    }).filter(row => row.impressions || row.clicks || row.carts || row.orders || row.ordered_amount);
+  }, [filtered, groupHistory, memberships, productMap]);
+
   const mapData = useMemo<MapRow[]>(() => {
     if (grouping === 'product') return productRows;
     const buckets = new Map<string, MapRow[]>();
+    if (grouping === 'group') {
+      groupProductRows.forEach(row => appendToMap(buckets, row.groupId || UNGROUPED_GROUP_ID, row));
+      return [...buckets.entries()].map(([id, rows]) => ({
+        id,
+        name: id === UNGROUPED_GROUP_ID ? 'Без склейки' : groupMap.get(id)?.name || 'Без склейки',
+        ...aggregate(rows),
+      }));
+    }
     productRows.forEach(row => {
       if (grouping === 'cabinet') {
         const id = row.product?.cabinet_id || 'missing-cabinet'; appendToMap(buckets, id, row); return;
       }
-      const ids = groupIdsByProduct.get(row.id)?.filter(id => id !== UNGROUPED_GROUP_ID) || [];
-      appendToMap(buckets, ids[0] || `ungrouped:${row.product?.cabinet_id || ''}`, row);
     });
     return [...buckets.entries()].map(([id, rows]) => ({
       id,
       name: grouping === 'cabinet' ? cabinetMap.get(id)?.name || 'Без кабинета' : id.startsWith('ungrouped:') ? 'Без склейки' : groupMap.get(id)?.name || 'Без склейки',
       ...aggregate(rows),
     }));
-  }, [cabinetMap, groupIdsByProduct, groupMap, grouping, productRows]);
+  }, [cabinetMap, groupMap, grouping, groupProductRows, productRows]);
 
   const mapLimitX = useMemo(() => percentile(mapData.map(row => row[xMetric]), .99), [mapData, xMetric]);
   const mapLimitY = useMemo(() => percentile(mapData.map(row => row[yMetric]), .99), [mapData, yMetric]);
@@ -136,17 +158,17 @@ export default function FunnelPage() {
     [...rowsByCabinet.entries()].sort(([, left], [, right]) => aggregate(right)[sortKey] - aggregate(left)[sortKey]).forEach(([cabinetId, cabinetProducts]) => {
       const cabinetRow: TreeRow = { id: `cabinet:${cabinetId}`, name: cabinetMap.get(cabinetId)?.name || 'Без кабинета', depth: 0, type: 'cabinet', parent: null, hasChildren: true, ...aggregate(cabinetProducts) };
       result.push(cabinetRow); if (!expanded.has(cabinetRow.id)) return;
-      const rowsByGroup = new Map<string, MapRow[]>(); cabinetProducts.forEach(row => {
-        const ids = groupIdsByProduct.get(row.id)?.filter(id => id !== UNGROUPED_GROUP_ID) || []; appendToMap(rowsByGroup, ids[0] || `ungrouped:${cabinetId}`, row);
+      const rowsByGroup = new Map<string, MapRow[]>(); groupProductRows.filter(row => row.product?.cabinet_id === cabinetId).forEach(row => {
+        appendToMap(rowsByGroup, row.groupId || UNGROUPED_GROUP_ID, row);
       });
       [...rowsByGroup.entries()].sort(([, left], [, right]) => aggregate(right)[sortKey] - aggregate(left)[sortKey]).forEach(([groupId, groupProducts]) => {
-        const groupRow: TreeRow = { id: `group:${groupId}`, name: groupId.startsWith('ungrouped:') ? 'Без склейки' : groupMap.get(groupId)?.name || 'Без склейки', depth: 1, type: 'group', parent: cabinetRow.id, hasChildren: true, ...aggregate(groupProducts) };
+        const groupRow: TreeRow = { id: `group:${cabinetId}:${groupId}`, name: groupId === UNGROUPED_GROUP_ID ? 'Без склейки' : groupMap.get(groupId)?.name || 'Без склейки', depth: 1, type: 'group', parent: cabinetRow.id, hasChildren: true, ...aggregate(groupProducts) };
         result.push(groupRow); if (!expanded.has(groupRow.id)) return;
         [...groupProducts].sort((left, right) => right[sortKey] - left[sortKey]).forEach(row => result.push({ ...row, depth: 2, type: 'product', parent: groupRow.id, hasChildren: false }));
       });
     });
     return result;
-  }, [cabinetMap, expanded, groupIdsByProduct, groupMap, productRows, sortKey]);
+  }, [cabinetMap, expanded, groupMap, groupProductRows, productRows, sortKey]);
   const pageSize = 40; const pageCount = Math.max(1, Math.ceil(treeRows.length / pageSize)); const safeTablePage = Math.min(tablePage, pageCount - 1); const visibleTreeRows = treeRows.slice(safeTablePage * pageSize, (safeTablePage + 1) * pageSize);
 
   const toggleRow = (id: string) => setExpanded(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -158,7 +180,7 @@ export default function FunnelPage() {
 
   return <section className="funnel-page funnel-page-v2">
     <header className="entry-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Воронка продаж</h1><p>Диагностика эффективности ассортимента, SKU и ценовых сегментов по всей воронке.</p></div></header>
-    <div className="entry-toolbar table-toolbar entry-analytics-toolbar page-card funnel-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={group} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroup} onSkuChange={setQuery} variant="dashboard" /></div>
+    <div className="entry-toolbar table-toolbar entry-analytics-toolbar page-card funnel-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={group} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroup} onSkuChange={setQuery} period={{ start, end }} variant="dashboard" /></div>
 
     <article className="entry-card funnel-overview">
       <div className="funnel-section-head"><div><h2>Воронка продаж</h2><p>{fmt(productRows.length)} SKU в выбранном срезе</p></div><span>Локальные данные</span></div>

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { Product } from '../types';
 import {
   subscribe, getVersion, getCabinets, getBrands, getGroups, getMemberships,
-  getProducts, addProduct, updateProduct,
+  getProducts, addProduct, updateProduct, getGroupMembershipHistory, upsertGroupMembershipHistory, UNGROUPED_GROUP_ID,
 } from '../data/store';
+import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
 
 type QualityFilter = 'all' | 'complete' | 'missing_wb' | 'unassigned' | 'archived';
@@ -36,11 +37,14 @@ function ProductThumb({ product }: { product: Product }) {
   );
 }
 
-function ProductEditor({ product, onClose }: { product: Product; onClose: () => void }) {
+function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClose: () => void; asOfDate: string }) {
   const brands = getBrands();
   const cabinets = getCabinets();
   const groups = getGroups();
-  const membership = getMemberships().find(item => item.product_id === product.id);
+  const memberships = getMemberships();
+  const groupHistory = getGroupMembershipHistory();
+  const resolvedGroup = resolveGroupAtDate(product.id, asOfDate, groupHistory, memberships);
+  const initialGroupId = resolvedGroup.known ? resolvedGroup.groupId || UNGROUPED_GROUP_ID : UNGROUPED_GROUP_ID;
   const [form, setForm] = useState({
     sku: product.sku,
     wb_sku: product.wb_sku || '',
@@ -48,7 +52,8 @@ function ProductEditor({ product, onClose }: { product: Product; onClose: () => 
     category: product.category || '',
     brand_id: product.brand_id || '',
     cabinet_id: product.cabinet_id || '',
-    group_id: membership?.group_id || '',
+    group_id: resolvedGroup.known ? resolvedGroup.groupId || '' : '',
+    effectiveDate: asOfDate,
     aliases: (product.aliases || []).join(', '),
     status: product.status || 'active',
   });
@@ -61,14 +66,16 @@ function ProductEditor({ product, onClose }: { product: Product; onClose: () => 
       category: product.category || '',
       brand_id: product.brand_id || '',
       cabinet_id: product.cabinet_id || '',
-      group_id: membership?.group_id || '',
+      group_id: resolvedGroup.known ? resolvedGroup.groupId || '' : '',
+      effectiveDate: asOfDate,
       aliases: (product.aliases || []).join(', '),
       status: product.status || 'active',
     });
-  }, [product.id]);
+  }, [product.id, asOfDate]);
 
   const setField = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
   const save = () => {
+    const selectedGroupId = form.group_id || UNGROUPED_GROUP_ID;
     updateProduct(product.id, {
       sku: form.sku.trim(),
       wb_sku: form.wb_sku.trim(),
@@ -76,11 +83,14 @@ function ProductEditor({ product, onClose }: { product: Product; onClose: () => 
       category: form.category.trim(),
       brand_id: form.brand_id,
       cabinet_id: form.cabinet_id,
-      group_id: form.group_id,
+      group_id: selectedGroupId,
       aliases: [...new Set(form.aliases.split(',').map(value => value.trim()).filter(Boolean))],
       status: form.status as Product['status'],
       data_source: 'manual',
     });
+    if (selectedGroupId !== initialGroupId) {
+      upsertGroupMembershipHistory(product.id, form.effectiveDate, selectedGroupId, 'manual');
+    }
     onClose();
   };
 
@@ -105,6 +115,7 @@ function ProductEditor({ product, onClose }: { product: Product; onClose: () => 
         <label><span>Бренд</span><select value={form.brand_id} onChange={e => setField('brand_id', e.target.value)}><option value="">Не указан</option>{brands.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label><span>Кабинет</span><select value={form.cabinet_id} onChange={e => setField('cabinet_id', e.target.value)}><option value="">Не назначен</option>{cabinets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label><span>Склейка / группа</span><select value={form.group_id} onChange={e => setField('group_id', e.target.value)}><option value="">Без склейки</option>{groups.filter(item => !form.cabinet_id || item.cabinet_id === form.cabinet_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label><span>Действует с</span><input type="date" value={form.effectiveDate} onChange={e => setField('effectiveDate', e.target.value)} /></label>
         <label className="registry-field-wide"><span>Исторические артикулы и алиасы</span><textarea value={form.aliases} onChange={e => setField('aliases', e.target.value)} placeholder="Через запятую" /></label>
         <label><span>Статус</span><select value={form.status} onChange={e => setField('status', e.target.value)}><option value="active">Активен</option><option value="archived">Архив</option></select></label>
       </div>
@@ -123,15 +134,20 @@ export default function DictionaryPage() {
   const cabinets = useMemo(() => getCabinets(), [version]);
   const groups = useMemo(() => getGroups(), [version]);
   const memberships = useMemo(() => getMemberships(), [version]);
+  const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
   const [query, setQuery] = useState('');
   const [quality, setQuality] = useState<QualityFilter>('all');
   const [cabinetId, setCabinetId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [asOfDate, setAsOfDate] = useState(() => [...getGroupMembershipHistory()].sort((left, right) => right.date.localeCompare(left.date))[0]?.date || new Date().toISOString().slice(0, 10));
 
   const brandMap = useMemo(() => new Map(brands.map(item => [item.id, item.name])), [brands]);
   const cabinetMap = useMemo(() => new Map(cabinets.map(item => [item.id, item.name])), [cabinets]);
   const groupMap = useMemo(() => new Map(groups.map(item => [item.id, item.name])), [groups]);
-  const membershipMap = useMemo(() => new Map(memberships.map(item => [item.product_id, item.group_id])), [memberships]);
+  const membershipMap = useMemo(() => new Map(products.map(product => {
+    const resolved = resolveGroupAtDate(product.id, asOfDate, groupHistory, memberships);
+    return [product.id, resolved.known ? resolved.groupId || '' : 'unknown'];
+  })), [products, memberships, groupHistory, asOfDate]);
 
   const isComplete = (product: Product) => Boolean(product.sku && product.wb_sku && product.brand_id && product.cabinet_id && product.category);
   const visibleProducts = useMemo(() => {
@@ -140,7 +156,7 @@ export default function DictionaryPage() {
       if (cabinetId && product.cabinet_id !== cabinetId) return false;
       if (quality === 'complete' && !isComplete(product)) return false;
       if (quality === 'missing_wb' && product.wb_sku) return false;
-      if (quality === 'unassigned' && product.cabinet_id && membershipMap.get(product.id)) return false;
+      if (quality === 'unassigned' && product.cabinet_id && membershipMap.get(product.id) && membershipMap.get(product.id) !== 'unknown') return false;
       if (quality === 'archived' && product.status !== 'archived') return false;
       if (quality !== 'archived' && product.status === 'archived') return false;
       if (!normalizedQuery) return true;
@@ -153,7 +169,7 @@ export default function DictionaryPage() {
     all: products.length,
     complete: products.filter(isComplete).length,
     missingWb: products.filter(product => !product.wb_sku).length,
-    unassigned: products.filter(product => !product.cabinet_id || !membershipMap.get(product.id)).length,
+    unassigned: products.filter(product => !product.cabinet_id || !membershipMap.get(product.id) || membershipMap.get(product.id) === 'unknown').length,
   };
   const selectedProduct = products.find(item => item.id === selectedId);
 
@@ -177,6 +193,7 @@ export default function DictionaryPage() {
       <section className="registry-surface">
         <div className="registry-toolbar">
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по SKU, WB ID, названию или алиасу" />
+          <label className="registry-date-filter"><span>Состав на дату</span><input type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} /></label>
           <select value={cabinetId} onChange={e => setCabinetId(e.target.value)}><option value="">Все кабинеты</option>{cabinets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
           <select value={quality} onChange={e => setQuality(e.target.value as QualityFilter)}><option value="all">Все активные</option><option value="complete">Полные карточки</option><option value="missing_wb">Без WB ID</option><option value="unassigned">Не распределены</option><option value="archived">Архив</option></select>
           <span>Найдено: <strong>{visibleProducts.length}</strong></span>
@@ -188,14 +205,14 @@ export default function DictionaryPage() {
               {visibleProducts.map(product => {
                 const complete = isComplete(product);
                 return (
-                  <tr key={product.id} onClick={() => setSelectedId(product.id)}>
+              <tr key={product.id} onClick={() => setSelectedId(product.id)}>
                     <td><div className="registry-product-cell"><ProductThumb product={product} /><div><strong>{product.name || product.sku}</strong><span>{product.aliases?.length ? `Алиасов: ${product.aliases.length}` : 'Без алиасов'}</span></div></div></td>
                     <td><strong>{product.sku}</strong></td>
                     <td>{product.wb_sku || <span className="registry-missing">Не указан</span>}</td>
                     <td>{product.category || '—'}</td>
                     <td>{brandMap.get(product.brand_id) || '—'}</td>
                     <td>{cabinetMap.get(product.cabinet_id) || '—'}</td>
-                    <td>{groupMap.get(membershipMap.get(product.id) || '') || 'Без склейки'}</td>
+                    <td>{membershipMap.get(product.id) === 'unknown' ? 'Состав не определён' : groupMap.get(membershipMap.get(product.id) || '') || 'Без склейки'}</td>
                     <td><span className={`registry-status ${complete ? 'complete' : 'attention'}`}>{complete ? 'Полная' : 'Требует данных'}</span></td>
                   </tr>
                 );
@@ -205,7 +222,7 @@ export default function DictionaryPage() {
           {!visibleProducts.length && <div className="registry-empty">Товары по выбранным условиям не найдены.</div>}
         </div>
       </section>
-      {selectedProduct && <ProductEditor product={selectedProduct} onClose={() => setSelectedId(null)} />}
+      {selectedProduct && <ProductEditor product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

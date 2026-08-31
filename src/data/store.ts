@@ -1,4 +1,4 @@
-import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord } from '../types';
+import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord } from '../types';
 import type { CompetitorWorkbookData } from './competitorImport';
 import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
@@ -7,6 +7,7 @@ import { isCloudStorage } from '../database/db';
 import { createDataChanges, DATA_STORE_NAMES, hasDataChanges } from '../database/snapshotDelta';
 import type { DataSnapshot } from '../types';
 import { normalizeImportDate, addDays } from './dateUtils';
+import { UNGROUPED_GROUP_ID } from './groupMembershipHistory';
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
 import { getReportNetProfit } from './profitabilityCalculations';
 import { normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from './geographyHierarchy';
@@ -47,6 +48,7 @@ let _brands: Brand[] = [];
 let _groups: ProductGroup[] = [];
 let _products: Product[] = [];
 let _memberships: GroupMembership[] = [];
+let _groupHistory: GroupMembershipHistory[] = [];
 let _metrics: DailyMetrics[] = [];
 let _importLog: ImportFileLog[] = [];
 let _plans: PlanRecord[] = [];
@@ -131,6 +133,7 @@ export function getBrands() { return cachedRows('brands', _brands); }
 export function getGroups() { return cachedRows('groups', _groups); }
 export function getProducts() { return cachedRows('products', _products, product => ({ ...product, aliases: product.aliases ? [...product.aliases] : [] })); }
 export function getMemberships() { return cachedRows('memberships', _memberships); }
+export function getGroupMembershipHistory() { return cachedRows('groupHistory', _groupHistory); }
 export function getMetrics() { return cachedRows('metrics', _metrics); }
 export function getGeographyOrders() { return cachedRows('geography', _geography); }
 export function getGeographyPlans() { return cachedRows('geographyPlans', _geographyPlans); }
@@ -184,6 +187,7 @@ export function getLocalDataVolumes(): Record<ImportSource, LocalDataVolume> {
     competitors: { bytes: competitorVolumes.reduce((sum, volume) => sum + volume.bytes, 0), estimated: competitorVolumes.some(volume => volume.estimated) },
     reviews: { bytes: 0, estimated: false },
     plan_template: estimateRowBytes(_monthlyPlans, () => true, row => row),
+    group_history: estimateRowBytes(_groupHistory, () => true, row => row),
   };
 }
 
@@ -198,6 +202,7 @@ export function exportV4Backup() {
       groups: _groups.map(item => ({ ...item })),
       products: _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] })),
       memberships: _memberships.map(item => ({ ...item })),
+      groupHistory: _groupHistory.map(item => ({ ...item })),
       metrics: _metrics.map(item => ({ ...item })),
       plans: _plans.map(item => ({ ...item })),
       monthlyPlans: _monthlyPlans.map(item => ({ ...item })),
@@ -230,6 +235,7 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
     groups: data.groups || [],
     products: data.products,
     memberships: data.memberships || [],
+    groupHistory: data.groupHistory || [],
     metrics: data.metrics,
     plans: data.plans || [],
     monthlyPlans: data.monthlyPlans || [],
@@ -256,6 +262,7 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
   _groups = snapshot.groups;
   _products = snapshot.products;
   _memberships = snapshot.memberships;
+  _groupHistory = snapshot.groupHistory;
   _metrics = snapshot.metrics;
   _plans = snapshot.plans;
   _monthlyPlans = snapshot.monthlyPlans;
@@ -308,6 +315,14 @@ export async function deleteImportLogEntry(logId: string) {
     }
   } else if (log.source === 'market_dynamics') {
     _marketDynamics = _marketDynamics.filter(record => (log.dataStart && record.date < log.dataStart) || (log.dataEnd && record.date > log.dataEnd));
+  } else if (log.source === 'group_history') {
+    const idSet = new Set(log.productIds || []);
+    _groupHistory = _groupHistory.filter(record => {
+      if (!idSet.has(record.product_id)) return true;
+      if (log.dataStart && record.date < log.dataStart) return true;
+      if (log.dataEnd && record.date > log.dataEnd) return true;
+      return false;
+    });
   } else {
     // Для старых импортов (без productIds) — удаляем все рекламные метрики
     if (!log.productIds || !log.dataStart) {
@@ -335,6 +350,7 @@ export async function deleteImportLogEntry(logId: string) {
   else if (log.source === 'geography') deletedStores.push('geography');
   else if (log.source === 'profitability') deletedStores.push('profitability');
   else if (log.source === 'market_dynamics') deletedStores.push('marketDynamics');
+  else if (log.source === 'group_history') deletedStores.push('groupHistory');
   else deletedStores.push('metrics');
   notify(true, deletedStores);
 
@@ -349,7 +365,7 @@ export async function deleteImportLogEntry(logId: string) {
         }
       }
     }
-  } else if (log.source !== 'geography' && log.source !== 'entry_points' && log.source !== 'competitors' && log.source !== 'market_dynamics' && log.productIds && log.productIds.length > 0) {
+  } else if (log.source !== 'geography' && log.source !== 'entry_points' && log.source !== 'competitors' && log.source !== 'market_dynamics' && log.source !== 'group_history' && log.productIds && log.productIds.length > 0) {
     // Удаляем метрики из Supabase
     try {
       await repository.deleteMetrics?.({
@@ -401,6 +417,15 @@ export function addGroup(name: string, cabinet_id: string): ProductGroup {
   const g: ProductGroup = { id: genId('grp'), name, cabinet_id };
   _groups.push(g); notify(true, ['groups']); return g;
 }
+
+function getOrCreateImportedGroup(code: string, cabinetId: string): string {
+  const normalized = code.trim();
+  const existing = _groups.find(group => group.name === normalized && group.cabinet_id === cabinetId);
+  if (existing) return existing.id;
+  const group: ProductGroup = { id: `grp-code:${cabinetId}:${normalized}`, name: normalized, cabinet_id: cabinetId };
+  _groups.push(group);
+  return group.id;
+}
 export function updateGroup(id: string, name: string) {
   const g = _groups.find(x => x.id === id);
   if (g) { g.name = name; notify(true, ['groups']); }
@@ -408,7 +433,8 @@ export function updateGroup(id: string, name: string) {
 export function removeGroup(id: string) {
   _groups = _groups.filter(x => x.id !== id);
   _memberships = _memberships.filter(m => m.group_id !== id);
-  notify(true, ['groups', 'memberships']);
+  _groupHistory = _groupHistory.filter(item => item.group_id !== id);
+  notify(true, ['groups', 'memberships', 'groupHistory']);
 }
 
 export function addProduct(sku: string, name: string, brand_id: string, category = ''): Product {
@@ -430,14 +456,24 @@ export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>> & {
   buildAliasMap();
   notify(true, ['products', 'memberships']);
 }
+
+export function upsertGroupMembershipHistory(product_id: string, date: string, group_id: string, source: GroupMembershipHistory['source'] = 'manual') {
+  const record: GroupMembershipHistory = { product_id, date, group_id: group_id || UNGROUPED_GROUP_ID, source };
+  const index = _groupHistory.findIndex(item => item.product_id === product_id && item.date === date);
+  if (index >= 0) _groupHistory[index] = record;
+  else _groupHistory.push(record);
+  _groupHistory.sort((left, right) => left.date.localeCompare(right.date) || left.product_id.localeCompare(right.product_id));
+  notify(true, ['groupHistory']);
+}
 export function removeProduct(id: string) {
   _products = _products.filter(x => x.id !== id);
   _memberships = _memberships.filter(m => m.product_id !== id);
+  _groupHistory = _groupHistory.filter(item => item.product_id !== id);
   _metrics = _metrics.filter(m => m.product_id !== id);
-  notify(true, ['products', 'memberships', 'metrics']);
+  notify(true, ['products', 'memberships', 'groupHistory', 'metrics']);
 }
 
-export const UNGROUPED_GROUP_ID = 'grp-ungrouped';
+export { UNGROUPED_GROUP_ID };
 
 export function removeMembership(product_id: string, group_id?: string) {
   if (group_id) {
@@ -794,6 +830,7 @@ export function detectSourceFromFilename(fileName: string): ImportSource {
   if (normalizedName.includes('поисков') || normalizedName.includes('search quer')) return 'search_queries';
   if (normalizedName.includes('динамик') && normalizedName.includes('ниш')) return 'niche_dynamics';
   if (normalizedName.includes('рынок') || normalizedName.includes('market')) return 'market_dynamics';
+  if (normalizedName.includes('скле') || normalizedName.includes('group histor')) return 'group_history';
   if (normalizedName.includes('конкурент')) return 'competitors';
   const n = fileName.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
   if (n.includes('wb') || n.includes('funnel') || n.includes('воронк')) return 'wb_funnel';
@@ -826,6 +863,7 @@ const SOURCE_FIELDS: Record<ImportSource, ReadonlySet<keyof DailyMetrics>> = {
   competitors: new Set([]),
   reviews: new Set([]),
   plan_template: new Set([]),
+  group_history: new Set([]),
 };
 
 function getImportStoreNames(source: ImportSource, entryPointsChanged: boolean): DataStoreName[] {
@@ -849,6 +887,10 @@ function getImportStoreNames(source: ImportSource, entryPointsChanged: boolean):
     stores.add('nicheDynamics');
   } else if (source === 'market_dynamics') {
     stores.add('marketDynamics');
+  } else if (source === 'group_history') {
+    stores.add('groupHistory');
+    stores.add('groups');
+    stores.add('products');
   } else if (source === 'competitors') {
     stores.add('competitorFunnel');
     stores.add('competitorSearch');
@@ -1010,6 +1052,7 @@ export function migrateDateRange(dateStart: string, dateEnd: string, days: numbe
 
 export function clearMetricsAndImports(): void {
   _metrics = [];
+  _groupHistory = [];
   _importLog = [];
   _profitability = [];
   _geography = [];
@@ -1034,6 +1077,7 @@ export function resetAllData(): void {
   _groups = [];
   _products = [];
   _memberships = [];
+  _groupHistory = [];
   _metrics = [];
   _importLog = [];
   _plans = [];
@@ -1225,6 +1269,46 @@ export async function importMappedData(
           _metrics.push(metric);
           metricsByKey.set(key, metric);
         }
+      }
+    } else if (source === 'group_history') {
+      const cabinetsBefore = _cabinets.map(item => ({ ...item }));
+      const productsBefore = _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
+      const membershipsBefore = _memberships.map(item => ({ ...item }));
+      const recordsByKey = new Map(_groupHistory.map(record => [`${record.date}|${record.product_id}`, record]));
+      const incomingKeys = new Set<string>();
+      const duplicateKeys = new Set<string>();
+      const pending: Array<{ date: string; product: Product; groupCode: string }> = [];
+      for (const row of rows) {
+        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
+        const rawSku = String(row.sku || '').trim();
+        const rawWbSku = String(row.wb_sku || '').trim();
+        const sku = rawSku || rawWbSku;
+        if (!date || !sku) continue;
+        const product = resolveProduct(sku, rawWbSku, row.cabinet);
+        const key = `${date}|${product.id}`;
+        if (incomingKeys.has(key)) duplicateKeys.add(key);
+        incomingKeys.add(key);
+        pending.push({ date, product, groupCode: String(row.group_code || '').trim() });
+      }
+      if (duplicateKeys.size > 0) {
+        _cabinets = cabinetsBefore;
+        _products = productsBefore;
+        _memberships = membershipsBefore;
+        buildAliasMap();
+        throw new Error(`Импорт остановлен: несколько склеек для одного товара на одну дату (${[...duplicateKeys].join(', ')})`);
+      }
+      for (const item of pending) {
+        const groupId = item.groupCode
+          ? getOrCreateImportedGroup(item.groupCode, item.product.cabinet_id)
+          : UNGROUPED_GROUP_ID;
+        const record: GroupMembershipHistory = { date: item.date, product_id: item.product.id, group_id: groupId, source: 'import' };
+        const key = `${record.date}|${record.product_id}`;
+        const existing = recordsByKey.get(key);
+        if (existing) Object.assign(existing, record); else { _groupHistory.push(record); recordsByKey.set(key, record); }
+        parsed++;
+        if (!minDate || item.date < minDate) minDate = item.date;
+        if (!maxDate || item.date > maxDate) maxDate = item.date;
+        productIds.add(item.product.id);
       }
     } else if (source === 'geography') {
       _geography = selectDetailedGeographyRows(_geography);
@@ -1702,6 +1786,7 @@ function cloneStore(store: DataStoreName): DataSnapshot[DataStoreName] {
     case 'groups': return _groups.map(item => ({ ...item }));
     case 'products': return _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
     case 'memberships': return _memberships.map(item => ({ ...item }));
+    case 'groupHistory': return _groupHistory.map(item => ({ ...item }));
     case 'metrics': return _metrics.map(item => ({ ...item }));
     case 'plans': return _plans.map(item => ({ ...item }));
     case 'monthlyPlans': return _monthlyPlans.map(item => ({ ...item }));
@@ -1782,6 +1867,7 @@ export async function initStore() {
       }
     }
     _memberships = snapshot.memberships.map(item => ({ ...item }));
+    _groupHistory = (snapshot.groupHistory || []).map(item => ({ ...item }));
     _metrics = snapshot.metrics.map(item => ({ ...item }));
     if (DEV) {
       const dates = _metrics.map(m => m.date).filter(Boolean).sort();

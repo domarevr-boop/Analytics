@@ -33,6 +33,13 @@ export interface GroupMembership {
   group_id: string;
 }
 
+export interface GroupMembershipHistory {
+  date: string;
+  product_id: string;
+  group_id: string;
+  source: 'import' | 'manual' | 'legacy';
+}
+
 export interface DailyMetrics {
   date: string;
   product_id: string;
@@ -103,6 +110,8 @@ export interface TableRow {
   type: RowType;
   name: string;
   sku?: string;
+  productId?: string;
+  groupId?: string;
   depth: number;
   parent: string | null;
   current: MetricValues;
@@ -307,7 +316,7 @@ export interface CompetitorPositionRecord {
   brand: string;
 }
 
-export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'market_dynamics' | 'competitors' | 'reviews' | 'plan_template';
+export type ImportSource = 'wb_funnel' | 'xway' | 'profitability' | 'geography' | 'entry_points' | 'search_queries' | 'niche_dynamics' | 'market_dynamics' | 'competitors' | 'reviews' | 'plan_template' | 'group_history';
 
 export interface ImportFileLog {
   id: string;
@@ -330,6 +339,7 @@ export interface DataSnapshot {
   groups: ProductGroup[];
   products: Product[];
   memberships: GroupMembership[];
+  groupHistory: GroupMembershipHistory[];
   metrics: DailyMetrics[];
   plans: PlanRecord[];
   monthlyPlans: MonthlyPlanRecord[];
@@ -353,6 +363,7 @@ export interface DataChanges {
   groups: ChangeSet<ProductGroup>;
   products: ChangeSet<Product>;
   memberships: ChangeSet<GroupMembership>;
+  groupHistory: ChangeSet<GroupMembershipHistory>;
   metrics: ChangeSet<DailyMetrics>;
   plans: ChangeSet<PlanRecord>;
   monthlyPlans: ChangeSet<MonthlyPlanRecord>;

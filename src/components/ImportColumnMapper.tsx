@@ -12,6 +12,7 @@ const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
   { value: 'market_dynamics', label: 'Рынок' },
   { value: 'search_queries', label: 'Поисковые запросы WB' },
   { value: 'entry_points', label: 'Точки входа' },
+  { value: 'group_history', label: 'История склеек' },
   { value: 'geography', label: 'География заказов' },
   { value: 'wb_funnel', label: 'WB Воронка' },
   { value: 'xway', label: 'XWay Реклама' },
@@ -64,7 +65,12 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
     : hasDateColumn;
   const mappedCount = Object.keys(finalMap).length;
   const totalCount = parsed.headers.length;
-  const missingRequired = required.filter(f => !mappedFields.includes(f));
+  const missingRequired = source === 'group_history'
+    ? [
+      ...(!mappedFields.includes('date') ? ['date'] : []),
+      ...(!mappedFields.includes('sku') && !mappedFields.includes('wb_sku') ? ['sku'] : []),
+    ]
+    : required.filter(f => !mappedFields.includes(f));
   const hasYearlessDates = hasSourceDate && remapped.some(row =>
     /^(\d{1,2})[./](\d{1,2})$/.test(String(row.date || row.period_start || '').trim()),
   );
@@ -77,6 +83,8 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
     ? ['date', 'search_query', 'search_category', 'search_requests', 'search_card_clicks', 'search_carts', 'search_orders']
     : source === 'reviews'
     ? ['review_cabinet', 'review_id', 'date', 'sku', 'wb_sku', 'review_rating', 'review_text']
+    : source === 'group_history'
+    ? ['date', 'sku', 'wb_sku', 'group_code']
     : source === 'profitability'
     ? ['sku', ...(!hasSourceDate ? [] : mappedFields.filter(field => ['date', 'period_start', 'period_end'].includes(field))), 'profit_revenue', 'actual_profit', 'actual_margin'].filter((field, index, fields) => mappedFields.includes(field) && fields.indexOf(field) === index)
     : [

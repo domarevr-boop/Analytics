@@ -23,6 +23,7 @@ const SOURCE_LABELS: Record<string, string> = {
   profitability: 'Рентабельность',
   entry_points: 'Точки входа',
   plan_template: 'План',
+  group_history: 'История склеек',
 };
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -37,6 +38,7 @@ const SOURCE_COLORS: Record<string, string> = {
   profitability: '#FEF9C3',
   entry_points: '#F3E8FF',
   plan_template: '#FFF7D6',
+  group_history: '#FDE68A',
 };
 
 const FILE_TYPE_LABELS: Record<string, string> = {
