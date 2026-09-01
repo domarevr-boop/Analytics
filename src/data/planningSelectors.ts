@@ -53,7 +53,7 @@ export function selectLegacyPlanMetrics(
     cabinet_id: productBySku.get(plan.sku)?.cabinet_id || '',
     entity_id: productBySku.get(plan.sku)?.category || 'Без категории',
     entity_name: productBySku.get(plan.sku)?.category || 'Без категории',
-    orders_sum: plan.totalRubles,
+    orders_sum: plan.totalRubles || null,
     avg_qty_per_day: plan.avgQtyPerDay,
     avg_check: plan.checkAmount,
     buyout_rate: plan.buyoutRate,

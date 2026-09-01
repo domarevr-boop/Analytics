@@ -43,9 +43,24 @@ test('uses calendar month length including leap years', () => {
 test('uses an explicitly entered orders sum as the fixed monthly target', () => {
   const result = calculateAggregatePlan(record({ orders_sum: 1_000_000 }));
   assert.equal(result.ordersSum, 1_000_000);
-  assert.equal(result.ordersQty, 310);
-  assert.equal(result.avgCheck, 1_000_000 / 310);
+  assert.equal(result.ordersQty, 500);
+  assert.equal(result.avgCheck, 2_000);
   assert.equal(result.buyoutAmount, 800_000);
+});
+
+test('scenario drivers produce a consistent calculated result', () => {
+  const result = calculateAggregatePlan(record({
+    orders_sum: 900_000,
+    avg_qty_per_day: null,
+    avg_check: 3_000,
+    buyout_rate: 85,
+    payout_rate: 70,
+    profitability: 18,
+  }));
+  assert.equal(result.ordersQty, 300);
+  assert.equal(result.buyoutAmount, 765_000);
+  assert.equal(result.payoutAmount, 630_000);
+  assert.equal(result.netProfit, 137_700);
 });
 
 test('keeps missing inputs missing instead of turning them into zero', () => {

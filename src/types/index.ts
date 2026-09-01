@@ -159,7 +159,7 @@ export interface MonthlyPlanRecord {
   buyoutRate: number;
 }
 
-export type AggregatePlanKind = 'fixed' | 'scenario';
+export type AggregatePlanKind = 'fixed' | 'scenario' | 'backup';
 export type AggregatePlanScope = 'category' | 'brand';
 
 export interface AggregateMonthlyPlanRecord {

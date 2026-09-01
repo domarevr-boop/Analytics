@@ -17,7 +17,7 @@ export interface AggregatePlanMetrics {
   daysInMonth: number;
 }
 
-export type EditableAggregatePlanField = 'orders_sum' | 'profitability';
+export type EditableAggregatePlanField = 'orders_sum' | 'avg_check' | 'buyout_rate' | 'payout_rate' | 'profitability';
 
 export function getDaysInPlanMonth(month: string): number {
   const [year, monthNumber] = month.split('-').map(Number);
@@ -35,7 +35,9 @@ export function calculateAggregatePlan(record: AggregateMonthlyPlanRecord): Aggr
   const hasData = [explicitOrdersSum, record.avg_qty_per_day, record.avg_check, record.buyout_rate, record.payout_rate, record.profitability]
     .some(value => value !== null);
   const plannedQuantity = record.avg_qty_per_day === null || daysInMonth === 0 ? null : record.avg_qty_per_day * daysInMonth;
-  const ordersQty = plannedQuantity ?? (explicitOrdersSum !== null && record.avg_check ? explicitOrdersSum / record.avg_check : null);
+  const ordersQty = explicitOrdersSum !== null && record.avg_check
+    ? explicitOrdersSum / record.avg_check
+    : plannedQuantity;
   const ordersSum = explicitOrdersSum ?? (ordersQty === null || record.avg_check === null ? null : ordersQty * record.avg_check);
   const avgCheck = ordersSum !== null && ordersQty ? ordersSum / ordersQty : record.avg_check;
   const avgQtyPerDay = ordersQty === null || daysInMonth === 0 ? record.avg_qty_per_day : ordersQty / daysInMonth;

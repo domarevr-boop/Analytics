@@ -5,69 +5,106 @@ import {
 } from '../data/store';
 import { makeAggregatePlanId, type AggregatePlanMetrics, type EditableAggregatePlanField } from '../data/planningCalculations';
 import { selectAggregatePlanMetrics } from '../data/planningSelectors';
+import { buildBackupRecords, buildPromotedFixedRecords, buildRestoredFixedRecords, removeBackupForYear } from '../data/planningPlanActions';
 import type { AggregateMonthlyPlanRecord, AggregatePlanKind, Cabinet } from '../types';
 
+type MetricKey = keyof Pick<AggregatePlanMetrics, 'ordersSum' | 'ordersQty' | 'avgCheck' | 'buyoutRate' | 'buyoutAmount' | 'payoutRate' | 'payoutAmount' | 'profitability' | 'netProfit' | 'ordersPerDay' | 'netProfitPerDay' | 'daysInMonth'>;
+type ColumnKey = 'ordersSum' | 'ordersQty' | 'avgCheck' | 'buyoutRate' | 'buyoutAmount' | 'payoutRate' | 'payoutAmount' | 'profitability' | 'netProfit';
+type ValueFormat = 'money' | 'number' | 'percent' | 'days';
 interface CategoryEntity { id: string; name: string; cabinetId: string }
-interface PeriodMetrics { ordersSum: number | null; ordersQty: number | null; avgCheck: number | null; buyoutRate: number | null; buyoutAmount: number | null; payoutRate: number | null; payoutAmount: number | null; profitability: number | null; netProfit: number | null; ordersPerDay: number | null; netProfitPerDay: number | null; days: number }
+interface ColumnDefinition { key: ColumnKey; label: string; format: ValueFormat; required?: boolean }
+interface PeriodMetrics { ordersSum: number | null; ordersQty: number | null; avgCheck: number | null; buyoutRate: number | null; buyoutAmount: number | null; payoutRate: number | null; payoutAmount: number | null; profitability: number | null; netProfit: number | null; ordersPerDay: number | null; netProfitPerDay: number | null; daysInMonth: number }
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-const money = (value: number | null) => value === null ? '—' : `${value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
-const number = (value: number | null) => value === null ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
-const percent = (value: number | null) => value === null ? '—' : `${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`;
-const monthList = (year: number) => MONTH_NAMES.map((_, index) => `${year}-${String(index + 1).padStart(2, '0')}`);
+const COLUMN_STORAGE_KEY = 'analytics:planning-columns:v1';
+const emptyBackupKey = (year: number) => `analytics:planning-empty-backup:${year}`;
+const COLUMNS: ColumnDefinition[] = [
+  { key: 'ordersSum', label: 'Сумма заказов', format: 'money', required: true },
+  { key: 'ordersQty', label: 'Заказы, шт', format: 'number' },
+  { key: 'avgCheck', label: 'Средний чек', format: 'money' },
+  { key: 'buyoutRate', label: '% выкупа', format: 'percent' },
+  { key: 'buyoutAmount', label: 'Сумма выкупов', format: 'money' },
+  { key: 'payoutRate', label: '% к перечислению', format: 'percent' },
+  { key: 'payoutAmount', label: 'К перечислению', format: 'money' },
+  { key: 'profitability', label: 'Рентабельность', format: 'percent', required: true },
+  { key: 'netProfit', label: 'Чистая прибыль', format: 'money' },
+];
+const SCENARIO_DRIVERS: Array<{ key: EditableAggregatePlanField; metric: MetricKey; label: string; format: ValueFormat }> = [
+  { key: 'avg_check', metric: 'avgCheck', label: 'Средний чек', format: 'money' },
+  { key: 'buyout_rate', metric: 'buyoutRate', label: '% выкупа', format: 'percent' },
+  { key: 'payout_rate', metric: 'payoutRate', label: '% к перечислению', format: 'percent' },
+  { key: 'profitability', metric: 'profitability', label: 'Рентабельность', format: 'percent' },
+];
+const SCENARIO_RESULTS: Array<{ metric: MetricKey; label: string; format: ValueFormat }> = [
+  { metric: 'ordersQty', label: 'Заказы, шт', format: 'number' },
+  { metric: 'buyoutAmount', label: 'Сумма выкупов', format: 'money' },
+  { metric: 'payoutAmount', label: 'К перечислению', format: 'money' },
+  { metric: 'netProfit', label: 'Чистая прибыль', format: 'money' },
+];
 
+function formatValue(value: number | null, format: ValueFormat): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  if (format === 'money') return `${value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
+  if (format === 'percent') return `${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`;
+  if (format === 'days') return value.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+}
 function parseInput(value: string): number | null {
   const normalized = value.trim().replace(/[\s₽%]/g, '').replace(',', '.');
   if (!normalized) return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
-
 function sumKnown(values: Array<number | null>): number | null {
   const known = values.filter((value): value is number => value !== null);
   return known.length ? known.reduce((sum, value) => sum + value, 0) : null;
 }
-
 function ratio(amount: number | null, base: number | null): number | null {
-  if (amount === null || base === null || base === 0) return null;
-  return amount / base * 100;
+  return amount === null || base === null || base === 0 ? null : amount / base * 100;
 }
-
 function periodMetrics(metrics: AggregatePlanMetrics[]): PeriodMetrics {
   const ordersSum = sumKnown(metrics.map(item => item.ordersSum));
   const ordersQty = sumKnown(metrics.map(item => item.ordersQty));
   const buyoutAmount = sumKnown(metrics.map(item => item.buyoutAmount));
   const payoutAmount = sumKnown(metrics.map(item => item.payoutAmount));
   const netProfit = sumKnown(metrics.map(item => item.netProfit));
-  const days = metrics.reduce((sum, item) => sum + item.daysInMonth, 0);
+  const daysInMonth = metrics.reduce((sum, item) => sum + item.daysInMonth, 0);
   return {
-    ordersSum, ordersQty,
-    avgCheck: ordersSum !== null && ordersQty ? ordersSum / ordersQty : null,
+    ordersSum, ordersQty, avgCheck: ordersSum !== null && ordersQty ? ordersSum / ordersQty : null,
     buyoutRate: ratio(buyoutAmount, ordersSum), buyoutAmount,
     payoutRate: ratio(payoutAmount, ordersSum), payoutAmount,
     profitability: ratio(netProfit, buyoutAmount), netProfit,
-    ordersPerDay: ordersSum !== null && days ? ordersSum / days : null,
-    netProfitPerDay: netProfit !== null && days ? netProfit / days : null,
-    days,
+    ordersPerDay: ordersSum !== null && daysInMonth ? ordersSum / daysInMonth : null,
+    netProfitPerDay: netProfit !== null && daysInMonth ? netProfit / daysInMonth : null,
+    daysInMonth,
   };
 }
-
 function delta(current: number | null, baseline: number | null): number | null {
   return current === null || baseline === null || baseline === 0 ? null : (current / baseline - 1) * 100;
 }
+function inputText(value: number | null): string { return value === null ? '' : String(Math.round(value * 100) / 100).replace('.', ','); }
+function monthList(year: number) { return MONTH_NAMES.map((_, index) => `${year}-${String(index + 1).padStart(2, '0')}`); }
 
 export default function PlanningPage() {
   const version = useSyncExternalStore(subscribe, getVersion);
   const currentDate = useMemo(() => { const date = new Date(); return { year: date.getFullYear(), month: date.getMonth() }; }, []);
   const [year, setYear] = useState(currentDate.year);
   const [showPast, setShowPast] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [status, setStatus] = useState('');
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<Set<ColumnKey>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMN_STORAGE_KEY) || '[]') as ColumnKey[];
+      return new Set(saved.length ? saved : COLUMNS.map(column => column.key));
+    } catch { return new Set(COLUMNS.map(column => column.key)); }
+  });
   const records = useMemo(() => { void version; return getAggregatePlans(); }, [version]);
   const cabinets = useMemo(() => { void version; return getCabinets(); }, [version]);
   const products = useMemo(() => { void version; return getProducts().filter(product => product.status !== 'archived'); }, [version]);
   const preferAggregate = useMemo(() => { void version; return getPreferAggregatePlan(); }, [version]);
   const allMonths = useMemo(() => monthList(year), [year]);
-  const visibleMonths = useMemo(() => year === currentDate.year && !showPast ? allMonths.slice(currentDate.month) : allMonths, [allMonths, currentDate, showPast, year]);
+  const months = useMemo(() => year === currentDate.year && !showPast ? allMonths.slice(currentDate.month) : allMonths, [allMonths, currentDate, showPast, year]);
+  const columns = COLUMNS.filter(column => column.required || visibleColumnKeys.has(column.key));
   const recordMap = useMemo(() => new Map(records.map(record => [record.id, record])), [records]);
 
   const categoriesByCabinet = useMemo(() => {
@@ -89,113 +126,179 @@ export default function PlanningPage() {
       ...recordMap.get(id), [field]: value, updated_at: new Date().toISOString(),
     });
   };
-  const toggleCategory = (key: string) => setExpandedCategories(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const toggleExpanded = (key: string) => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const toggleColumn = (key: ColumnKey) => {
+    const next = new Set(visibleColumnKeys);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setVisibleColumnKeys(next);
+    localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify([...next]));
+  };
+
   const copyFixedToScenario = async () => {
     const prefix = `${year}-`;
     const retained = records.filter(record => record.kind === 'scenario' && !record.month.startsWith(prefix));
-    const copied = records.filter(record => record.kind === 'fixed' && record.scope === 'category' && record.month.startsWith(prefix)).map(record => ({ ...record, id: makeAggregatePlanId('scenario', record.month, 'category', record.cabinet_id, record.entity_id), kind: 'scenario' as const, updated_at: new Date().toISOString() }));
+    const copied = records.filter(record => record.kind === 'fixed' && record.scope === 'category' && record.month.startsWith(prefix)).map(record => ({ ...record, id: makeAggregatePlanId('scenario', record.month, record.scope, record.cabinet_id, record.entity_id), kind: 'scenario' as const, updated_at: new Date().toISOString() }));
     await replaceAggregatePlanKind('scenario', [...retained, ...copied]);
+    setStatus(`Сценарий ${year} скопирован из плана`);
   };
   const resetScenario = async () => {
     const retained = records.filter(record => record.kind === 'scenario' && !record.month.startsWith(`${year}-`));
     if (retained.length) await replaceAggregatePlanKind('scenario', retained); else clearAggregatePlanKind('scenario');
+    setStatus(`Сценарий ${year} сброшен`);
+  };
+  const scenarioYearRecords = records.filter(record => record.kind === 'scenario' && record.month.startsWith(`${year}-`) && record.scope === 'category');
+  const hasBackup = records.some(record => record.kind === 'backup' && record.month.startsWith(`${year}-`)) || localStorage.getItem(emptyBackupKey(year)) === '1';
+  const applyScenario = async () => {
+    if (!scenarioYearRecords.length || !window.confirm(`Заменить утверждённый план ${year} значениями сценария? Текущий план будет сохранён для отмены.`)) return;
+    const backup = buildBackupRecords(records, year);
+    localStorage.setItem(emptyBackupKey(year), backup.some(record => record.month.startsWith(`${year}-`)) ? '0' : '1');
+    await replaceAggregatePlanKind('backup', backup);
+    await replaceAggregatePlanKind('fixed', buildPromotedFixedRecords(records, year));
+    setStatus(`Сценарий применён к плану ${year}`);
+  };
+  const undoApply = async () => {
+    const backupYear = records.filter(record => record.kind === 'backup' && record.month.startsWith(`${year}-`));
+    const backedUpEmptyPlan = localStorage.getItem(emptyBackupKey(year)) === '1';
+    if ((!backupYear.length && !backedUpEmptyPlan) || !window.confirm(`Восстановить предыдущий утверждённый план ${year}?`)) return;
+    await replaceAggregatePlanKind('fixed', buildRestoredFixedRecords(records, year));
+    const backupOutsideYear = removeBackupForYear(records, year);
+    if (backupOutsideYear.length) await replaceAggregatePlanKind('backup', backupOutsideYear); else clearAggregatePlanKind('backup');
+    localStorage.removeItem(emptyBackupKey(year));
+    setStatus(`Предыдущий план ${year} восстановлен`);
   };
 
-  const total = periodMetrics(visibleMonths.map(month => getMetrics('fixed', '', null, month)));
+  const total = periodMetrics(months.map(month => getMetrics('fixed', '', null, month)));
+  const common = { cabinets, categoriesByCabinet, months, columns, expanded, onToggle: toggleExpanded, getMetrics, getRecord, onSave: save };
 
-  const tableProps = { visibleMonths, categoriesByCabinet, expandedCategories, onToggleCategory: toggleCategory, getMetrics, getRecord, onSave: save };
-  return <div className="planning-page analytics-page-shell aggregate-plan-page compact-plan-page">
+  return <div className="planning-page analytics-page-shell aggregate-plan-page planning-mock-page">
     <header className="analytics-page-header aggregate-plan-header">
-      <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Планирование</h1><p>Совокупный план по кабинетам и категориям. Базовые значения вводятся в таблице, расчёты обновляются автоматически.</p></div>
+      <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Планирование</h1><p>Совокупный план по кабинетам и категориям. Редактируйте базовые параметры — расчёты обновятся автоматически.</p></div>
       <div className="aggregate-plan-controls">
         <label>Год<input type="number" value={year} min="2020" max="2100" onChange={event => setYear(Number(event.target.value) || year)} /></label>
         <label className="aggregate-plan-priority"><input type="checkbox" checked={preferAggregate} onChange={event => setPreferAggregatePlan(event.target.checked)} /><span><strong>Совокупный план — источник истины</strong><small>Действует для всех месяцев и главной страницы.</small></span></label>
       </div>
     </header>
 
-    <div className="aggregate-plan-kpis">
-      <Summary label="Сумма заказов" value={money(total.ordersSum)} /><Summary label="Чистая прибыль" value={money(total.netProfit)} /><Summary label="К перечислению" value={money(total.payoutAmount)} /><Summary label="Рентабельность" value={percent(total.profitability)} />
+    <div className="aggregate-plan-kpis planning-kpis">
+      <Summary label="Сумма заказов (всего)" value={formatValue(total.ordersSum, 'money')} /><Summary label="Чистая прибыль (всего)" value={formatValue(total.netProfit, 'money')} /><Summary label="К перечислению (всего)" value={formatValue(total.payoutAmount, 'money')} /><Summary label="Рентабельность (ср. взвеш.)" value={formatValue(total.profitability, 'percent')} />
     </div>
 
-    <div className="compact-plan-toolbar">
-      <div><h2>Совокупный план ВБ</h2><span>{year === currentDate.year && !showPast ? `Текущий и будущие месяцы ${year}` : `Все месяцы ${year}`}</span></div>
-      {year === currentDate.year && <button type="button" onClick={() => setShowPast(value => !value)}>{showPast ? 'Скрыть прошедшие месяцы' : 'Показать прошедшие месяцы'}</button>}
+    <div className="compact-plan-toolbar planning-table-toolbar">
+      <div><h2>Совокупный план ВБ</h2><span>{year === currentDate.year && !showPast ? `Оставшийся период ${year}` : `Полный год ${year}`}</span></div>
+      <div className="planning-toolbar-actions">
+        {year === currentDate.year && <button type="button" onClick={() => setShowPast(value => !value)}>{showPast ? 'Скрыть прошедшие месяцы' : 'Показать прошедшие месяцы'}</button>}
+        <details className="planning-column-settings"><summary>Настройки столбцов</summary><div>{COLUMNS.filter(column => !column.required).map(column => <label key={column.key}><input type="checkbox" checked={visibleColumnKeys.has(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}</div></details>
+      </div>
     </div>
 
-    <PlanSection title="Утверждённый план" description="Сумма заказов вводится по месяцам. Рентабельность задаётся для всех видимых месяцев категории." kind="fixed" cabinets={cabinets} {...tableProps} />
-    <PlanSection title="Сценарная модель" description="Черновой сценарий сравнивается с утверждённым планом и не влияет на главную." kind="scenario" cabinets={cabinets} {...tableProps} compare actions={<><button type="button" onClick={() => void copyFixedToScenario()}>Скопировать из плана</button><button type="button" className="secondary" onClick={() => void resetScenario()}>Сбросить сценарий</button></>} />
-    <p className="compact-plan-footnote">Все суммы в рублях. Пустое значение означает, что план или исходный параметр не задан.</p>
+    <FixedPlanSection {...common} />
+    <ScenarioSection {...common} actions={<><button type="button" onClick={() => void copyFixedToScenario()}>Скопировать из плана</button><button type="button" className="secondary" onClick={() => void resetScenario()}>Сбросить сценарий</button>{hasBackup && <button type="button" className="secondary" onClick={() => void undoApply()}>Отменить применение</button>}<button type="button" className="apply" disabled={!scenarioYearRecords.length} onClick={() => void applyScenario()}>Применить сценарий</button></>} />
+    {status && <div className="planning-status" role="status">{status}</div>}
+    <p className="compact-plan-footnote">Все суммы в рублях. Пустое значение означает, что исходный параметр не задан.</p>
   </div>;
 }
 
-function Summary({ label, value }: { label: string; value: string }) { return <div className="aggregate-plan-kpi"><span>{label}</span><strong>{value}</strong></div>; }
+function Summary({ label, value }: { label: string; value: string }) { return <div className="aggregate-plan-kpi"><span>{label}</span><strong>{value}</strong><small>за видимый период</small></div>; }
 
-interface PlanSectionProps {
-  title: string; description: string; kind: AggregatePlanKind; cabinets: Cabinet[]; visibleMonths: string[]; categoriesByCabinet: Map<string, CategoryEntity[]>; expandedCategories: Set<string>;
-  onToggleCategory: (key: string) => void;
+interface CommonTableProps {
+  cabinets: Cabinet[]; categoriesByCabinet: Map<string, CategoryEntity[]>; months: string[]; columns: ColumnDefinition[]; expanded: Set<string>;
+  onToggle: (key: string) => void;
   getMetrics: (kind: AggregatePlanKind, cabinetId: string, category: string | null, month: string) => AggregatePlanMetrics;
   getRecord: (kind: AggregatePlanKind, category: CategoryEntity, month: string) => AggregateMonthlyPlanRecord | undefined;
   onSave: (kind: AggregatePlanKind, category: CategoryEntity, month: string, field: EditableAggregatePlanField, value: number | null) => void;
-  compare?: boolean; actions?: ReactNode;
 }
 
-function PlanSection({ title, description, cabinets, categoriesByCabinet, actions, ...props }: PlanSectionProps) {
-  const visibleCabinets = cabinets.filter(cabinet => (categoriesByCabinet.get(cabinet.id) || []).length > 0);
-  return <section className="aggregate-plan-section analytics-sheet compact-plan-section">
-    <div className="aggregate-plan-section-head"><div><h2>{title}</h2><p>{description}</p></div>{actions && <div className="aggregate-plan-actions">{actions}</div>}</div>
-    <div className="cabinet-plan-list">{visibleCabinets.map(cabinet => <CabinetPlanTable key={cabinet.id} cabinet={cabinet} categories={categoriesByCabinet.get(cabinet.id) || []} {...props} />)}{visibleCabinets.length === 0 && <div className="aggregate-plan-empty">Нет кабинетов с назначенными категориями.</div>}</div>
-  </section>;
+function FixedPlanSection(props: CommonTableProps) {
+  return <section className="aggregate-plan-section analytics-sheet planning-main-section"><CabinetList kind="fixed" mode="fixed" {...props} /></section>;
+}
+function ScenarioSection({ actions, ...props }: CommonTableProps & { actions: ReactNode }) {
+  return <section className="aggregate-plan-section analytics-sheet planning-scenario-section"><div className="aggregate-plan-section-head"><div><h2>Сценарная модель <small>Черновик</small></h2><p>Изменяйте драйверы по месяцам и сравнивайте результат с утверждённым планом.</p></div><div className="aggregate-plan-actions">{actions}</div></div><CabinetList kind="scenario" mode="scenario" {...props} /></section>;
 }
 
-function CabinetPlanTable({ cabinet, categories, kind, visibleMonths, expandedCategories, onToggleCategory, getMetrics, getRecord, onSave, compare }: Omit<PlanSectionProps, 'title' | 'description' | 'cabinets' | 'categoriesByCabinet' | 'actions'> & { cabinet: Cabinet; categories: CategoryEntity[] }) {
-  const cabinetPeriod = periodMetrics(visibleMonths.map(month => getMetrics(kind, cabinet.id, null, month)));
-  return <div className="cabinet-plan-card">
-    <div className="cabinet-plan-title"><strong>Кабинет: {cabinet.name}</strong><span>{categories.length} {categories.length === 1 ? 'категория' : 'категории'}</span></div>
-    <div className="cabinet-plan-scroll"><table className="cabinet-plan-table">
-      <thead><tr><th className="category-col">Категория</th><th>Заказы, шт</th><th>Ср. чек</th><th>% выкупа</th><th>Сумма выкупов</th><th>% к перечислению</th><th>К перечислению</th><th>Рентабельность</th><th>ЧП</th>{visibleMonths.map(month => <th className="month-col" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th className="total-col">Итого</th></tr></thead>
-      <tbody>
-        <tr className="cabinet-total-row"><th>Итого по кабинету</th><MetricCells metrics={cabinetPeriod} />{visibleMonths.map(month => <td key={month}>{money(getMetrics(kind, cabinet.id, null, month).ordersSum)}</td>)}<td>{money(cabinetPeriod.ordersSum)}</td></tr>
-        {categories.map(category => <CategoryRows key={category.id} category={category} cabinet={cabinet} {...{ kind, visibleMonths, expandedCategories, onToggleCategory, getMetrics, getRecord, onSave, compare }} />)}
-      </tbody>
-    </table></div>
-  </div>;
+function CabinetList({ kind, mode, cabinets, categoriesByCabinet, ...props }: CommonTableProps & { kind: AggregatePlanKind; mode: 'fixed' | 'scenario' }) {
+  const visible = cabinets.filter(cabinet => (categoriesByCabinet.get(cabinet.id) || []).length > 0);
+  return <div className="cabinet-plan-list">{visible.map(cabinet => mode === 'fixed'
+    ? <FixedCabinetTable key={cabinet.id} cabinet={cabinet} categories={categoriesByCabinet.get(cabinet.id) || []} kind={kind} {...props} />
+    : <ScenarioCabinetTable key={cabinet.id} cabinet={cabinet} categories={categoriesByCabinet.get(cabinet.id) || []} kind={kind} {...props} />)}{visible.length === 0 && <div className="aggregate-plan-empty">Нет кабинетов с назначенными категориями.</div>}</div>;
 }
 
-function MetricCells({ metrics }: { metrics: PeriodMetrics }) {
-  return <><td>{number(metrics.ordersQty)}</td><td>{money(metrics.avgCheck)}</td><td>{percent(metrics.buyoutRate)}</td><td>{money(metrics.buyoutAmount)}</td><td>{percent(metrics.payoutRate)}</td><td>{money(metrics.payoutAmount)}</td><td>{percent(metrics.profitability)}</td><td>{money(metrics.netProfit)}</td></>;
+type CabinetProps = Omit<CommonTableProps, 'cabinets' | 'categoriesByCabinet'> & { kind: AggregatePlanKind; cabinet: Cabinet; categories: CategoryEntity[] };
+function CabinetHeader({ cabinet, categories }: { cabinet: Cabinet; categories: CategoryEntity[] }) { return <div className="cabinet-plan-title"><strong>Кабинет: {cabinet.name}</strong><span>{categories.length} катег.</span></div>; }
+
+function FixedCabinetTable({ cabinet, categories, kind, months, columns, ...props }: CabinetProps) {
+  const total = periodMetrics(months.map(month => props.getMetrics(kind, cabinet.id, null, month)));
+  return <div className="cabinet-plan-card"><CabinetHeader {...{ cabinet, categories }} /><div className="cabinet-plan-scroll"><table className="cabinet-plan-table fixed-plan-table">
+    <thead><tr><th rowSpan={2} className="category-col">Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}<th colSpan={months.length + 1} className="period-group">Оставшийся период</th></tr><tr>{months.map(month => <th className="month-col" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th className="total-col">Итого</th></tr></thead>
+    <tbody><tr className="cabinet-total-row"><th>Итого по кабинету</th><SummaryCells metrics={total} columns={columns} />{months.map(month => <td key={month}>{formatValue(props.getMetrics(kind, cabinet.id, null, month).ordersSum, 'money')}</td>)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{categories.map(category => <FixedCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} {...props} />)}</tbody>
+  </table></div></div>;
 }
 
-function CategoryRows({ category, kind, visibleMonths, expandedCategories, onToggleCategory, getMetrics, getRecord, onSave, compare }: Omit<PlanSectionProps, 'title' | 'description' | 'cabinets' | 'categoriesByCabinet' | 'actions'> & { category: CategoryEntity; cabinet: Cabinet }) {
-  const key = `${kind}|${category.cabinetId}|${category.id}`;
-  const open = expandedCategories.has(key);
-  const monthly = visibleMonths.map(month => getMetrics(kind, category.cabinetId, category.name, month));
-  const totals = periodMetrics(monthly);
-  const profitabilityValues = monthly.map(item => item.profitability).filter((value): value is number => value !== null);
-  const profitabilityValue = profitabilityValues.length && profitabilityValues.every(value => Math.abs(value - profitabilityValues[0]) < 0.001) ? profitabilityValues[0] : totals.profitability;
-  const saveProfitability = (value: number | null) => visibleMonths.forEach(month => onSave(kind, category, month, 'profitability', value));
-  return <>
-    <tr className="category-plan-row">
-      <th><button type="button" onClick={() => onToggleCategory(key)} aria-expanded={open}>{open ? '⌄' : '›'}</button><span>{category.name}</span></th>
-      <td>{number(totals.ordersQty)}</td><td>{money(totals.avgCheck)}</td><td>{percent(totals.buyoutRate)}</td><td>{money(totals.buyoutAmount)}</td><td>{percent(totals.payoutRate)}</td><td>{money(totals.payoutAmount)}</td>
-      <td className="plan-input-cell"><input key={`${kind}|${key}|profitability|${profitabilityValue ?? 'empty'}`} defaultValue={profitabilityValue === null ? '' : String(profitabilityValue).replace('.', ',')} placeholder="—" inputMode="decimal" aria-label={`${category.name}, рентабельность`} onBlur={event => saveProfitability(parseInput(event.target.value))} /><span>%</span></td>
-      <td>{money(totals.netProfit)}</td>
-      {visibleMonths.map((month, index) => {
-        const record = getRecord(kind, category, month);
-        const value = record?.orders_sum ?? monthly[index].ordersSum;
-        const plan = compare ? getMetrics('fixed', category.cabinetId, category.name, month).ordersSum : null;
-        const difference = compare ? delta(value, plan) : null;
-        return <td className="plan-input-cell month-input" key={month}><input key={`${record?.updated_at || 'empty'}|orders`} defaultValue={value === null ? '' : String(Math.round(value))} placeholder="—" inputMode="decimal" aria-label={`${category.name}, сумма заказов, ${month}`} onBlur={event => onSave(kind, category, month, 'orders_sum', parseInput(event.target.value))} />{difference !== null && <small className={difference >= 0 ? 'positive' : 'negative'}>{difference >= 0 ? '+' : ''}{difference.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</small>}</td>;
-      })}
-      <td className="total-col">{money(totals.ordersSum)}</td>
-    </tr>
-    {open && <>
-      <DetailRow label="Сумма заказов в день" values={monthly.map(item => money(item.ordersPerDay))} total={money(totals.ordersPerDay)} visibleMonths={visibleMonths} />
-      <DetailRow label="Чистая прибыль в день" values={monthly.map(item => money(item.netProfitPerDay))} total={money(totals.netProfitPerDay)} visibleMonths={visibleMonths} />
-      <DetailRow label="Дней в месяце" values={monthly.map(item => String(item.daysInMonth))} total={String(totals.days)} visibleMonths={visibleMonths} />
-    </>}
-  </>;
+function FixedCategoryRows({ category, cabinet, kind, months, columns, expanded, onToggle, getMetrics, getRecord, onSave }: Omit<CabinetProps, 'categories'> & { category: CategoryEntity }) {
+  const key = `fixed|${cabinet.id}|${category.id}`;
+  const open = expanded.has(key);
+  const monthly = months.map(month => getMetrics(kind, cabinet.id, category.name, month));
+  const total = periodMetrics(monthly);
+  return <><tr className="category-plan-row"><th><button type="button" onClick={() => onToggle(key)} aria-expanded={open}>{open ? '⌄' : '›'}</button>{category.name}</th><SummaryCells metrics={total} columns={columns} />{months.map((month, index) => <DriverInput key={month} record={getRecord(kind, category, month)} value={getRecord(kind, category, month)?.orders_sum ?? monthly[index].ordersSum} label={`${category.name}, сумма заказов, ${month}`} onSave={value => onSave(kind, category, month, 'orders_sum', value)} />)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{open && <>
+    <FixedDetailRow label="Рентабельность" format="percent" inputField="profitability" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+    <FixedDetailRow label="Сумма заказов в день" metric="ordersPerDay" format="money" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+    <FixedDetailRow label="Чистая прибыль в день" metric="netProfitPerDay" format="money" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+    <FixedDetailRow label="Дней в месяце" metric="daysInMonth" format="days" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+  </>}</>;
 }
 
-function DetailRow({ label, values, total, visibleMonths }: { label: string; values: string[]; total: string; visibleMonths: string[] }) {
-  return <tr className="category-detail-row"><th>{label}</th><td colSpan={8}></td>{visibleMonths.map((month, index) => <td key={month}>{values[index]}</td>)}<td className="total-col">{total}</td></tr>;
+function FixedDetailRow({ label, metric, format, inputField, category, kind, months, columns, monthly, getRecord, onSave }: { label: string; metric?: MetricKey; format: ValueFormat; inputField?: EditableAggregatePlanField; category: CategoryEntity; kind: AggregatePlanKind; months: string[]; columns: ColumnDefinition[]; monthly: AggregatePlanMetrics[]; getRecord: CommonTableProps['getRecord']; onSave: CommonTableProps['onSave'] }) {
+  const values = metric ? monthly.map(item => item[metric] as number | null) : monthly.map(item => item.profitability);
+  const total = inputField ? ratio(sumKnown(monthly.map(item => item.netProfit)), sumKnown(monthly.map(item => item.buyoutAmount))) : metric === 'daysInMonth' ? sumKnown(values) : null;
+  return <tr className="category-detail-row"><th>{label}</th><td colSpan={columns.length}></td>{months.map((month, index) => inputField
+    ? <DriverInput key={month} record={getRecord(kind, category, month)} value={values[index]} label={`${category.name}, ${label}, ${month}`} suffix="%" onSave={value => onSave(kind, category, month, inputField, value)} />
+    : <td key={month}>{formatValue(values[index], format)}</td>)}<td className="total-col">{inputField ? formatValue(total, 'percent') : metric === 'daysInMonth' ? formatValue(total, 'days') : '—'}</td></tr>;
 }
+
+function ScenarioCabinetTable({ cabinet, categories, kind, months, columns, ...props }: CabinetProps) {
+  const scenarioTotal = periodMetrics(months.map(month => props.getMetrics(kind, cabinet.id, null, month)));
+  return <div className="cabinet-plan-card scenario-card"><CabinetHeader {...{ cabinet, categories }} /><div className="cabinet-plan-scroll"><table className="cabinet-plan-table scenario-plan-table">
+    <thead><tr><th rowSpan={2}>Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}{months.map(month => <th colSpan={3} className="period-group" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th colSpan={3} className="total-col">Итого</th></tr><tr>{[...months, 'total'].flatMap(month => [<th key={`${month}-plan`}>План</th>, <th key={`${month}-scenario`}>Сценарий</th>, <th key={`${month}-delta`}>Δ, %</th>])}</tr></thead>
+    <tbody><ScenarioTotalRow cabinet={cabinet} kind={kind} months={months} columns={columns} scenarioTotal={scenarioTotal} getMetrics={props.getMetrics} />{categories.map(category => <ScenarioCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} {...props} />)}</tbody>
+  </table></div></div>;
+}
+
+function ScenarioTotalRow({ cabinet, kind, months, columns, scenarioTotal, getMetrics }: { cabinet: Cabinet; kind: AggregatePlanKind; months: string[]; columns: ColumnDefinition[]; scenarioTotal: PeriodMetrics; getMetrics: CommonTableProps['getMetrics'] }) {
+  const fixedTotal = periodMetrics(months.map(month => getMetrics('fixed', cabinet.id, null, month)));
+  return <tr className="cabinet-total-row"><th>Итого по кабинету</th><SummaryCells metrics={scenarioTotal} columns={columns} />{months.flatMap(month => {
+    const plan = getMetrics('fixed', cabinet.id, null, month).ordersSum;
+    const scenario = getMetrics(kind, cabinet.id, null, month).ordersSum;
+    return [<td key={`${month}-p`}>{formatValue(plan, 'money')}</td>, <td key={`${month}-s`}>{formatValue(scenario, 'money')}</td>, <DeltaCell key={`${month}-d`} value={delta(scenario, plan)} />];
+  })}<td>{formatValue(fixedTotal.ordersSum, 'money')}</td><td>{formatValue(scenarioTotal.ordersSum, 'money')}</td><DeltaCell value={delta(scenarioTotal.ordersSum, fixedTotal.ordersSum)} /></tr>;
+}
+
+function ScenarioCategoryRows({ category, cabinet, kind, months, columns, expanded, onToggle, getMetrics, getRecord, onSave }: Omit<CabinetProps, 'categories'> & { category: CategoryEntity }) {
+  const key = `scenario|${cabinet.id}|${category.id}`;
+  const open = expanded.has(key);
+  const scenarioMonthly = months.map(month => getMetrics(kind, cabinet.id, category.name, month));
+  const fixedMonthly = months.map(month => getMetrics('fixed', cabinet.id, category.name, month));
+  const scenarioTotal = periodMetrics(scenarioMonthly);
+  const fixedTotal = periodMetrics(fixedMonthly);
+  return <><tr className="category-plan-row"><th><button type="button" onClick={() => onToggle(key)} aria-expanded={open}>{open ? '⌄' : '›'}</button>{category.name}</th><SummaryCells metrics={scenarioTotal} columns={columns} />{months.flatMap((month, index) => {
+    const record = getRecord(kind, category, month);
+    const scenario = record?.orders_sum ?? scenarioMonthly[index].ordersSum;
+    const plan = fixedMonthly[index].ordersSum;
+    return [<td key={`${month}-p`}>{formatValue(plan, 'money')}</td>, <DriverInput key={`${month}-s`} record={record} value={scenario} label={`${category.name}, сценарий заказов, ${month}`} onSave={value => onSave(kind, category, month, 'orders_sum', value)} />, <DeltaCell key={`${month}-d`} value={delta(scenario, plan)} />];
+  })}<td>{formatValue(fixedTotal.ordersSum, 'money')}</td><td>{formatValue(scenarioTotal.ordersSum, 'money')}</td><DeltaCell value={delta(scenarioTotal.ordersSum, fixedTotal.ordersSum)} /></tr>{open && <>
+    {SCENARIO_DRIVERS.map(driver => <ScenarioMetricRow key={driver.key} label={driver.label} metric={driver.metric} inputField={driver.key} format={driver.format} {...{ category, kind, months, columns, fixedMonthly, scenarioMonthly, getRecord, onSave }} />)}
+    {SCENARIO_RESULTS.map(result => <ScenarioMetricRow key={result.metric} label={result.label} metric={result.metric} format={result.format} {...{ category, kind, months, columns, fixedMonthly, scenarioMonthly, getRecord, onSave }} />)}
+  </>}</>;
+}
+
+function ScenarioMetricRow({ label, metric, format, inputField, category, kind, months, columns, fixedMonthly, scenarioMonthly, getRecord, onSave }: { label: string; metric: MetricKey; format: ValueFormat; inputField?: EditableAggregatePlanField; category: CategoryEntity; kind: AggregatePlanKind; months: string[]; columns: ColumnDefinition[]; fixedMonthly: AggregatePlanMetrics[]; scenarioMonthly: AggregatePlanMetrics[]; getRecord: CommonTableProps['getRecord']; onSave: CommonTableProps['onSave'] }) {
+  const fixedTotal = periodMetrics(fixedMonthly)[metric as keyof PeriodMetrics] as number | null;
+  const scenarioTotal = periodMetrics(scenarioMonthly)[metric as keyof PeriodMetrics] as number | null;
+  return <tr className="category-detail-row scenario-detail-row"><th>{label}</th><td colSpan={columns.length}></td>{months.flatMap((month, index) => {
+    const plan = fixedMonthly[index][metric] as number | null;
+    const scenario = scenarioMonthly[index][metric] as number | null;
+    return [<td key={`${month}-p`}>{formatValue(plan, format)}</td>, inputField ? <DriverInput key={`${month}-s`} record={getRecord(kind, category, month)} value={scenario} label={`${category.name}, ${label}, ${month}`} suffix={format === 'percent' ? '%' : ''} onSave={value => onSave(kind, category, month, inputField, value)} /> : <td key={`${month}-s`}>{formatValue(scenario, format)}</td>, <DeltaCell key={`${month}-d`} value={delta(scenario, plan)} />];
+  })}<td>{formatValue(fixedTotal, format)}</td><td>{formatValue(scenarioTotal, format)}</td><DeltaCell value={delta(scenarioTotal, fixedTotal)} /></tr>;
+}
+
+function SummaryCells({ metrics, columns }: { metrics: PeriodMetrics; columns: ColumnDefinition[] }) { return <>{columns.map(column => <td key={column.key}>{formatValue(metrics[column.key], column.format)}</td>)}</>; }
+function DriverInput({ record, value, label, suffix, onSave }: { record?: AggregateMonthlyPlanRecord; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) { return <td className="plan-input-cell"><input key={`${record?.updated_at || 'empty'}|${label}`} defaultValue={inputText(value)} placeholder="—" inputMode="decimal" aria-label={label} onBlur={event => onSave(parseInput(event.target.value))} />{suffix && <span>{suffix}</span>}</td>; }
+function DeltaCell({ value }: { value: number | null }) { return <td className={`scenario-delta ${value === null ? '' : value >= 0 ? 'positive' : 'negative'}`}>{value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}</td>; }

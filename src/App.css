@@ -4939,6 +4939,84 @@ thead .at-metric:last-child {
   .compact-plan-toolbar, .aggregate-plan-section-head { align-items: flex-start; flex-direction: column; }
 }
 
+/* Planning page aligned with the compact approved mock */
+.planning-mock-page { gap: 10px; }
+.planning-mock-page .analytics-page-header { padding-bottom: 4px; }
+.planning-mock-page .analytics-page-header h1 { margin-bottom: 2px; }
+.planning-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 1080px; }
+.planning-kpis .aggregate-plan-kpi { min-height: 72px; padding: 11px 12px; }
+.planning-kpis .aggregate-plan-kpi small { color: var(--color-text-secondary); font-size: 8px; }
+.planning-table-toolbar { margin-top: 3px; }
+.planning-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+
+.planning-column-settings { position: relative; }
+.planning-column-settings summary {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--color-text);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.planning-column-settings summary::-webkit-details-marker { display: none; }
+.planning-column-settings[open] summary { border-color: #9db7d8; }
+.planning-column-settings > div {
+  position: absolute;
+  z-index: 20;
+  top: 38px;
+  right: 0;
+  display: grid;
+  gap: 7px;
+  width: 210px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(32, 48, 69, .12);
+}
+.planning-column-settings label { display: flex; align-items: center; gap: 7px; font-size: 10px; cursor: pointer; }
+.planning-main-section { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.planning-scenario-section { padding: 12px; }
+.planning-scenario-section .aggregate-plan-section-head h2 small { margin-left: 6px; padding: 2px 6px; border-radius: 999px; background: #f0f2f5; color: var(--color-text-secondary); font-size: 8px; font-weight: 600; }
+.aggregate-plan-actions button.apply { border-color: #7f8ef4; background: #7f8ef4; }
+.aggregate-plan-actions button:disabled { border-color: #d7dce5; background: #e8ebf0; color: #9da7b5; cursor: not-allowed; }
+
+.planning-mock-page .cabinet-plan-card { border-radius: 8px; }
+.planning-mock-page .cabinet-plan-title { min-height: 32px; padding: 6px 10px; }
+.planning-mock-page .cabinet-plan-title strong { font-size: 10px; }
+.planning-mock-page .cabinet-plan-table { min-width: max-content; table-layout: auto; }
+.planning-mock-page .cabinet-plan-table th,
+.planning-mock-page .cabinet-plan-table td { min-width: 78px; height: 29px; padding: 3px 6px; }
+.planning-mock-page .cabinet-plan-table th:first-child { min-width: 180px; width: 180px; }
+.planning-mock-page .cabinet-plan-table thead th { height: 29px; }
+.planning-mock-page .cabinet-plan-table thead th.period-group { background: #f8fafc; color: #76869b; text-align: center; }
+.planning-mock-page .cabinet-plan-table thead th.month-col { min-width: 92px; text-align: center; }
+.planning-mock-page .cabinet-plan-table .total-col { min-width: 96px; }
+.planning-mock-page .category-plan-row .plan-input-cell { background: #fffdf5; }
+.planning-mock-page .category-plan-row .plan-input-cell input { border-color: #e7cf70; }
+.planning-mock-page .category-detail-row td { min-width: 78px; }
+
+.scenario-plan-table thead tr:nth-child(2) th { min-width: 64px; width: 64px; font-size: 7px; text-align: center; }
+.scenario-plan-table thead th.period-group { border-left: 1px solid #cfd8e5; }
+.scenario-plan-table tbody td:nth-child(3n) { background-color: #fcfdff; }
+.scenario-plan-table .plan-input-cell { min-width: 74px; }
+.scenario-plan-table .scenario-delta { min-width: 58px; text-align: center; font-size: 8px; }
+.scenario-delta.positive { color: #0a9b6d; }
+.scenario-delta.negative { color: #d84455; }
+.scenario-detail-row th:first-child { padding-left: 34px; }
+.planning-status { align-self: flex-end; padding: 7px 10px; border: 1px solid #bfe5d7; border-radius: var(--radius-md); background: #f1fbf7; color: #17684f; font-size: 10px; }
+
+@media (max-width: 1100px) {
+  .planning-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
+  .planning-toolbar-actions { align-items: flex-end; flex-direction: column; }
+}
+
 .at-th.at-metric-drr {
   background: #FFF4D8;
   color: #8A5A00;
