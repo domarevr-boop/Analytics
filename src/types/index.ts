@@ -159,6 +159,30 @@ export interface MonthlyPlanRecord {
   buyoutRate: number;
 }
 
+export type AggregatePlanKind = 'fixed' | 'scenario';
+export type AggregatePlanScope = 'category' | 'brand';
+
+export interface AggregateMonthlyPlanRecord {
+  id: string;
+  kind: AggregatePlanKind;
+  month: string;
+  scope: AggregatePlanScope;
+  cabinet_id: string;
+  entity_id: string;
+  entity_name: string;
+  avg_qty_per_day: number | null;
+  avg_check: number | null;
+  buyout_rate: number | null;
+  payout_rate: number | null;
+  profitability: number | null;
+  updated_at: string;
+}
+
+export interface PlanningSettingsRecord {
+  id: 'global';
+  prefer_aggregate_plan: boolean;
+}
+
 export interface GeographyOrderRecord {
   date: string;
   product_id: string;
@@ -343,6 +367,8 @@ export interface DataSnapshot {
   metrics: DailyMetrics[];
   plans: PlanRecord[];
   monthlyPlans: MonthlyPlanRecord[];
+  aggregatePlans: AggregateMonthlyPlanRecord[];
+  planningSettings: PlanningSettingsRecord[];
   profitability: ProfitabilityRecord[];
   geography: GeographyOrderRecord[];
   geographyPlans: GeographyPlanRecord[];
@@ -367,6 +393,8 @@ export interface DataChanges {
   metrics: ChangeSet<DailyMetrics>;
   plans: ChangeSet<PlanRecord>;
   monthlyPlans: ChangeSet<MonthlyPlanRecord>;
+  aggregatePlans: ChangeSet<AggregateMonthlyPlanRecord>;
+  planningSettings: ChangeSet<PlanningSettingsRecord>;
   profitability: ChangeSet<ProfitabilityRecord>;
   geography: ChangeSet<GeographyOrderRecord>;
   geographyPlans: ChangeSet<GeographyPlanRecord>;

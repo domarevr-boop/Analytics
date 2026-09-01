@@ -1,11 +1,11 @@
-import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
+import type { DataChanges, DataSnapshot, IDataRepository, Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, PlanRecord, MonthlyPlanRecord, AggregateMonthlyPlanRecord, PlanningSettingsRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord, ImportFileLog, SaveResult } from '../types';
 
 const DB_NAME = 'analytics-db';
 // IndexedDB versions are permanent in a browser profile. Published versions
-// must never be reused or decreased; version 10 adds dated group membership
-// history without touching existing stores.
-const DB_VERSION = 10;
-const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'group_membership_history', 'daily_metrics', 'plans', 'monthly_plans', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'market_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
+// must never be reused or decreased; version 11 adds aggregate planning and a
+// global source preference without touching existing stores.
+const DB_VERSION = 11;
+const STORES = ['cabinets', 'brands', 'product_groups', 'products', 'group_memberships', 'group_membership_history', 'daily_metrics', 'plans', 'monthly_plans', 'aggregate_monthly_plans', 'planning_settings', 'profitability_reports', 'geography_orders', 'geography_plans', 'entry_points', 'search_queries', 'niche_dynamics', 'market_dynamics', 'competitor_funnel', 'competitor_search', 'competitor_stocks', 'competitor_positions', 'import_logs'] as const;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -97,7 +97,7 @@ export class LocalRepository implements IDataRepository {
     const tx = getTX(db, [...STORES], 'readonly');
     const [
       cabinets, brands, groups, products, memberships, groupHistory, metrics,
-      plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics,
+      plans, monthlyPlans, aggregatePlans, planningSettings, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics,
       competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs,
     ] = await Promise.all([
       getAll<Cabinet>(tx.objectStore('cabinets')),
@@ -109,6 +109,8 @@ export class LocalRepository implements IDataRepository {
       getAll<DailyMetrics>(tx.objectStore('daily_metrics')),
       getAll<PlanRecord>(tx.objectStore('plans')),
       getAll<MonthlyPlanRecord>(tx.objectStore('monthly_plans')),
+      getAll<AggregateMonthlyPlanRecord>(tx.objectStore('aggregate_monthly_plans')),
+      getAll<PlanningSettingsRecord>(tx.objectStore('planning_settings')),
       getAll<ProfitabilityRecord>(tx.objectStore('profitability_reports')),
       getAll<GeographyOrderRecord>(tx.objectStore('geography_orders')),
       getAll<GeographyPlanRecord>(tx.objectStore('geography_plans')),
@@ -123,7 +125,7 @@ export class LocalRepository implements IDataRepository {
       getAll<ImportFileLog>(tx.objectStore('import_logs')),
     ]);
 
-    return { cabinets, brands, groups, products, memberships, groupHistory, metrics, plans, monthlyPlans, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics, competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs };
+    return { cabinets, brands, groups, products, memberships, groupHistory, metrics, plans, monthlyPlans, aggregatePlans, planningSettings, profitability, geography, geographyPlans, entryPoints, searchQueries, nicheDynamics, marketDynamics, competitorFunnel, competitorSearch, competitorStocks, competitorPositions, importLogs };
   }
 
   async saveAll(data: DataSnapshot): Promise<SaveResult> {
@@ -138,6 +140,8 @@ export class LocalRepository implements IDataRepository {
       { store: 'daily_metrics', rows: data.metrics as unknown as DBRecord[] },
       { store: 'plans', rows: data.plans as unknown as DBRecord[] },
       { store: 'monthly_plans', rows: data.monthlyPlans as unknown as DBRecord[] },
+      { store: 'aggregate_monthly_plans', rows: data.aggregatePlans as unknown as DBRecord[] },
+      { store: 'planning_settings', rows: data.planningSettings as unknown as DBRecord[] },
       { store: 'profitability_reports', rows: data.profitability as unknown as DBRecord[] },
       { store: 'geography_orders', rows: data.geography as unknown as DBRecord[] },
       { store: 'geography_plans', rows: data.geographyPlans as unknown as DBRecord[] },
@@ -195,6 +199,8 @@ export class LocalRepository implements IDataRepository {
           : storeName === 'group_memberships' ? 'memberships'
           : storeName === 'group_membership_history' ? 'groupHistory'
           : storeName === 'monthly_plans' ? 'monthlyPlans'
+          : storeName === 'aggregate_monthly_plans' ? 'aggregatePlans'
+          : storeName === 'planning_settings' ? 'planningSettings'
           : storeName === 'profitability_reports' ? 'profitability'
           : storeName === 'geography_orders' ? 'geography'
           : storeName === 'geography_plans' ? 'geographyPlans'

@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test:cx": "node --test src/features/clientExperience/cxCalculations.test.ts",
     "test:groups": "node --test src/data/groupMembershipHistory.test.ts",
+    "test:planning": "node --test src/data/planningCalculations.test.ts src/data/planningSelectors.test.ts",
     "test:reporting": "node --test src/data/reportingCalculations.test.ts",
     "preview": "vite preview",
     "predeploy": "node scripts/check-production-env.mjs && node scripts/copy-az-dicts.mjs",

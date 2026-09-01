@@ -152,6 +152,8 @@ export class CloudRepository implements IDataRepository {
       metrics: metrics.map(toMetrics),
       plans: (plans.data || []).map(r => toPlan(r as PlanRow)),
       monthlyPlans: (monthlyPlans.data || []).map(r => toMonthlyPlan(r as MonthlyPlanRow)),
+      aggregatePlans: [],
+      planningSettings: [],
       profitability: (profitability.data || []).map(r => toProfitability(r as ProfitabilityRow)),
       // Geography and entry points are intentionally outside the first V5 cloud scope.
       geography: [],

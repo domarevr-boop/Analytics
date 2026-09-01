@@ -4,7 +4,7 @@ type StoreName = keyof DataSnapshot;
 
 export const DATA_STORE_NAMES: StoreName[] = [
   'cabinets', 'brands', 'groups', 'products', 'memberships', 'groupHistory',
-  'metrics', 'plans', 'monthlyPlans', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics', 'marketDynamics',
+  'metrics', 'plans', 'monthlyPlans', 'aggregatePlans', 'planningSettings', 'profitability', 'geography', 'geographyPlans', 'entryPoints', 'searchQueries', 'nicheDynamics', 'marketDynamics',
   'competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions', 'importLogs',
 ];
 

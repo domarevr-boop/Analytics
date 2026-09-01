@@ -394,7 +394,7 @@ function App() {
       ) : page === 'reporting' ? (
         <div className="page-content"><ReportingPage /></div>
       ) : page === 'planning' ? (
-        <PlanningPage {...filterBarProps} />
+        <PlanningPage />
       ) : page === 'import' ? (
         <div className="page-content"><ImportPage /></div>
       ) : page === 'profitability' ? (

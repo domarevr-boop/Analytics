@@ -1,4 +1,4 @@
-import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord } from '../types';
+import type { Cabinet, Brand, ProductGroup, Product, GroupMembership, GroupMembershipHistory, DailyMetrics, ImportFileLog, ImportSource, PlanRecord, MonthlyPlanRecord, AggregateMonthlyPlanRecord, AggregatePlanKind, PlanningSettingsRecord, ProfitabilityRecord, GeographyOrderRecord, GeographyPlanRecord, EntryPointRecord, SearchQueryRecord, NicheDynamicsRecord, MarketDynamicsRecord, CompetitorFunnelRecord, CompetitorSearchRecord, CompetitorStockRecord, CompetitorPositionRecord } from '../types';
 import type { CompetitorWorkbookData } from './competitorImport';
 import { classifySku, getRules } from './rules';
 import { loadSeed, createSeedPlans, getUngroupedGroupId } from './seedLoader';
@@ -53,6 +53,8 @@ let _metrics: DailyMetrics[] = [];
 let _importLog: ImportFileLog[] = [];
 let _plans: PlanRecord[] = [];
 let _monthlyPlans: MonthlyPlanRecord[] = [];
+let _aggregatePlans: AggregateMonthlyPlanRecord[] = [];
+let _planningSettings: PlanningSettingsRecord[] = [];
 let _profitability: ProfitabilityRecord[] = [];
 let _geography: GeographyOrderRecord[] = [];
 let _geographyPlans: GeographyPlanRecord[] = [];
@@ -134,6 +136,9 @@ export function getGroups() { return cachedRows('groups', _groups); }
 export function getProducts() { return cachedRows('products', _products, product => ({ ...product, aliases: product.aliases ? [...product.aliases] : [] })); }
 export function getMemberships() { return cachedRows('memberships', _memberships); }
 export function getGroupMembershipHistory() { return cachedRows('groupHistory', _groupHistory); }
+export function getAggregatePlans() { return cachedRows('aggregatePlans', _aggregatePlans); }
+export function getPlanningSettings() { return cachedRows('planningSettings', _planningSettings); }
+export function getPreferAggregatePlan() { return _planningSettings.find(item => item.id === 'global')?.prefer_aggregate_plan ?? false; }
 export function getMetrics() { return cachedRows('metrics', _metrics); }
 export function getGeographyOrders() { return cachedRows('geography', _geography); }
 export function getGeographyPlans() { return cachedRows('geographyPlans', _geographyPlans); }
@@ -206,6 +211,8 @@ export function exportV4Backup() {
       metrics: _metrics.map(item => ({ ...item })),
       plans: _plans.map(item => ({ ...item })),
       monthlyPlans: _monthlyPlans.map(item => ({ ...item })),
+      aggregatePlans: _aggregatePlans.map(item => ({ ...item })),
+      planningSettings: _planningSettings.map(item => ({ ...item })),
       profitability: _profitability.map(item => ({ ...item })),
       geography: _geography.map(item => ({ ...item })),
       geographyPlans: _geographyPlans.map(item => ({ ...item })),
@@ -239,6 +246,8 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
     metrics: data.metrics,
     plans: data.plans || [],
     monthlyPlans: data.monthlyPlans || [],
+    aggregatePlans: data.aggregatePlans || [],
+    planningSettings: data.planningSettings || [],
     profitability: data.profitability || [],
     geography: data.geography || [],
     geographyPlans: data.geographyPlans || [],
@@ -266,6 +275,8 @@ export async function importV4Backup(backup: unknown): Promise<{ metrics: number
   _metrics = snapshot.metrics;
   _plans = snapshot.plans;
   _monthlyPlans = snapshot.monthlyPlans;
+  _aggregatePlans = snapshot.aggregatePlans;
+  _planningSettings = snapshot.planningSettings;
   _profitability = snapshot.profitability;
   _geography = snapshot.geography;
   _geographyPlans = snapshot.geographyPlans;
@@ -1066,6 +1077,8 @@ export function clearMetricsAndImports(): void {
   _competitorStocks = [];
   _competitorPositions = [];
   _monthlyPlans = [];
+  _aggregatePlans = [];
+  _planningSettings = [];
   saveMonthlyPlansBackup();
   persistAll();
   notify(false);
@@ -1082,6 +1095,8 @@ export function resetAllData(): void {
   _importLog = [];
   _plans = [];
   _monthlyPlans = [];
+  _aggregatePlans = [];
+  _planningSettings = [];
   saveMonthlyPlansBackup();
   _profitability = [];
   _geography = [];
@@ -1699,6 +1714,38 @@ export function getMonthlyPlans(): MonthlyPlanRecord[] {
   return cachedRows('monthlyPlans', _monthlyPlans);
 }
 
+export function getAggregatePlansForMonth(month: string, kind?: AggregatePlanKind): AggregateMonthlyPlanRecord[] {
+  return _aggregatePlans
+    .filter(plan => plan.month === month && (!kind || plan.kind === kind))
+    .map(plan => ({ ...plan }));
+}
+
+export function upsertAggregatePlan(record: AggregateMonthlyPlanRecord) {
+  const index = _aggregatePlans.findIndex(plan => plan.id === record.id);
+  if (index >= 0) _aggregatePlans[index] = { ...record };
+  else _aggregatePlans.push({ ...record });
+  notify(true, ['aggregatePlans']);
+}
+
+export async function replaceAggregatePlanKind(kind: AggregatePlanKind, records: AggregateMonthlyPlanRecord[]) {
+  _aggregatePlans = [
+    ..._aggregatePlans.filter(plan => plan.kind !== kind),
+    ...records.map(record => ({ ...record, kind })),
+  ];
+  await persistStores(['aggregatePlans']);
+  notify(false, ['aggregatePlans']);
+}
+
+export function clearAggregatePlanKind(kind: AggregatePlanKind) {
+  _aggregatePlans = _aggregatePlans.filter(plan => plan.kind !== kind);
+  notify(true, ['aggregatePlans']);
+}
+
+export function setPreferAggregatePlan(prefer: boolean) {
+  _planningSettings = [{ id: 'global', prefer_aggregate_plan: prefer }];
+  notify(true, ['planningSettings']);
+}
+
 export function getProfitabilityRecords(): ProfitabilityRecord[] {
   return cachedRows('profitability', _profitability);
 }
@@ -1790,6 +1837,8 @@ function cloneStore(store: DataStoreName): DataSnapshot[DataStoreName] {
     case 'metrics': return _metrics.map(item => ({ ...item }));
     case 'plans': return _plans.map(item => ({ ...item }));
     case 'monthlyPlans': return _monthlyPlans.map(item => ({ ...item }));
+    case 'aggregatePlans': return _aggregatePlans.map(item => ({ ...item }));
+    case 'planningSettings': return _planningSettings.map(item => ({ ...item }));
     case 'profitability': return _profitability.map(item => ({ ...item }));
     case 'geography': return _geography.map(item => ({ ...item }));
     case 'geographyPlans': return _geographyPlans.map(item => ({ ...item }));
@@ -1876,6 +1925,8 @@ export async function initStore() {
     _plans = snapshot.plans.map(item => ({ ...item }));
     const monthlyPlansBackup = isCloudStorage ? [] : loadMonthlyPlansBackup();
     _monthlyPlans = monthlyPlansBackup.length > 0 ? monthlyPlansBackup : snapshot.monthlyPlans.map(item => ({ ...item }));
+    _aggregatePlans = (snapshot.aggregatePlans || []).map(item => ({ ...item }));
+    _planningSettings = (snapshot.planningSettings || []).map(item => ({ ...item }));
     _profitability = snapshot.profitability.map(item => ({ ...item }));
     _geography = snapshot.geography.map(item => ({ ...item }));
     _geographyPlans = snapshot.geographyPlans.map(item => ({ ...item }));

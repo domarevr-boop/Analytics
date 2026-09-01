@@ -43,18 +43,20 @@ export class RepositoryManager implements IDataRepository {
   async loadAll(): Promise<DataSnapshot> {
     const localSnapshot = await this.local.loadAll();
 
-    // Group membership history is intentionally local-only. Keep it when a cloud
-    // snapshot is used for the rest of the local-first report data.
-    const withLocalGroupHistory = (cloudSnapshot: DataSnapshot): DataSnapshot => ({
+    // Group history and aggregate planning are intentionally local-only. Keep
+    // them when a cloud snapshot is used for the rest of the report data.
+    const withLocalData = (cloudSnapshot: DataSnapshot): DataSnapshot => ({
       ...cloudSnapshot,
       groupHistory: localSnapshot.groupHistory,
+      aggregatePlans: localSnapshot.aggregatePlans,
+      planningSettings: localSnapshot.planningSettings,
     });
 
     if (this.cloudFirst && this._cloudAvailable) {
       try {
         const cloudSnapshot = await this.cloud.loadAll();
         if (cloudSnapshot.cabinets.length > 0) {
-          const mergedSnapshot = withLocalGroupHistory(cloudSnapshot);
+          const mergedSnapshot = withLocalData(cloudSnapshot);
           await this.local.saveAll(mergedSnapshot);
           this._lastSyncTime = new Date();
           return mergedSnapshot;
@@ -71,7 +73,7 @@ export class RepositoryManager implements IDataRepository {
       try {
         const cloudSnapshot = await this.cloud.loadAll();
         if (cloudSnapshot.cabinets.length > 0) {
-          const mergedSnapshot = withLocalGroupHistory(cloudSnapshot);
+          const mergedSnapshot = withLocalData(cloudSnapshot);
           await this.local.saveAll(mergedSnapshot);
           this._lastSyncTime = new Date();
           return mergedSnapshot;

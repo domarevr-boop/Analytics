@@ -1,5 +1,6 @@
 import { useState, useMemo, useSyncExternalStore } from 'react';
-import { subscribe, getVersion, getMetrics, getMonthlyPlansForMonth, getProfitabilityRecords, getProducts } from '../data/store';
+import { subscribe, getVersion, getMetrics, getProfitabilityRecords, getProducts } from '../data/store';
+import { getEffectivePlanMetrics } from '../data/planningStore';
 import { monthToPeriod, getDefaultMonth } from '../data/mock';
 import { getWbImageUrls } from '../data/images';
 import { subscribeExtraExpenses, getExtraExpensesVersion, getCabinetExtraExpense } from '../data/profitStore';
@@ -59,7 +60,7 @@ function DbCard({
   onActivate: () => void;
 }) {
   const pctClass = m.pct >= 100 ? 'up' : m.pct < 80 ? 'down' : '';
-  const fwdClass = m.forecastPct >= 100 ? 'up' : m.forecastPct < 80 ? 'down' : '';
+  const fwdClass = m.forecastPct >= 0 ? 'up' : 'down';
   const barClass = m.plan > 0
     ? (m.pct >= 90 ? 'db-bar-up' : m.pct >= 70 ? 'db-bar-warn' : 'db-bar-down')
     : '';
@@ -88,8 +89,9 @@ function DbCard({
       {showSecondary && (
         <div className="db-row-secondary">
           <span>Прогноз <strong>{renderValue(m, m.forecast)}</strong></span>
-          {m.forecastPct > 0 && <span className={`db-fwd db-pct ${fwdClass}`}>{m.forecastPct.toFixed(1)}%</span>}
-          {m.factPerDay > 0 && <span>В день <strong>{renderValue(m, m.factPerDay)}</strong></span>}
+          {m.forecastPct !== 0 && <span className={`db-fwd db-pct ${fwdClass}`}>{m.forecastPct > 0 ? '+' : ''}{m.forecastPct.toFixed(1)}% к плану</span>}
+          {m.factPerDay > 0 && <span>Факт/день <strong>{renderValue(m, m.factPerDay)}</strong></span>}
+          {m.planPerDay > 0 && <span>План/день <strong>{renderValue(m, m.planPerDay)}</strong></span>}
         </div>
       )}
       {planAvailable && (
@@ -140,15 +142,11 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
     const categoryProductIds = selectedCategory
       ? new Set(getProducts().filter(product => (product.category || 'Без категории') === selectedCategory).map(product => product.id))
       : null;
-    const categoryProductSkus = selectedCategory
-      ? new Set(getProducts().filter(product => (product.category || 'Без категории') === selectedCategory).map(product => product.sku))
-      : null;
     const profitability = getProfitabilityRecords().filter(record =>
       record.period_end >= periodA.start && record.period_start <= periodA.end
       && (!categoryProductIds || categoryProductIds.has(record.product_id))
     );
-    const monthlyPlans = getMonthlyPlansForMonth(selectedMonth)
-      .filter(plan => !categoryProductSkus || categoryProductSkus.has(plan.sku));
+    const effectivePlan = getEffectivePlanMetrics(selectedMonth, selectedCategory ? { category: selectedCategory } : {});
 
     const filtered = allMetrics.filter(m =>
       m.date >= periodA.start && m.date <= periodA.end
@@ -189,24 +187,16 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
       ...filtered.map(m => m.date),
       ...profitability.map(record => record.period_start),
     ])].sort();
-    const last3Dates = sortedDates.slice(-3);
-    const last3OrderedAmount = filtered
-      .filter(m => last3Dates.includes(m.date))
+    const last7Dates = sortedDates.slice(-7);
+    const last7OrderedAmount = filtered
+      .filter(m => last7Dates.includes(m.date))
       .reduce((s, m) => s + m.ordered_amount, 0);
-    const last3Avg = last3Dates.length ? last3OrderedAmount / last3Dates.length : 0;
+    const last7Avg = last7Dates.length ? last7OrderedAmount / last7Dates.length : 0;
 
-    // Plan from MonthlyPlanRecord
-    let planTotalRubles = 0;
-    let planTotalNetProfit = 0;
-    let planRevenue = 0;
-    for (const p of monthlyPlans) {
-      planTotalRubles += p.totalRubles;
-      planTotalNetProfit += p.totalNetProfit;
-      planRevenue += p.totalRubles * (p.buyoutRate || 85) / 100;
-    }
-    const planProfitability = planRevenue ? (planTotalNetProfit / planRevenue) * 100 : 0;
-    const planBudget = planTotalRubles;
-    const planProfit = planTotalNetProfit;
+    const planBudget = effectivePlan.ordersSum || 0;
+    const planRevenue = effectivePlan.buyoutAmount || 0;
+    const planProfit = effectivePlan.netProfit || 0;
+    const planProfitability = effectivePlan.profitability || 0;
 
     const calc = (plan: number, fact: number, avg3?: number) => {
       const dailyRate = fact / daysSoFar;
@@ -217,16 +207,16 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
         fact,
         pct: plan ? (fact / plan) * 100 : 0,
         forecast,
-        forecastPct: plan ? (forecast / plan) * 100 : 0,
+        forecastPct: plan ? (forecast / plan - 1) * 100 : 0,
         planPerDay: plan / daysInMonth,
-        factPerDay: dailyRate,
+        factPerDay: forecastRate,
       };
     };
 
     const factDrr = totalOrderedAmount ? (totalAdSpend / totalOrderedAmount) * 100 : 0;
     const soyaMargin = totalProfitRevenue ? (totalActualProfit / totalProfitRevenue) * 100 : 0;
 
-    const avg3 = last3Avg;
+    const avg7 = last7Avg;
     const profitabilityByDate = new Map<string, { revenue: number; profit: number }>();
     for (const record of profitability) {
       const cabinetId = productsById.get(record.product_id)?.cabinet_id || '';
@@ -266,13 +256,15 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
         label: 'План заказов', tooltip: 'Плановая сумма заказов на месяц',
         isPercent: false,
         spark: sparks.factOrders,
-        ...calc(planBudget, totalOrderedAmount, avg3),
+        planAvailable: effectivePlan.hasData,
+        ...calc(planBudget, totalOrderedAmount, avg7),
       },
       {
         key: 'revenue', group: 'Продажи',
         label: 'Выручка', tooltip: 'Выручка',
         isPercent: false,
         spark: sparks.revenue,
+        planAvailable: effectivePlan.hasData,
         ...calc(planRevenue, totalProfitRevenue),
       },
       {
@@ -280,6 +272,7 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
         label: 'Рентаб-сть', tooltip: 'Рентабельность (Выручка - Расходы)',
         isPercent: true,
         spark: sparks.margin,
+        planAvailable: effectivePlan.hasData,
         plan: planProfitability, fact: soyaMargin,
         pct: planProfitability ? (soyaMargin / planProfitability) * 100 : 0,
         forecast: 0, forecastPct: 0, planPerDay: 0, factPerDay: 0,
@@ -287,7 +280,7 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
       {
         key: 'profit', group: 'Прибыльность',
         label: 'Чистая прибыль', tooltip: 'Чистая прибыль',
-        isPercent: false, spark: sparks.profit, ...calc(planProfit, totalActualProfit),
+        isPercent: false, planAvailable: effectivePlan.hasData, spark: sparks.profit, ...calc(planProfit, totalActualProfit),
       },
       {
         key: 'drr', group: 'Реклама',
@@ -317,12 +310,9 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
       const profit = (metric.profit_revenue || 0) - (metric.cost || 0) - (metric.agent_fee || 0) - (metric.logistics_cost || 0) - (metric.marketing_cost || 0) - (metric.storage_cost || 0) - (metric.profit_revenue || 0) * extraExpensePct / 100;
       current.orders += metric.orders; current.revenue += metric.ordered_amount; current.profit += profit; totals.set(category, current);
     });
-    const categoryBySku = new Map(productList.map(product => [product.sku, product.category || 'Без категории']));
-    for (const plan of getMonthlyPlansForMonth(selectedMonth)) {
-      const category = categoryBySku.get(plan.sku);
-      if (!category) continue;
+    for (const category of new Set(productList.map(product => product.category || 'Без категории'))) {
       const current = totals.get(category) || { orders: 0, revenue: 0, profit: 0, plan: 0 };
-      current.plan += plan.totalRubles;
+      current.plan = getEffectivePlanMetrics(selectedMonth, { category }).ordersSum || 0;
       totals.set(category, current);
     }
     const profitabilityByCategory = new Map<string, { profit: number; revenue: number }>();
