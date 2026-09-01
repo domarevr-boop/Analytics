@@ -10,7 +10,7 @@ const product = (id: string, sku: string, cabinet: string, category: string): Pr
 const aggregate = (cabinet: string, category: string, qty: number): AggregateMonthlyPlanRecord => ({
   id: `fixed|2026-08|category|${cabinet}|${category}`,
   kind: 'fixed', month: '2026-08', scope: 'category', cabinet_id: cabinet,
-  entity_id: category, entity_name: category, avg_qty_per_day: qty, avg_check: 1_000,
+  entity_id: category, entity_name: category, orders_sum: null, avg_qty_per_day: qty, avg_check: 1_000,
   buyout_rate: 80, payout_rate: 60, profitability: 20, updated_at: '',
 });
 

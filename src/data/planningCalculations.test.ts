@@ -12,6 +12,7 @@ function record(overrides: Partial<AggregateMonthlyPlanRecord> = {}): AggregateM
     cabinet_id: 'cab-1',
     entity_id: 'lighting',
     entity_name: 'Освещение',
+    orders_sum: null,
     avg_qty_per_day: 10,
     avg_check: 2_000,
     buyout_rate: 80,
@@ -37,6 +38,14 @@ test('calculates the monthly plan from daily quantity and rates', () => {
 test('uses calendar month length including leap years', () => {
   assert.equal(getDaysInPlanMonth('2028-02'), 29);
   assert.equal(getDaysInPlanMonth('2027-02'), 28);
+});
+
+test('uses an explicitly entered orders sum as the fixed monthly target', () => {
+  const result = calculateAggregatePlan(record({ orders_sum: 1_000_000 }));
+  assert.equal(result.ordersSum, 1_000_000);
+  assert.equal(result.ordersQty, 310);
+  assert.equal(result.avgCheck, 1_000_000 / 310);
+  assert.equal(result.buyoutAmount, 800_000);
 });
 
 test('keeps missing inputs missing instead of turning them into zero', () => {

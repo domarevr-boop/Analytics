@@ -17,7 +17,7 @@ export interface AggregatePlanMetrics {
   daysInMonth: number;
 }
 
-export type EditableAggregatePlanField = 'avg_qty_per_day' | 'avg_check' | 'buyout_rate' | 'payout_rate' | 'profitability';
+export type EditableAggregatePlanField = 'orders_sum' | 'profitability';
 
 export function getDaysInPlanMonth(month: string): number {
   const [year, monthNumber] = month.split('-').map(Number);
@@ -31,23 +31,23 @@ function multiply(value: number | null, rate: number | null): number | null {
 
 export function calculateAggregatePlan(record: AggregateMonthlyPlanRecord): AggregatePlanMetrics {
   const daysInMonth = getDaysInPlanMonth(record.month);
-  const hasData = [record.avg_qty_per_day, record.avg_check, record.buyout_rate, record.payout_rate, record.profitability]
+  const explicitOrdersSum = record.orders_sum ?? null;
+  const hasData = [explicitOrdersSum, record.avg_qty_per_day, record.avg_check, record.buyout_rate, record.payout_rate, record.profitability]
     .some(value => value !== null);
-  const ordersQty = record.avg_qty_per_day === null || daysInMonth === 0
-    ? null
-    : record.avg_qty_per_day * daysInMonth;
-  const ordersSum = ordersQty === null || record.avg_check === null
-    ? null
-    : ordersQty * record.avg_check;
+  const plannedQuantity = record.avg_qty_per_day === null || daysInMonth === 0 ? null : record.avg_qty_per_day * daysInMonth;
+  const ordersQty = plannedQuantity ?? (explicitOrdersSum !== null && record.avg_check ? explicitOrdersSum / record.avg_check : null);
+  const ordersSum = explicitOrdersSum ?? (ordersQty === null || record.avg_check === null ? null : ordersQty * record.avg_check);
+  const avgCheck = ordersSum !== null && ordersQty ? ordersSum / ordersQty : record.avg_check;
+  const avgQtyPerDay = ordersQty === null || daysInMonth === 0 ? record.avg_qty_per_day : ordersQty / daysInMonth;
   const buyoutAmount = multiply(ordersSum, record.buyout_rate);
   const payoutAmount = multiply(ordersSum, record.payout_rate);
   const netProfit = multiply(buyoutAmount, record.profitability);
 
   return {
     hasData,
-    avgQtyPerDay: record.avg_qty_per_day,
+    avgQtyPerDay,
     ordersQty,
-    avgCheck: record.avg_check,
+    avgCheck,
     ordersSum,
     buyoutRate: record.buyout_rate,
     buyoutAmount,

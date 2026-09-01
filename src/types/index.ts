@@ -170,6 +170,7 @@ export interface AggregateMonthlyPlanRecord {
   cabinet_id: string;
   entity_id: string;
   entity_name: string;
+  orders_sum: number | null;
   avg_qty_per_day: number | null;
   avg_check: number | null;
   buyout_rate: number | null;

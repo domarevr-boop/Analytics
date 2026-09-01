@@ -4850,6 +4850,95 @@ thead .at-metric:last-child {
   .aggregate-plan-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* Compact cabinet planning tables */
+.compact-plan-page { gap: 10px; }
+.compact-plan-page .aggregate-plan-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.compact-plan-page .aggregate-plan-kpi { min-height: 66px; padding: 10px 12px; }
+.compact-plan-page .aggregate-plan-kpi strong { font-size: 17px; }
+
+.compact-plan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.compact-plan-toolbar h2 { margin: 0 0 2px; font-size: 15px; }
+.compact-plan-toolbar span { color: var(--color-text-secondary); font-size: 10px; }
+.compact-plan-toolbar button {
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--color-text);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compact-plan-section { padding: 12px; }
+.cabinet-plan-list { display: grid; gap: 10px; }
+.cabinet-plan-card { overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: #fff; }
+.cabinet-plan-title { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 7px 10px; border-bottom: 1px solid var(--color-border); background: #fbfcfe; }
+.cabinet-plan-title strong { font-size: 11px; text-transform: uppercase; }
+.cabinet-plan-title span { padding: 2px 6px; border-radius: 999px; background: #edf3ff; color: #5274b8; font-size: 8px; }
+.cabinet-plan-scroll { overflow-x: auto; }
+
+.cabinet-plan-table {
+  width: 100%;
+  min-width: 1360px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cabinet-plan-table th,
+.cabinet-plan-table td {
+  height: 32px;
+  padding: 4px 7px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cabinet-plan-table thead th { background: #f6f8fb; color: var(--color-text-secondary); font-size: 8px; font-weight: 600; text-transform: uppercase; white-space: normal; }
+.cabinet-plan-table th:first-child { position: sticky; left: 0; z-index: 2; width: 190px; text-align: left; }
+.cabinet-plan-table thead th:first-child { z-index: 3; }
+.cabinet-plan-table thead th:not(:first-child) { width: 92px; }
+.cabinet-plan-table thead th.month-col { width: 105px; background: #f2f6fc; }
+.cabinet-plan-table .total-col { width: 110px; background: #f1faf4; font-weight: 700; }
+.cabinet-total-row th,
+.cabinet-total-row td { background: #f5f8fc; color: #26384e; font-weight: 700; }
+.cabinet-total-row th:first-child { background: #f5f8fc; }
+.category-plan-row th:first-child { background: #fff; }
+.category-plan-row:hover td,
+.category-plan-row:hover th:first-child { background-color: #fbfcfe; }
+.category-plan-row th:first-child { font-weight: 500; }
+.category-plan-row th button { width: 18px; height: 18px; margin-right: 6px; padding: 0; border: 0; background: transparent; color: #72839b; font-size: 15px; cursor: pointer; }
+
+.plan-input-cell { position: relative; padding: 3px 5px !important; background: #fffdf5; }
+.plan-input-cell input { width: 100%; height: 24px; padding: 0 18px 0 5px; border: 1px solid #ead890; border-radius: 4px; background: #fff; color: var(--color-text); text-align: right; font: inherit; }
+.plan-input-cell > span { position: absolute; right: 9px; top: 10px; color: var(--color-text-secondary); }
+.plan-input-cell input:focus { border-color: #d2a91f; outline: 2px solid rgba(242, 199, 56, .18); }
+.month-input input { padding-right: 5px; }
+.month-input small { display: block; margin-top: 1px; font-size: 7px; }
+.month-input small.positive { color: #0b9d70; }
+.month-input small.negative { color: #dc4053; }
+.category-detail-row th,
+.category-detail-row td { height: 25px; background: #fafbfd; color: var(--color-text-secondary); font-size: 8px; }
+.category-detail-row th:first-child { padding-left: 34px; background: #fafbfd; font-weight: 500; }
+.compact-plan-footnote { margin: 0; color: var(--color-text-secondary); font-size: 9px; }
+
+@media (max-width: 900px) {
+  .compact-plan-page .aggregate-plan-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compact-plan-toolbar, .aggregate-plan-section-head { align-items: flex-start; flex-direction: column; }
+}
+
 .at-th.at-metric-drr {
   background: #FFF4D8;
   color: #8A5A00;
