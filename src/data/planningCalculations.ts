@@ -19,6 +19,16 @@ export interface AggregatePlanMetrics {
 
 export type EditableAggregatePlanField = 'orders_sum' | 'avg_check' | 'buyout_rate' | 'payout_rate' | 'profitability';
 
+export function patchAggregatePlanField(
+  current: AggregateMonthlyPlanRecord | undefined,
+  base: AggregateMonthlyPlanRecord,
+  field: EditableAggregatePlanField,
+  value: number | null,
+  updatedAt: string,
+): AggregateMonthlyPlanRecord {
+  return { ...base, ...current, [field]: value, updated_at: updatedAt };
+}
+
 export function getDaysInPlanMonth(month: string): number {
   const [year, monthNumber] = month.split('-').map(Number);
   if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return 0;

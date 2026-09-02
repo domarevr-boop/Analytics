@@ -3,7 +3,7 @@ import {
   clearAggregatePlanKind, getAggregatePlans, getCabinets, getPreferAggregatePlan, getProducts,
   getVersion, replaceAggregatePlanKind, setPreferAggregatePlan, subscribe, upsertAggregatePlan,
 } from '../data/store';
-import { makeAggregatePlanId, type AggregatePlanMetrics, type EditableAggregatePlanField } from '../data/planningCalculations';
+import { makeAggregatePlanId, patchAggregatePlanField, type AggregatePlanMetrics, type EditableAggregatePlanField } from '../data/planningCalculations';
 import { selectAggregatePlanMetrics } from '../data/planningSelectors';
 import { buildBackupRecords, buildPromotedFixedRecords, buildRestoredFixedRecords, removeBackupForYear } from '../data/planningPlanActions';
 import type { AggregateMonthlyPlanRecord, AggregatePlanKind, Cabinet } from '../types';
@@ -130,11 +130,13 @@ export default function PlanningPage() {
   const getRecord = (kind: AggregatePlanKind, category: CategoryEntity, month: string) => recordMap.get(makeAggregatePlanId(kind, month, 'category', category.cabinetId, category.id));
   const save = (kind: AggregatePlanKind, category: CategoryEntity, month: string, field: EditableAggregatePlanField, value: number | null) => {
     const id = makeAggregatePlanId(kind, month, 'category', category.cabinetId, category.id);
-    upsertAggregatePlan({
+    const base: AggregateMonthlyPlanRecord = {
       id, kind, month, scope: 'category', cabinet_id: category.cabinetId, entity_id: category.id, entity_name: category.name,
       orders_sum: null, avg_qty_per_day: null, avg_check: null, buyout_rate: null, payout_rate: null, profitability: null,
-      ...recordMap.get(id), [field]: value, updated_at: new Date().toISOString(),
-    });
+      updated_at: '',
+    };
+    const latest = getAggregatePlans().find(record => record.id === id);
+    upsertAggregatePlan(patchAggregatePlanField(latest, base, field, value, new Date().toISOString()));
   };
   const toggleExpanded = (key: string) => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const toggleCabinet = (key: string) => setCollapsedCabinets(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
