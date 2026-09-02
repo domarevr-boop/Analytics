@@ -1,6 +1,6 @@
 # Документация Analytics MVP
 
-Обновлено: **1 сентября 2026**.
+Обновлено: **2 сентября 2026**.
 
 Это единственная актуальная карта документации. Соседние Git worktree и внешний каталог `_archive` не являются источниками текущих правил.
 
@@ -28,6 +28,7 @@
 | Рынок | [IMPORTS](IMPORTS.md#рынок), встроенная справка страницы |
 | Товарный справочник и изображения | [PRODUCT_REGISTRY](PRODUCT_REGISTRY.md), [PRODUCT_IMAGES](PRODUCT_IMAGES.md) |
 | Визуальные правила и общие контролы | [DESIGN_SYSTEM](DESIGN_SYSTEM.md), [UI_COMPONENTS](UI_COMPONENTS.md) |
+| Текущий этап унификации интерфейса | [DESIGN_SYSTEM_MIGRATION](DESIGN_SYSTEM_MIGRATION.md) |
 
 ## Версии и архив
 
