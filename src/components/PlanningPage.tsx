@@ -16,8 +16,9 @@ interface ColumnDefinition { key: ColumnKey; label: string; format: ValueFormat;
 interface PeriodMetrics { ordersSum: number | null; ordersQty: number | null; avgCheck: number | null; buyoutRate: number | null; buyoutAmount: number | null; payoutRate: number | null; payoutAmount: number | null; profitability: number | null; netProfit: number | null; ordersPerDay: number | null; netProfitPerDay: number | null; daysInMonth: number }
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-const COLUMN_STORAGE_KEY = 'analytics:planning-columns:v1';
+const COLUMN_STORAGE_KEY = 'analytics:planning-columns:v2';
 const emptyBackupKey = (year: number) => `analytics:planning-empty-backup:${year}`;
+const DEFAULT_COLUMN_KEYS: ColumnKey[] = ['ordersSum', 'buyoutAmount', 'profitability', 'netProfit'];
 const COLUMNS: ColumnDefinition[] = [
   { key: 'ordersSum', label: 'Сумма заказов', format: 'money', required: true },
   { key: 'ordersQty', label: 'Заказы, шт', format: 'number' },
@@ -99,12 +100,13 @@ export default function PlanningPage() {
   const [year, setYear] = useState(currentDate.year);
   const [showPast, setShowPast] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [collapsedCabinets, setCollapsedCabinets] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState('');
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<Set<ColumnKey>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(COLUMN_STORAGE_KEY) || '[]') as ColumnKey[];
-      return new Set(saved.length ? saved : COLUMNS.map(column => column.key));
-    } catch { return new Set(COLUMNS.map(column => column.key)); }
+      return new Set(saved.length ? saved : DEFAULT_COLUMN_KEYS);
+    } catch { return new Set(DEFAULT_COLUMN_KEYS); }
   });
   const records = useMemo(() => { void version; return getAggregatePlans(); }, [version]);
   const cabinets = useMemo(() => { void version; return getCabinets(); }, [version]);
@@ -135,6 +137,7 @@ export default function PlanningPage() {
     });
   };
   const toggleExpanded = (key: string) => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const toggleCabinet = (key: string) => setCollapsedCabinets(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const toggleColumn = (key: ColumnKey) => {
     const next = new Set(visibleColumnKeys);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -176,7 +179,7 @@ export default function PlanningPage() {
   };
 
   const total = periodMetrics(months.map(month => getMetrics('fixed', '', null, month)));
-  const common = { cabinets, categoriesByCabinet, months, columns, expanded, onToggle: toggleExpanded, getMetrics, getRecord, onSave: save };
+  const common = { cabinets, categoriesByCabinet, months, columns, expanded, collapsedCabinets, onToggle: toggleExpanded, onToggleCabinet: toggleCabinet, getMetrics, getRecord, onSave: save };
 
   return <div className="planning-page analytics-page-shell aggregate-plan-page planning-mock-page">
     <header className="analytics-page-header aggregate-plan-header">
@@ -202,15 +205,16 @@ export default function PlanningPage() {
     <FixedPlanSection {...common} />
     <ScenarioSection {...common} actions={<><button type="button" onClick={() => void copyFixedToScenario()}>Скопировать из плана</button><button type="button" className="secondary" onClick={() => void resetScenario()}>Сбросить сценарий</button>{hasBackup && <button type="button" className="secondary" onClick={() => void undoApply()}>Отменить применение</button>}<button type="button" className="apply" disabled={!scenarioYearRecords.length} onClick={() => void applyScenario()}>Применить сценарий</button></>} />
     {status && <div className="planning-status" role="status">{status}</div>}
-    <p className="compact-plan-footnote">Все суммы в рублях. Пустое значение означает, что исходный параметр не задан.</p>
+    <p className="compact-plan-footnote">Все суммы в рублях. Раскройте категорию, чтобы задать помесячные % выкупа, % к перечислению и рентабельность. Пустое значение означает, что исходный параметр не задан.</p>
   </div>;
 }
 
 function Summary({ label, value }: { label: string; value: string }) { return <div className="aggregate-plan-kpi"><span>{label}</span><strong>{value}</strong><small>за видимый период</small></div>; }
 
 interface CommonTableProps {
-  cabinets: Cabinet[]; categoriesByCabinet: Map<string, CategoryEntity[]>; months: string[]; columns: ColumnDefinition[]; expanded: Set<string>;
+  cabinets: Cabinet[]; categoriesByCabinet: Map<string, CategoryEntity[]>; months: string[]; columns: ColumnDefinition[]; expanded: Set<string>; collapsedCabinets: Set<string>;
   onToggle: (key: string) => void;
+  onToggleCabinet: (key: string) => void;
   getMetrics: (kind: AggregatePlanKind, cabinetId: string, category: string | null, month: string) => AggregatePlanMetrics;
   getRecord: (kind: AggregatePlanKind, category: CategoryEntity, month: string) => AggregateMonthlyPlanRecord | undefined;
   onSave: (kind: AggregatePlanKind, category: CategoryEntity, month: string, field: EditableAggregatePlanField, value: number | null) => void;
@@ -231,14 +235,16 @@ function CabinetList({ kind, mode, cabinets, categoriesByCabinet, ...props }: Co
 }
 
 type CabinetProps = Omit<CommonTableProps, 'cabinets' | 'categoriesByCabinet'> & { kind: AggregatePlanKind; cabinet: Cabinet; categories: CategoryEntity[] };
-function CabinetHeader({ cabinet, categories }: { cabinet: Cabinet; categories: CategoryEntity[] }) { return <div className="cabinet-plan-title"><strong>Кабинет: {cabinet.name}</strong><span>{categories.length} катег.</span></div>; }
+function CabinetHeader({ cabinet, categories, collapsed, onToggle }: { cabinet: Cabinet; categories: CategoryEntity[]; collapsed: boolean; onToggle: () => void }) { return <div className="cabinet-plan-title"><button type="button" className="cabinet-plan-toggle" onClick={onToggle} aria-expanded={!collapsed} aria-label={`${collapsed ? 'Развернуть' : 'Свернуть'} кабинет ${cabinet.name}`}>{collapsed ? '›' : '⌄'}</button><strong>Кабинет: {cabinet.name}</strong><span>{categories.length} катег.</span></div>; }
 
-function FixedCabinetTable({ cabinet, categories, kind, months, columns, ...props }: CabinetProps) {
+function FixedCabinetTable({ cabinet, categories, kind, months, columns, collapsedCabinets, onToggleCabinet, ...props }: CabinetProps) {
   const total = periodMetrics(months.map(month => props.getMetrics(kind, cabinet.id, null, month)));
-  return <div className="cabinet-plan-card"><CabinetHeader {...{ cabinet, categories }} /><div className="cabinet-plan-scroll"><table className="cabinet-plan-table fixed-plan-table">
-    <thead><tr><th rowSpan={2} className="category-col">Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}<th colSpan={months.length + 1} className="period-group">Оставшийся период</th></tr><tr>{months.map(month => <th className="month-col" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th className="total-col">Итого</th></tr></thead>
-    <tbody><tr className="cabinet-total-row"><th>Итого по кабинету</th><SummaryCells metrics={total} columns={columns} />{months.map(month => <td key={month}>{formatValue(props.getMetrics(kind, cabinet.id, null, month).ordersSum, 'money')}</td>)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{categories.map(category => <FixedCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} {...props} />)}</tbody>
-  </table></div></div>;
+  const collapseKey = `${kind}|${cabinet.id}`;
+  const collapsed = collapsedCabinets.has(collapseKey);
+  return <div className={`cabinet-plan-card${collapsed ? ' is-collapsed' : ''}`}><CabinetHeader {...{ cabinet, categories, collapsed }} onToggle={() => onToggleCabinet(collapseKey)} />{!collapsed && <div className="cabinet-plan-scroll"><table className="cabinet-plan-table fixed-plan-table">
+    <thead><tr><th rowSpan={2} className="category-col">Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}<th colSpan={months.length + 1} className="period-group">Оставшийся период</th></tr><tr>{months.map((month, index) => <th className={`month-col${index === 0 ? ' period-start' : ''}`} key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th className="total-col">Итого</th></tr></thead>
+    <tbody><tr className="cabinet-total-row"><th>Итого по кабинету</th><SummaryCells metrics={total} columns={columns} />{months.map((month, index) => <td className={index === 0 ? 'period-start' : ''} key={month}>{formatValue(props.getMetrics(kind, cabinet.id, null, month).ordersSum, 'money')}</td>)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{categories.map(category => <FixedCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} collapsedCabinets={collapsedCabinets} onToggleCabinet={onToggleCabinet} {...props} />)}</tbody>
+  </table></div>}</div>;
 }
 
 function FixedCategoryRows({ category, cabinet, kind, months, columns, expanded, onToggle, getMetrics, getRecord, onSave }: Omit<CabinetProps, 'categories'> & { category: CategoryEntity }) {
@@ -246,8 +252,10 @@ function FixedCategoryRows({ category, cabinet, kind, months, columns, expanded,
   const open = expanded.has(key);
   const monthly = months.map(month => getMetrics(kind, cabinet.id, category.name, month));
   const total = periodMetrics(monthly);
-  return <><tr className="category-plan-row"><th><button type="button" onClick={() => onToggle(key)} aria-expanded={open}>{open ? '⌄' : '›'}</button>{category.name}</th><SummaryCells metrics={total} columns={columns} />{months.map((month, index) => <DriverInput key={month} record={getRecord(kind, category, month)} value={getRecord(kind, category, month)?.orders_sum ?? monthly[index].ordersSum} label={`${category.name}, сумма заказов, ${month}`} onSave={value => onSave(kind, category, month, 'orders_sum', value)} />)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{open && <>
-    <FixedDetailRow label="Рентабельность" format="percent" inputField="profitability" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+  return <><tr className="category-plan-row"><th><button type="button" onClick={() => onToggle(key)} aria-expanded={open}>{open ? '⌄' : '›'}</button>{category.name}</th><SummaryCells metrics={total} columns={columns} />{months.map((month, index) => <DriverInput key={month} cellClassName={index === 0 ? 'period-start' : ''} record={getRecord(kind, category, month)} value={getRecord(kind, category, month)?.orders_sum ?? monthly[index].ordersSum} label={`${category.name}, сумма заказов, ${month}`} onSave={value => onSave(kind, category, month, 'orders_sum', value)} />)}<td className="total-col">{formatValue(total.ordersSum, 'money')}</td></tr>{open && <>
+    <FixedDetailRow label="% выкупа" metric="buyoutRate" format="percent" inputField="buyout_rate" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+    <FixedDetailRow label="% к перечислению" metric="payoutRate" format="percent" inputField="payout_rate" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
+    <FixedDetailRow label="Рентабельность" metric="profitability" format="percent" inputField="profitability" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
     <FixedDetailRow label="Сумма заказов в день" metric="ordersPerDay" format="money" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
     <FixedDetailRow label="Чистая прибыль в день" metric="netProfitPerDay" format="money" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
     <FixedDetailRow label="Дней в месяце" metric="daysInMonth" format="days" {...{ category, kind, months, columns, monthly, getRecord, onSave }} />
@@ -256,18 +264,20 @@ function FixedCategoryRows({ category, cabinet, kind, months, columns, expanded,
 
 function FixedDetailRow({ label, metric, format, inputField, category, kind, months, columns, monthly, getRecord, onSave }: { label: string; metric?: MetricKey; format: ValueFormat; inputField?: EditableAggregatePlanField; category: CategoryEntity; kind: AggregatePlanKind; months: string[]; columns: ColumnDefinition[]; monthly: AggregatePlanMetrics[]; getRecord: CommonTableProps['getRecord']; onSave: CommonTableProps['onSave'] }) {
   const values = metric ? monthly.map(item => item[metric] as number | null) : monthly.map(item => item.profitability);
-  const total = inputField ? ratio(sumKnown(monthly.map(item => item.netProfit)), sumKnown(monthly.map(item => item.buyoutAmount))) : metric === 'daysInMonth' ? sumKnown(values) : null;
-  return <tr className="category-detail-row"><th>{label}</th><td colSpan={columns.length}></td>{months.map((month, index) => inputField
-    ? <DriverInput key={month} record={getRecord(kind, category, month)} value={values[index]} label={`${category.name}, ${label}, ${month}`} suffix="%" onSave={value => onSave(kind, category, month, inputField, value)} />
-    : <td key={month}>{formatValue(values[index], format)}</td>)}<td className="total-col">{inputField ? formatValue(total, 'percent') : metric === 'daysInMonth' ? formatValue(total, 'days') : '—'}</td></tr>;
+  const total = inputField && metric ? periodMetrics(monthly)[metric] : metric === 'daysInMonth' ? sumKnown(values) : null;
+  return <tr className={`category-detail-row${inputField ? ' driver-row' : ''}`}><th>{label}</th><td colSpan={columns.length}></td>{months.map((month, index) => inputField
+    ? <DriverInput key={month} cellClassName={index === 0 ? 'period-start' : ''} record={getRecord(kind, category, month)} value={values[index]} label={`${category.name}, ${label}, ${month}`} suffix="%" onSave={value => onSave(kind, category, month, inputField, value)} />
+    : <td className={index === 0 ? 'period-start' : ''} key={month}>{formatValue(values[index], format)}</td>)}<td className="total-col">{inputField ? formatValue(total, 'percent') : metric === 'daysInMonth' ? formatValue(total, 'days') : '—'}</td></tr>;
 }
 
-function ScenarioCabinetTable({ cabinet, categories, kind, months, columns, ...props }: CabinetProps) {
+function ScenarioCabinetTable({ cabinet, categories, kind, months, columns, collapsedCabinets, onToggleCabinet, ...props }: CabinetProps) {
   const scenarioTotal = periodMetrics(months.map(month => props.getMetrics(kind, cabinet.id, null, month)));
-  return <div className="cabinet-plan-card scenario-card"><CabinetHeader {...{ cabinet, categories }} /><div className="cabinet-plan-scroll"><table className="cabinet-plan-table scenario-plan-table">
+  const collapseKey = `${kind}|${cabinet.id}`;
+  const collapsed = collapsedCabinets.has(collapseKey);
+  return <div className={`cabinet-plan-card scenario-card${collapsed ? ' is-collapsed' : ''}`}><CabinetHeader {...{ cabinet, categories, collapsed }} onToggle={() => onToggleCabinet(collapseKey)} />{!collapsed && <div className="cabinet-plan-scroll"><table className="cabinet-plan-table scenario-plan-table">
     <thead><tr><th rowSpan={2}>Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}{months.map(month => <th colSpan={3} className="period-group" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th colSpan={3} className="total-col">Итого</th></tr><tr>{[...months, 'total'].flatMap(month => [<th key={`${month}-plan`}>План</th>, <th key={`${month}-scenario`}>Сценарий</th>, <th key={`${month}-delta`}>Δ, %</th>])}</tr></thead>
-    <tbody><ScenarioTotalRow cabinet={cabinet} kind={kind} months={months} columns={columns} scenarioTotal={scenarioTotal} getMetrics={props.getMetrics} />{categories.map(category => <ScenarioCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} {...props} />)}</tbody>
-  </table></div></div>;
+    <tbody><ScenarioTotalRow cabinet={cabinet} kind={kind} months={months} columns={columns} scenarioTotal={scenarioTotal} getMetrics={props.getMetrics} />{categories.map(category => <ScenarioCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} collapsedCabinets={collapsedCabinets} onToggleCabinet={onToggleCabinet} {...props} />)}</tbody>
+  </table></div>}</div>;
 }
 
 function ScenarioTotalRow({ cabinet, kind, months, columns, scenarioTotal, getMetrics }: { cabinet: Cabinet; kind: AggregatePlanKind; months: string[]; columns: ColumnDefinition[]; scenarioTotal: PeriodMetrics; getMetrics: CommonTableProps['getMetrics'] }) {
@@ -308,17 +318,17 @@ function ScenarioMetricRow({ label, metric, format, inputField, category, kind, 
 }
 
 function SummaryCells({ metrics, columns }: { metrics: PeriodMetrics; columns: ColumnDefinition[] }) { return <>{columns.map(column => <td key={column.key}>{formatValue(metrics[column.key], column.format)}</td>)}</>; }
-function DriverInput({ record, value, label, suffix, onSave }: { record?: AggregateMonthlyPlanRecord; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) {
+function DriverInput({ record, value, label, suffix, cellClassName = '', onSave }: { record?: AggregateMonthlyPlanRecord; value: number | null; label: string; suffix?: string; cellClassName?: string; onSave: (value: number | null) => void }) {
   const canonical = inputText(value);
-  return <DriverInputControl key={`${record?.updated_at || 'empty'}|${canonical}|${label}`} initialValue={canonical} value={value} label={label} suffix={suffix} onSave={onSave} />;
+  return <DriverInputControl key={`${record?.updated_at || 'empty'}|${canonical}|${label}`} initialValue={canonical} value={value} label={label} suffix={suffix} cellClassName={cellClassName} onSave={onSave} />;
 }
-function DriverInputControl({ initialValue, value, label, suffix, onSave }: { initialValue: string; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) {
+function DriverInputControl({ initialValue, value, label, suffix, cellClassName, onSave }: { initialValue: string; value: number | null; label: string; suffix?: string; cellClassName: string; onSave: (value: number | null) => void }) {
   const [draft, setDraft] = useState(initialValue);
   const commit = () => {
     const parsed = parseInput(draft);
     if (parsed === value) return;
     onSave(parsed);
   };
-  return <td className="plan-input-cell"><input value={draft} placeholder="—" inputMode="decimal" aria-label={label} onChange={event => setDraft(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} />{suffix && <span>{suffix}</span>}</td>;
+  return <td className={`plan-input-cell${draft.trim() ? ' is-filled' : ''}${cellClassName ? ` ${cellClassName}` : ''}`}><input value={draft} placeholder="—" inputMode="decimal" aria-label={label} onChange={event => setDraft(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} />{suffix && <span>{suffix}</span>}</td>;
 }
 function DeltaCell({ value }: { value: number | null }) { return <td className={`scenario-delta ${value === null ? '' : value >= 0 ? 'positive' : 'negative'}`}>{value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}</td>; }

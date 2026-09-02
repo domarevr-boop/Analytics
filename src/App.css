@@ -4990,19 +4990,41 @@ thead .at-metric:last-child {
 .planning-mock-page .cabinet-plan-card { border-radius: 8px; }
 .planning-mock-page .cabinet-plan-title { min-height: 32px; padding: 6px 10px; }
 .planning-mock-page .cabinet-plan-title strong { font-size: 10px; }
+.planning-mock-page .cabinet-plan-title .cabinet-plan-toggle {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6f8096;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  place-items: center;
+}
+.planning-mock-page .cabinet-plan-title .cabinet-plan-toggle:hover { background: #edf2f8; color: #26384e; }
+.planning-mock-page .cabinet-plan-title .cabinet-plan-toggle:focus-visible { outline: 2px solid rgba(36, 99, 235, .32); outline-offset: 1px; }
+.planning-mock-page .cabinet-plan-card.is-collapsed .cabinet-plan-title { border-bottom: 0; }
 .planning-mock-page .cabinet-plan-table { min-width: max-content; table-layout: auto; }
 .planning-mock-page .cabinet-plan-table th,
-.planning-mock-page .cabinet-plan-table td { min-width: 78px; height: 29px; padding: 3px 6px; text-align: center; vertical-align: middle; }
+.planning-mock-page .cabinet-plan-table td { min-width: 78px; height: 29px; padding: 3px 6px; text-align: center; vertical-align: middle; font-size: 9.5px; }
 .planning-mock-page .cabinet-plan-table th:first-child { min-width: 180px; width: 180px; }
 .planning-mock-page .cabinet-plan-table tbody th:first-child,
 .planning-mock-page .cabinet-plan-table thead th:first-child { text-align: left; }
 .planning-mock-page .cabinet-plan-table .plan-input-cell input { text-align: center; }
 .planning-mock-page .cabinet-plan-table thead th { height: 29px; }
-.planning-mock-page .cabinet-plan-table thead th.period-group { background: #f8fafc; color: #76869b; text-align: center; }
+.planning-mock-page .cabinet-plan-table thead th.period-group { border-left: 2px solid #c8d4e2; background: #f8fafc; color: #76869b; text-align: center; }
 .planning-mock-page .cabinet-plan-table thead th.month-col { min-width: 92px; text-align: center; }
+.planning-mock-page .cabinet-plan-table .period-start { border-left: 2px solid #c8d4e2; }
 .planning-mock-page .cabinet-plan-table .total-col { min-width: 96px; }
-.planning-mock-page .category-plan-row .plan-input-cell { background: #fffdf5; }
-.planning-mock-page .category-plan-row .plan-input-cell input { border-color: #e7cf70; }
+.planning-mock-page .plan-input-cell { background: transparent; }
+.planning-mock-page .plan-input-cell input { border-color: transparent; background: transparent; }
+.planning-mock-page .plan-input-cell:hover input,
+.planning-mock-page .plan-input-cell.is-filled input { border-color: #d9e0e9; background: #fff; }
+.planning-mock-page .plan-input-cell input:focus { border-color: #d2a91f; background: #fffdf5; }
+.planning-mock-page .driver-row .plan-input-cell { background: #fffdf7; }
 .planning-mock-page .category-detail-row td { min-width: 78px; }
 
 .scenario-plan-table thead tr:nth-child(2) th { min-width: 64px; width: 64px; font-size: 7px; text-align: center; }
