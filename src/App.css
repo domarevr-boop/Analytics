@@ -4981,6 +4981,19 @@ thead .at-metric:last-child {
   box-shadow: 0 12px 28px rgba(32, 48, 69, .12);
 }
 .planning-column-settings label { display: flex; align-items: center; gap: 7px; font-size: 10px; cursor: pointer; }
+.planning-category-settings > div { width: 280px; max-height: min(420px, calc(100vh - 180px)); overflow-y: auto; }
+.planning-category-settings > div > button {
+  min-height: 26px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: #315f9b;
+  text-align: left;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.planning-category-settings > div > button:disabled { color: var(--color-text-secondary); cursor: default; }
 .planning-main-section { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .planning-scenario-section { padding: 12px; }
 .planning-scenario-section .aggregate-plan-section-head h2 small { margin-left: 6px; padding: 2px 6px; border-radius: 999px; background: #f0f2f5; color: var(--color-text-secondary); font-size: 8px; font-weight: 600; }

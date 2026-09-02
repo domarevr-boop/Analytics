@@ -17,6 +17,7 @@ interface PeriodMetrics { ordersSum: number | null; ordersQty: number | null; av
 
 const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 const COLUMN_STORAGE_KEY = 'analytics:planning-columns:v2';
+const HIDDEN_CATEGORY_STORAGE_KEY = 'analytics:planning-hidden-categories:v1';
 const emptyBackupKey = (year: number) => `analytics:planning-empty-backup:${year}`;
 const DEFAULT_COLUMN_KEYS: ColumnKey[] = ['ordersSum', 'buyoutAmount', 'profitability', 'netProfit'];
 const COLUMNS: ColumnDefinition[] = [
@@ -102,6 +103,11 @@ export default function PlanningPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [collapsedCabinets, setCollapsedCabinets] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState('');
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(HIDDEN_CATEGORY_STORAGE_KEY) || '[]') as string[]);
+    } catch { return new Set(); }
+  });
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<Set<ColumnKey>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(COLUMN_STORAGE_KEY) || '[]') as ColumnKey[];
@@ -116,15 +122,17 @@ export default function PlanningPage() {
   const months = useMemo(() => year === currentDate.year && !showPast ? allMonths.slice(currentDate.month) : allMonths, [allMonths, currentDate, showPast, year]);
   const columns = COLUMNS.filter(column => column.required || visibleColumnKeys.has(column.key));
   const recordMap = useMemo(() => new Map(records.map(record => [record.id, record])), [records]);
+  const allCategoryNames = useMemo(() => [...new Set(products.map(product => product.category?.trim()).filter((name): name is string => Boolean(name) && name!.toLocaleLowerCase('ru') !== 'без категории'))].sort((a, b) => a.localeCompare(b, 'ru')), [products]);
+  const visibleCategoryCount = allCategoryNames.filter(name => !hiddenCategories.has(name)).length;
 
   const categoriesByCabinet = useMemo(() => {
     const map = new Map<string, CategoryEntity[]>();
     cabinets.forEach(cabinet => {
       const names = [...new Set(products.filter(product => product.cabinet_id === cabinet.id).map(product => product.category?.trim()).filter((name): name is string => Boolean(name) && name!.toLocaleLowerCase('ru') !== 'без категории'))].sort((a, b) => a.localeCompare(b, 'ru'));
-      map.set(cabinet.id, names.map(name => ({ id: name, name, cabinetId: cabinet.id })));
+      map.set(cabinet.id, names.filter(name => !hiddenCategories.has(name)).map(name => ({ id: name, name, cabinetId: cabinet.id })));
     });
     return map;
-  }, [cabinets, products]);
+  }, [cabinets, hiddenCategories, products]);
 
   const getMetrics = (kind: AggregatePlanKind, cabinetId: string, category: string | null, month: string) => selectAggregatePlanMetrics(records, month, category ? { cabinetId, category } : cabinetId ? { cabinetId } : {}, kind);
   const getRecord = (kind: AggregatePlanKind, category: CategoryEntity, month: string) => recordMap.get(makeAggregatePlanId(kind, month, 'category', category.cabinetId, category.id));
@@ -145,6 +153,17 @@ export default function PlanningPage() {
     if (next.has(key)) next.delete(key); else next.add(key);
     setVisibleColumnKeys(next);
     localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify([...next]));
+  };
+  const toggleCategory = (name: string) => {
+    const next = new Set(hiddenCategories);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    setHiddenCategories(next);
+    localStorage.setItem(HIDDEN_CATEGORY_STORAGE_KEY, JSON.stringify([...next]));
+  };
+  const showAllCategories = () => {
+    const next = new Set<string>();
+    setHiddenCategories(next);
+    localStorage.setItem(HIDDEN_CATEGORY_STORAGE_KEY, '[]');
   };
 
   const copyFixedToScenario = async () => {
@@ -200,6 +219,7 @@ export default function PlanningPage() {
       <div><h2>Совокупный план ВБ</h2><span>{year === currentDate.year && !showPast ? `Оставшийся период ${year}` : `Полный год ${year}`}</span></div>
       <div className="planning-toolbar-actions">
         {year === currentDate.year && <button type="button" onClick={() => setShowPast(value => !value)}>{showPast ? 'Скрыть прошедшие месяцы' : 'Показать прошедшие месяцы'}</button>}
+        <details className="planning-column-settings planning-category-settings"><summary>Категории: {visibleCategoryCount}/{allCategoryNames.length}</summary><div><button type="button" onClick={showAllCategories} disabled={visibleCategoryCount === allCategoryNames.length}>Показать все</button>{allCategoryNames.map(name => <label key={name}><input type="checkbox" checked={!hiddenCategories.has(name)} onChange={() => toggleCategory(name)} />{name}</label>)}</div></details>
         <details className="planning-column-settings"><summary>Настройки столбцов</summary><div>{COLUMNS.filter(column => !column.required).map(column => <label key={column.key}><input type="checkbox" checked={visibleColumnKeys.has(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}</div></details>
       </div>
     </div>
@@ -275,7 +295,7 @@ function FixedDetailRow({ label, metric, format, inputField, category, kind, mon
 function ScenarioCabinetTable({ cabinet, categories, kind, months, columns, collapsedCabinets, onToggleCabinet, ...props }: CabinetProps) {
   const scenarioTotal = periodMetrics(months.map(month => props.getMetrics(kind, cabinet.id, null, month)));
   const collapseKey = `${kind}|${cabinet.id}`;
-  const collapsed = collapsedCabinets.has(collapseKey);
+  const collapsed = !collapsedCabinets.has(collapseKey);
   return <div className={`cabinet-plan-card scenario-card${collapsed ? ' is-collapsed' : ''}`}><CabinetHeader {...{ cabinet, categories, collapsed }} onToggle={() => onToggleCabinet(collapseKey)} />{!collapsed && <div className="cabinet-plan-scroll"><table className="cabinet-plan-table scenario-plan-table">
     <thead><tr><th rowSpan={2}>Категория</th>{columns.map(column => <th rowSpan={2} key={column.key}>{column.label}</th>)}{months.map(month => <th colSpan={3} className="period-group" key={month}>{MONTH_NAMES[Number(month.slice(5, 7)) - 1]}</th>)}<th colSpan={3} className="total-col">Итого</th></tr><tr>{[...months, 'total'].flatMap(month => [<th key={`${month}-plan`}>План</th>, <th key={`${month}-scenario`}>Сценарий</th>, <th key={`${month}-delta`}>Δ, %</th>])}</tr></thead>
     <tbody><ScenarioTotalRow cabinet={cabinet} kind={kind} months={months} columns={columns} scenarioTotal={scenarioTotal} getMetrics={props.getMetrics} />{categories.map(category => <ScenarioCategoryRows key={category.id} category={category} cabinet={cabinet} kind={kind} months={months} columns={columns} collapsedCabinets={collapsedCabinets} onToggleCabinet={onToggleCabinet} {...props} />)}</tbody>
