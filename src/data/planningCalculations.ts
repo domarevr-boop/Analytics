@@ -80,6 +80,21 @@ function weightedAverage(amount: number | null, quantity: number | null): number
   return amount / quantity;
 }
 
+function weightedKnownRate(
+  metrics: AggregatePlanMetrics[],
+  value: (metric: AggregatePlanMetrics) => number | null,
+  weight: (metric: AggregatePlanMetrics) => number | null,
+): number | null {
+  const known = metrics.filter(metric => value(metric) !== null);
+  if (known.length === 0) return null;
+  const weighted = known.filter(metric => (weight(metric) ?? 0) > 0);
+  if (weighted.length > 0) {
+    const totalWeight = weighted.reduce((sum, metric) => sum + (weight(metric) ?? 0), 0);
+    return weighted.reduce((sum, metric) => sum + (value(metric) ?? 0) * (weight(metric) ?? 0), 0) / totalWeight;
+  }
+  return known.reduce((sum, metric) => sum + (value(metric) ?? 0), 0) / known.length;
+}
+
 export function aggregatePlanMetrics(metrics: AggregatePlanMetrics[], month: string): AggregatePlanMetrics {
   const daysInMonth = getDaysInPlanMonth(month);
   const populated = metrics.filter(metric => metric.hasData);
@@ -115,11 +130,14 @@ export function aggregatePlanMetrics(metrics: AggregatePlanMetrics[], month: str
     ordersQty,
     avgCheck: weightedAverage(ordersSum, ordersQty),
     ordersSum,
-    buyoutRate: weightedRate(buyoutAmount, ordersSum),
+    buyoutRate: weightedRate(buyoutAmount, ordersSum)
+      ?? weightedKnownRate(populated, metric => metric.buyoutRate, metric => metric.ordersSum),
     buyoutAmount,
-    payoutRate: weightedRate(payoutAmount, ordersSum),
+    payoutRate: weightedRate(payoutAmount, ordersSum)
+      ?? weightedKnownRate(populated, metric => metric.payoutRate, metric => metric.ordersSum),
     payoutAmount,
-    profitability: weightedRate(netProfit, buyoutAmount),
+    profitability: weightedRate(netProfit, buyoutAmount)
+      ?? weightedKnownRate(populated, metric => metric.profitability, metric => metric.buyoutAmount ?? metric.ordersSum),
     netProfit,
     ordersPerDay: ordersSum === null || daysInMonth === 0 ? null : ordersSum / daysInMonth,
     netProfitPerDay: netProfit === null || daysInMonth === 0 ? null : netProfit / daysInMonth,

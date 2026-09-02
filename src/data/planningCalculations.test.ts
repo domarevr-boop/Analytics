@@ -88,3 +88,12 @@ test('aggregates rates and average check using monetary and quantity weights', (
   assert.equal(total.buyoutRate, (496_000 + 93_000) / 775_000 * 100);
   assert.equal(total.profitability, (99_200 + 9_300) / (496_000 + 93_000) * 100);
 });
+
+test('preserves an entered profitability rate when its dependent buyout amount is not available', () => {
+  const result = aggregatePlanMetrics([
+    calculateAggregatePlan(record({ orders_sum: 1_000_000, avg_qty_per_day: null, avg_check: null, buyout_rate: null, payout_rate: null, profitability: 18 })),
+  ], '2026-08');
+  assert.equal(result.profitability, 18);
+  assert.equal(result.buyoutAmount, null);
+  assert.equal(result.netProfit, null);
+});

@@ -4992,8 +4992,11 @@ thead .at-metric:last-child {
 .planning-mock-page .cabinet-plan-title strong { font-size: 10px; }
 .planning-mock-page .cabinet-plan-table { min-width: max-content; table-layout: auto; }
 .planning-mock-page .cabinet-plan-table th,
-.planning-mock-page .cabinet-plan-table td { min-width: 78px; height: 29px; padding: 3px 6px; }
+.planning-mock-page .cabinet-plan-table td { min-width: 78px; height: 29px; padding: 3px 6px; text-align: center; vertical-align: middle; }
 .planning-mock-page .cabinet-plan-table th:first-child { min-width: 180px; width: 180px; }
+.planning-mock-page .cabinet-plan-table tbody th:first-child,
+.planning-mock-page .cabinet-plan-table thead th:first-child { text-align: left; }
+.planning-mock-page .cabinet-plan-table .plan-input-cell input { text-align: center; }
 .planning-mock-page .cabinet-plan-table thead th { height: 29px; }
 .planning-mock-page .cabinet-plan-table thead th.period-group { background: #f8fafc; color: #76869b; text-align: center; }
 .planning-mock-page .cabinet-plan-table thead th.month-col { min-width: 92px; text-align: center; }

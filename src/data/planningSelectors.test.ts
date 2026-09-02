@@ -34,3 +34,22 @@ test('global preference selects one source for every month without fallback', ()
   assert.equal(resolveEffectivePlanMetrics(true, records, [legacy('100', 99)], products, '2026-09').hasData, false);
   assert.equal(resolveEffectivePlanMetrics(false, records, [legacy('100', 99)], products, '2026-08').avgQtyPerDay, 99);
 });
+
+test('passes an entered aggregate profitability to the main page even when other rates are absent', () => {
+  const records = [aggregate('cab-1', 'A', 10)];
+  records[0] = { ...records[0], orders_sum: 900_000, avg_qty_per_day: null, avg_check: null, buyout_rate: null, payout_rate: null, profitability: 17 };
+  const result = resolveEffectivePlanMetrics(true, records, [], [], '2026-08');
+  assert.equal(result.ordersSum, 900_000);
+  assert.equal(result.profitability, 17);
+  assert.equal(result.buyoutAmount, null);
+  assert.equal(result.netProfit, null);
+});
+
+test('passes revenue and net profit from a complete aggregate plan to the main page', () => {
+  const records = [aggregate('cab-1', 'A', 10)];
+  records[0] = { ...records[0], orders_sum: 1_000_000, avg_qty_per_day: null, avg_check: 2_000, buyout_rate: 87, profitability: 15 };
+  const result = resolveEffectivePlanMetrics(true, records, [], [], '2026-08');
+  assert.equal(result.buyoutAmount, 870_000);
+  assert.equal(result.profitability, 15);
+  assert.equal(result.netProfit, 130_500);
+});

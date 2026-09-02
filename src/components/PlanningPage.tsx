@@ -62,6 +62,14 @@ function sumKnown(values: Array<number | null>): number | null {
 function ratio(amount: number | null, base: number | null): number | null {
   return amount === null || base === null || base === 0 ? null : amount / base * 100;
 }
+function weightedKnown(metrics: AggregatePlanMetrics[], value: (metric: AggregatePlanMetrics) => number | null, weight: (metric: AggregatePlanMetrics) => number | null): number | null {
+  const known = metrics.filter(metric => value(metric) !== null);
+  if (!known.length) return null;
+  const weighted = known.filter(metric => (weight(metric) ?? 0) > 0);
+  if (!weighted.length) return known.reduce((sum, metric) => sum + (value(metric) ?? 0), 0) / known.length;
+  const totalWeight = weighted.reduce((sum, metric) => sum + (weight(metric) ?? 0), 0);
+  return weighted.reduce((sum, metric) => sum + (value(metric) ?? 0) * (weight(metric) ?? 0), 0) / totalWeight;
+}
 function periodMetrics(metrics: AggregatePlanMetrics[]): PeriodMetrics {
   const ordersSum = sumKnown(metrics.map(item => item.ordersSum));
   const ordersQty = sumKnown(metrics.map(item => item.ordersQty));
@@ -71,9 +79,9 @@ function periodMetrics(metrics: AggregatePlanMetrics[]): PeriodMetrics {
   const daysInMonth = metrics.reduce((sum, item) => sum + item.daysInMonth, 0);
   return {
     ordersSum, ordersQty, avgCheck: ordersSum !== null && ordersQty ? ordersSum / ordersQty : null,
-    buyoutRate: ratio(buyoutAmount, ordersSum), buyoutAmount,
-    payoutRate: ratio(payoutAmount, ordersSum), payoutAmount,
-    profitability: ratio(netProfit, buyoutAmount), netProfit,
+    buyoutRate: ratio(buyoutAmount, ordersSum) ?? weightedKnown(metrics, item => item.buyoutRate, item => item.ordersSum), buyoutAmount,
+    payoutRate: ratio(payoutAmount, ordersSum) ?? weightedKnown(metrics, item => item.payoutRate, item => item.ordersSum), payoutAmount,
+    profitability: ratio(netProfit, buyoutAmount) ?? weightedKnown(metrics, item => item.profitability, item => item.buyoutAmount ?? item.ordersSum), netProfit,
     ordersPerDay: ordersSum !== null && daysInMonth ? ordersSum / daysInMonth : null,
     netProfitPerDay: netProfit !== null && daysInMonth ? netProfit / daysInMonth : null,
     daysInMonth,
@@ -300,5 +308,17 @@ function ScenarioMetricRow({ label, metric, format, inputField, category, kind, 
 }
 
 function SummaryCells({ metrics, columns }: { metrics: PeriodMetrics; columns: ColumnDefinition[] }) { return <>{columns.map(column => <td key={column.key}>{formatValue(metrics[column.key], column.format)}</td>)}</>; }
-function DriverInput({ record, value, label, suffix, onSave }: { record?: AggregateMonthlyPlanRecord; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) { return <td className="plan-input-cell"><input key={`${record?.updated_at || 'empty'}|${label}`} defaultValue={inputText(value)} placeholder="—" inputMode="decimal" aria-label={label} onBlur={event => onSave(parseInput(event.target.value))} />{suffix && <span>{suffix}</span>}</td>; }
+function DriverInput({ record, value, label, suffix, onSave }: { record?: AggregateMonthlyPlanRecord; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) {
+  const canonical = inputText(value);
+  return <DriverInputControl key={`${record?.updated_at || 'empty'}|${canonical}|${label}`} initialValue={canonical} value={value} label={label} suffix={suffix} onSave={onSave} />;
+}
+function DriverInputControl({ initialValue, value, label, suffix, onSave }: { initialValue: string; value: number | null; label: string; suffix?: string; onSave: (value: number | null) => void }) {
+  const [draft, setDraft] = useState(initialValue);
+  const commit = () => {
+    const parsed = parseInput(draft);
+    if (parsed === value) return;
+    onSave(parsed);
+  };
+  return <td className="plan-input-cell"><input value={draft} placeholder="—" inputMode="decimal" aria-label={label} onChange={event => setDraft(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} />{suffix && <span>{suffix}</span>}</td>;
+}
 function DeltaCell({ value }: { value: number | null }) { return <td className={`scenario-delta ${value === null ? '' : value >= 0 ? 'positive' : 'negative'}`}>{value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}</td>; }
