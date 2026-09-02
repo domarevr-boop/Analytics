@@ -14,12 +14,6 @@ export function getFulfillmentOrders(record: GeographyOrderRecord, fulfillment: 
   return record.orders_total;
 }
 
-export function getFulfillmentStock(record: GeographyOrderRecord, fulfillment: GeographyFulfillment) {
-  if (fulfillment === 'fbo') return record.stock_wb;
-  if (fulfillment === 'fbs') return record.stock_marketplace;
-  return record.stock_wb + record.stock_marketplace;
-}
-
 export function getFulfillmentCoverage(records: GeographyOrderRecord[]) {
   const total = records.reduce((sum, record) => sum + record.orders_total, 0);
   const fbo = records.reduce((sum, record) => sum + getFulfillmentOrders(record, 'fbo'), 0);
@@ -35,8 +29,7 @@ export function aggregateGeography(records: GeographyOrderRecord[], fulfillment:
   const deliveryHours = coveredOrders > 0
     ? withDelivery.reduce((sum, record) => sum + (record.delivery_hours || 0) * getFulfillmentOrders(record, fulfillment), 0) / coveredOrders
     : null;
-  const stock = records.reduce((sum, record) => sum + getFulfillmentStock(record, fulfillment), 0);
-  return { total, deliveryHours, coveredOrders, stock };
+  return { total, deliveryHours, coveredOrders };
 }
 
 export function orderShare(orders: number, denominator: number) {

@@ -138,8 +138,6 @@ DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u0441\u043e \u0441\u043a\u043b\u0430
 DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u0441\u043e \u0441\u043a\u043b\u0430\u0434\u0430 wb \u043d\u0435 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_wb_nonlocal_orders';
 DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u043c\u0430\u0440\u043a\u0435\u0442\u043f\u043b\u0435\u0439\u0441 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_mp_local_orders';
 DICT['\u0437\u0430\u043a\u0430\u0437\u044b \u043c\u0430\u0440\u043a\u0435\u0442\u043f\u043b\u0435\u0439\u0441 \u043d\u0435 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0448\u0442'] = 'geo_mp_nonlocal_orders';
-DICT['\u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u0441\u043a\u043b\u0430\u0434 wb \u0448\u0442'] = 'geo_stock_wb';
-DICT['\u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u043c\u043f \u0448\u0442'] = 'geo_stock_mp';
 DICT['\u0440\u0430\u0437\u0434\u0435\u043b'] = 'entry_section';
 DICT['\u0442\u043e\u0447\u043a\u0430 \u0432\u0445\u043e\u0434\u0430'] = 'entry_point';
 DICT['\u043f\u0435\u0440\u0435\u0445\u043e\u0434\u044b \u0432 \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0443'] = 'entry_clicks';
@@ -267,7 +265,6 @@ export const FIELD_LABELS: Record<string, string> = {
   geo_product_local_orders: 'Локальные заказы, шт', geo_product_nonlocal_orders: 'Не локальные заказы, шт',
   geo_wb_local_orders: 'WB локально, шт', geo_wb_nonlocal_orders: 'WB не локально, шт',
   geo_mp_local_orders: 'МП локально, шт', geo_mp_nonlocal_orders: 'МП не локально, шт',
-  geo_stock_wb: 'Остатки WB, шт', geo_stock_mp: 'Остатки МП, шт',
   search_query: 'Поисковый запрос', search_category: 'Предмет', search_requests: 'Количество запросов', search_requests_previous: 'Запросы — предыдущий период',
   search_avg_daily: 'Запросов в среднем за день', search_avg_daily_previous: 'Среднее — предыдущий период',
   search_card_clicks: 'Переходы в карточку', search_card_clicks_previous: 'Переходы — предыдущий период',

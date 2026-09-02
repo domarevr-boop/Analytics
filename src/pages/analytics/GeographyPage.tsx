@@ -15,7 +15,7 @@ import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
 import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
 
-type ChartMetric = 'orders' | 'deliveryHours' | 'stock';
+type ChartMetric = 'orders' | 'deliveryHours';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
 type DetailSort = 'orders' | 'orderedAmount' | 'share' | 'deliveryHours';
 type MapMetric = 'orderedAmount' | 'deliveryHours' | 'netProfitShare' | 'orderedAmountShare';
@@ -23,7 +23,7 @@ type DetailMetricRow = { orders: number; orderedAmount: number; share: number; d
 const DETAIL_PAGE_SIZE = 8;
 
 const metricLabels: Record<ChartMetric, string> = {
-  orders: 'Заказы, шт', deliveryHours: 'Среднее время доставки, ч', stock: 'Остатки, шт',
+  orders: 'Заказы, шт', deliveryHours: 'Среднее время доставки, ч',
 };
 const funnelMetricLabels: Record<FunnelMetric, string> = {
   orderedAmount: 'Сумма заказов, ₽', impressions: 'Показы', clicks: 'Клики', carts: 'Корзины', orders: 'Заказы, шт', ctr: 'CTR', cartCr: 'CR корзины', impressionOrderCr: 'CR показ → заказ',
@@ -52,7 +52,7 @@ function detailSortValue(row: DetailMetricRow, sort: DetailSort) {
 function formatNumber(value: number) { return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value); }
 function formatMillions(value: number) { return formatNumber(toMillions(value)); }
 function formatHours(hours: number | null) {
-  if (hours === null) return '—';
+  if (hours === null || !Number.isFinite(hours)) return '—';
   const days = Math.floor(hours / 24);
   const rest = Math.round(hours % 24);
   return days > 0 ? `${days}д ${rest}ч` : `${rest}ч`;
@@ -100,6 +100,17 @@ function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: Geography
     byLocation.set(locationKey, current);
   });
   return [...byLocation.values()].map(row => ({ ...row, profitability: row.profitRevenue ? row.netProfit / row.profitRevenue * 100 : 0 })).sort((left, right) => right.orderedAmount - left.orderedAmount);
+}
+function relativeDelta(current: number | null, previous: number | null) {
+  return current !== null && previous !== null && previous !== 0 ? (current - previous) / previous * 100 : null;
+}
+function GeoKpiSplit({ fbo, fbs }: { fbo: { value: string; note?: string }; fbs: { value: string; note?: string } }) {
+  return <div className="geo-kpi-split"><div><span>FBO</span><strong>{fbo.value}</strong>{fbo.note && <small>{fbo.note}</small>}</div><div><span>FBS</span><strong>{fbs.value}</strong>{fbs.note && <small>{fbs.note}</small>}</div></div>;
+}
+function GeoSummaryRow({ label, current, previous, accent }: { label: string; current: ReturnType<typeof aggregateGeography>; previous: ReturnType<typeof aggregateGeography>; accent: 'all' | 'fbo' | 'fbs' }) {
+  const ordersDelta = relativeDelta(current.total, previous.total);
+  const deliveryDelta = relativeDelta(current.deliveryHours, previous.deliveryHours);
+  return <article className={`geo-summary-row ${accent}`}><h3>{label}</h3><div><span>Заказы, шт<strong>{formatNumber(current.total)}</strong><small className={ordersDelta === null || ordersDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{ordersDelta === null ? 'Нет базы' : `${ordersDelta >= 0 ? '+' : ''}${formatNumber(ordersDelta)}%`}</small></span><span>Ср. время доставки<strong>{formatHours(current.deliveryHours)}</strong><small className={deliveryDelta === null || deliveryDelta <= 0 ? 'geo-positive' : 'geo-negative'}>{deliveryDelta === null ? 'Нет базы' : `${deliveryDelta > 0 ? '+' : ''}${formatNumber(deliveryDelta)}%`}</small></span></div></article>;
 }
 
 export default function GeographyPage() {
@@ -156,6 +167,11 @@ export default function GeographyPage() {
   }), [baseFiltered, region, area, city]);
   const baseTotals = useMemo(() => aggregateGeography(baseFiltered, fulfillment), [baseFiltered, fulfillment]);
   const totals = useMemo(() => aggregateGeography(filtered, fulfillment), [filtered, fulfillment]);
+  const fulfillmentTotals = useMemo(() => ({
+    all: aggregateGeography(filtered, 'all'),
+    fbo: aggregateGeography(filtered, 'fbo'),
+    fbs: aggregateGeography(filtered, 'fbs'),
+  }), [filtered]);
   const comparisonPeriod = useMemo(() => previousPeriod(start, end), [start, end]);
   const previousFiltered = useMemo(() => records.filter(record => {
     if (comparisonPeriod.start && record.date < comparisonPeriod.start) return false;
@@ -166,6 +182,11 @@ export default function GeographyPage() {
     return allowedProductIds.has(record.product_id);
   }), [records, allowedProductIds, comparisonPeriod, region, area, city]);
   const previousTotals = useMemo(() => aggregateGeography(previousFiltered, fulfillment), [previousFiltered, fulfillment]);
+  const previousFulfillmentTotals = useMemo(() => ({
+    all: aggregateGeography(previousFiltered, 'all'),
+    fbo: aggregateGeography(previousFiltered, 'fbo'),
+    fbs: aggregateGeography(previousFiltered, 'fbs'),
+  }), [previousFiltered]);
 
   const chartData = useMemo(() => {
     const byDate = new Map<string, GeographyOrderRecord[]>();
@@ -174,17 +195,35 @@ export default function GeographyPage() {
       appendToMap(byDate, bucket, record);
     });
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => {
-      const values = aggregateGeography(rows, fulfillment);
-      return { date: date.slice(5), value: metric === 'orders' ? values.total : metric === 'deliveryHours' ? values.deliveryHours || 0 : values.stock };
+      const fbo = aggregateGeography(rows, 'fbo');
+      const fbs = aggregateGeography(rows, 'fbs');
+      return {
+        date: date.slice(5),
+        fbo: metric === 'orders' ? fbo.total : fbo.deliveryHours,
+        fbs: metric === 'orders' ? fbs.total : fbs.deliveryHours,
+      };
     });
-  }, [filtered, metric, granularity, start, fulfillment]);
+  }, [filtered, metric, granularity, start]);
 
-  const financeLeaves = useMemo(() => {
-    return buildFinanceLeaves(filtered, records, productById, fulfillment);
-  }, [filtered, records, productById, fulfillment]);
-  const previousFinanceLeaves = useMemo(() => buildFinanceLeaves(previousFiltered, records, productById, fulfillment), [previousFiltered, records, productById, fulfillment]);
+  const financeLeavesByFulfillment = useMemo(() => ({
+    all: buildFinanceLeaves(filtered, records, productById, 'all'),
+    fbo: buildFinanceLeaves(filtered, records, productById, 'fbo'),
+    fbs: buildFinanceLeaves(filtered, records, productById, 'fbs'),
+  }), [filtered, records, productById]);
+  const previousFinanceLeavesByFulfillment = useMemo(() => ({
+    all: buildFinanceLeaves(previousFiltered, records, productById, 'all'),
+    fbo: buildFinanceLeaves(previousFiltered, records, productById, 'fbo'),
+    fbs: buildFinanceLeaves(previousFiltered, records, productById, 'fbs'),
+  }), [previousFiltered, records, productById]);
+  const financeLeaves = financeLeavesByFulfillment[fulfillment];
+  const previousFinanceLeaves = previousFinanceLeavesByFulfillment[fulfillment];
   const financeTotals = useMemo(() => sumFinance(financeLeaves), [financeLeaves]);
   const previousFinanceTotals = useMemo(() => sumFinance(previousFinanceLeaves), [previousFinanceLeaves]);
+  const financeTotalsByFulfillment = useMemo(() => ({
+    all: sumFinance(financeLeavesByFulfillment.all),
+    fbo: sumFinance(financeLeavesByFulfillment.fbo),
+    fbs: sumFinance(financeLeavesByFulfillment.fbs),
+  }), [financeLeavesByFulfillment]);
   const regionRows = useMemo(() => {
     const financeByRegion = new Map<string, FinanceGeoRow[]>();
     financeLeaves.forEach(row => appendToMap(financeByRegion, row.region, row));
@@ -330,6 +369,12 @@ export default function GeographyPage() {
   const averageCheck = financeTotals.orders ? financeTotals.orderedAmount / financeTotals.orders : null;
   const previousAverageCheck = previousFinanceTotals.orders ? previousFinanceTotals.orderedAmount / previousFinanceTotals.orders : null;
   const averageCheckDelta = averageCheck !== null && previousAverageCheck ? (averageCheck - previousAverageCheck) / previousAverageCheck * 100 : null;
+  const fboShare = orderShare(fulfillmentTotals.fbo.total, fulfillmentTotals.all.total);
+  const fbsShare = orderShare(fulfillmentTotals.fbs.total, fulfillmentTotals.all.total);
+  const fboAmountShare = amountShare(financeTotalsByFulfillment.fbo.orderedAmount, financeTotalsByFulfillment.all.orderedAmount);
+  const fbsAmountShare = amountShare(financeTotalsByFulfillment.fbs.orderedAmount, financeTotalsByFulfillment.all.orderedAmount);
+  const fboAverageCheck = financeTotalsByFulfillment.fbo.orders ? financeTotalsByFulfillment.fbo.orderedAmount / financeTotalsByFulfillment.fbo.orders : null;
+  const fbsAverageCheck = financeTotalsByFulfillment.fbs.orders ? financeTotalsByFulfillment.fbs.orderedAmount / financeTotalsByFulfillment.fbs.orders : null;
   const fulfillmentCoverage = useMemo(() => getFulfillmentCoverage(baseFiltered), [baseFiltered]);
   const fulfillmentCoverageText = fulfillmentCoverage.coverage === null
     ? 'Нет заказов для проверки разметки FBO/FBS.'
@@ -344,18 +389,18 @@ export default function GeographyPage() {
 
   return <section className="geo-page geo-page-v2">
     <header className="geo-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>География заказов</h1><p>Объём заказов, сроки доставки и распределение спроса по территориям.</p></div><div className="analytics-page-header-actions"><small>Найдено товаров: <b>{formatNumber(filteredProductCount)}</b></small><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></div></header>
-    <div className="geo-toolbar table-toolbar entry-analytics-toolbar page-card"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); setDetailPage(0); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinetId} categoryFilter={category} brandFilter={brandId} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinetId} onCategoryChange={setCategory} onBrandChange={setBrandId} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" period={{ start, end }} afterControls={<div className="geo-context-controls"><div className="geo-fulfillment-filter" role="group" aria-label="Тип выполнения заказа">{(Object.keys(geographyFulfillmentLabels) as GeographyFulfillment[]).map(value => <button type="button" key={value} className={fulfillment === value ? 'active' : ''} aria-pressed={fulfillment === value} onClick={() => { setFulfillment(value); setDetailPage(0); }}>{geographyFulfillmentLabels[value]}</button>)}</div><div className="geo-location-filters"><select className="entry-context-select" aria-label="Федеральный округ" value={region} onChange={event => { setRegion(event.target.value); setArea(''); setCity(''); setDetailPage(0); }}><option value="">Все ФО</option>{regions.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Регион" value={area} onChange={event => { setArea(event.target.value); setCity(''); setDetailPage(0); }}><option value="">Все регионы</option>{areas.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Населённый пункт" value={city} onChange={event => { setCity(event.target.value); setDetailPage(0); }}><option value="">Все города</option>{cities.map(item => <option key={item} value={item}>{item}</option>)}</select></div></div>} /></div>
-    {fulfillment !== 'all' && <div className={`geo-fulfillment-note${fulfillmentCoverage.coverage !== null && Math.abs(fulfillmentCoverage.residual) > 0.0001 ? ' warning' : ''}`} role="status"><strong>{geographyFulfillmentLabels[fulfillment]}</strong><span>{fulfillmentCoverageText}</span></div>}
+    <div className="geo-toolbar table-toolbar entry-analytics-toolbar page-card"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); setDetailPage(0); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinetId} categoryFilter={category} brandFilter={brandId} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinetId} onCategoryChange={setCategory} onBrandChange={setBrandId} onGroupChange={setGroupId} onSkuChange={setQuery} variant="dashboard" period={{ start, end }} afterControls={<div className="geo-context-controls"><div className="geo-fulfillment-filter" role="group" aria-label="Тип выполнения заказа">{(Object.keys(geographyFulfillmentLabels) as GeographyFulfillment[]).map(value => <button type="button" key={value} className={fulfillment === value ? 'active' : ''} aria-pressed={fulfillment === value} onClick={() => { setFulfillment(value); setDetailPage(0); }}>{geographyFulfillmentLabels[value]}</button>)}</div><div className="geo-location-filters"><span>География:</span><select className="entry-context-select" aria-label="Федеральный округ" value={region} onChange={event => { setRegion(event.target.value); setArea(''); setCity(''); setDetailPage(0); }}><option value="">Все ФО</option>{regions.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Регион" value={area} onChange={event => { setArea(event.target.value); setCity(''); setDetailPage(0); }}><option value="">Все регионы</option>{areas.map(item => <option key={item} value={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Населённый пункт" value={city} onChange={event => { setCity(event.target.value); setDetailPage(0); }}><option value="">Все города</option>{cities.map(item => <option key={item} value={item}>{item}</option>)}</select></div></div>} /></div>
     <div className="geo-kpis">
-      <article className="geo-kpi"><span>Заказы</span><strong>{formatNumber(totals.total)} шт.</strong><small className={orderDelta === null || orderDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{orderDelta === null ? 'Нет прошлого периода' : `${orderDelta >= 0 ? '+' : ''}${formatNumber(orderDelta)}% к прошлому периоду`}</small><small>Количество заказов в выбранном срезе</small></article>
-      <article className="geo-kpi"><span>Сумма заказов</span><strong>{formatMillions(financeTotals.orderedAmount)} млн ₽</strong><small className={amountDelta === null || amountDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{amountDelta === null ? 'Нет прошлого периода' : `${amountDelta >= 0 ? '+' : ''}${formatNumber(amountDelta)}% к прошлому периоду`}</small><small>Расчётная сумма, распределённая по географии</small></article>
-      <article className="geo-kpi"><span>Средний чек</span><strong>{averageCheck === null ? '—' : `${formatNumber(averageCheck)} ₽`}</strong><small className={averageCheckDelta === null || averageCheckDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{averageCheckDelta === null ? 'Нет прошлого периода' : `${averageCheckDelta >= 0 ? '+' : ''}${formatNumber(averageCheckDelta)}% к прошлому периоду`}</small><small>Сумма заказов ÷ количество заказов</small></article>
-      <article className="geo-kpi"><span>Среднее время доставки</span><strong>{formatHours(totals.deliveryHours)}</strong><small className={deliveryDelta <= 0 ? 'geo-positive' : 'geo-negative'}>{previousTotals.deliveryHours === null ? 'Нет прошлого периода' : `${deliveryDelta > 0 ? '+' : ''}${formatNumber(deliveryDelta)} ч к прошлому периоду`}</small><small>Покрытие временем: {totals.total ? formatNumber(totals.coveredOrders / totals.total * 100) : 0}%</small></article>
+      <article className="geo-kpi"><span>Заказы</span><strong>{formatNumber(totals.total)} шт.</strong><small className={orderDelta === null || orderDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{orderDelta === null ? 'Нет прошлого периода' : `${orderDelta >= 0 ? '+' : ''}${formatNumber(orderDelta)}% к прошлому периоду`}</small><GeoKpiSplit fbo={{ value: `${formatNumber(fulfillmentTotals.fbo.total)} шт.`, note: `${formatNumber(fboShare)}% от всех` }} fbs={{ value: `${formatNumber(fulfillmentTotals.fbs.total)} шт.`, note: `${formatNumber(fbsShare)}% от всех` }} /></article>
+      <article className="geo-kpi"><span>Сумма заказов</span><strong>{formatMillions(financeTotals.orderedAmount)} млн ₽</strong><small className={amountDelta === null || amountDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{amountDelta === null ? 'Нет прошлого периода' : `${amountDelta >= 0 ? '+' : ''}${formatNumber(amountDelta)}% к прошлому периоду`}</small><GeoKpiSplit fbo={{ value: `${formatMillions(financeTotalsByFulfillment.fbo.orderedAmount)} млн ₽`, note: `${formatNumber(fboAmountShare)}% от всех` }} fbs={{ value: `${formatMillions(financeTotalsByFulfillment.fbs.orderedAmount)} млн ₽`, note: `${formatNumber(fbsAmountShare)}% от всех` }} /></article>
+      <article className="geo-kpi"><span>Средний чек</span><strong>{averageCheck === null ? '—' : `${formatNumber(averageCheck)} ₽`}</strong><small className={averageCheckDelta === null || averageCheckDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{averageCheckDelta === null ? 'Нет прошлого периода' : `${averageCheckDelta >= 0 ? '+' : ''}${formatNumber(averageCheckDelta)}% к прошлому периоду`}</small><GeoKpiSplit fbo={{ value: fboAverageCheck === null ? '—' : `${formatNumber(fboAverageCheck)} ₽` }} fbs={{ value: fbsAverageCheck === null ? '—' : `${formatNumber(fbsAverageCheck)} ₽` }} /></article>
+      <article className="geo-kpi"><span>Среднее время доставки</span><strong>{formatHours(totals.deliveryHours)}</strong><small className={deliveryDelta <= 0 ? 'geo-positive' : 'geo-negative'}>{previousTotals.deliveryHours === null ? 'Нет прошлого периода' : `${deliveryDelta > 0 ? '+' : ''}${formatNumber(deliveryDelta)} ч к прошлому периоду`}</small><GeoKpiSplit fbo={{ value: formatHours(fulfillmentTotals.fbo.deliveryHours) }} fbs={{ value: formatHours(fulfillmentTotals.fbs.deliveryHours) }} /></article>
     </div>
     <div className="geo-content-grid">
-      <article className="geo-card geo-chart-card"><div className="geo-card-head"><div><h2>Динамика по дням</h2><p>Показатели выбранного географического среза</p></div><div className="geo-chart-controls"><select value={metric} onChange={event => setMetric(event.target.value as ChartMetric)}>{Object.entries(metricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><div className="geo-segmented"><button className={granularity === 'day' ? 'active' : ''} onClick={() => setGranularity('day')}>День</button><button className={granularity === 'week' ? 'active' : ''} onClick={() => setGranularity('week')}>Неделя</button></div></div></div>
-        <div className="geo-chart"><ResponsiveContainer width="100%" height={290}><LineChart data={chartData}><CartesianGrid stroke="#E8EEF5" strokeDasharray="3 3" /><XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={28} interval="preserveStartEnd"/><YAxis tickLine={false} axisLine={false}/><Tooltip formatter={value => formatNumber(Number(value || 0))} /><Legend /><Line dataKey="value" name={metricLabels[metric]} stroke="#3B82F6" strokeWidth={2.5} dot={false} /></LineChart></ResponsiveContainer></div>
+      <article className="geo-card geo-chart-card"><div className="geo-card-head"><div><h2>Динамика по дням</h2><p>{metricLabels[metric]} по типам логистики</p></div><div className="geo-chart-controls"><select value={metric} onChange={event => setMetric(event.target.value as ChartMetric)}>{Object.entries(metricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><div className="geo-segmented"><button className={granularity === 'day' ? 'active' : ''} onClick={() => setGranularity('day')}>День</button><button className={granularity === 'week' ? 'active' : ''} onClick={() => setGranularity('week')}>Неделя</button></div></div></div>
+        <div className="geo-chart"><ResponsiveContainer width="100%" height={290}><LineChart data={chartData}><CartesianGrid stroke="#E8EEF5" strokeDasharray="3 3" /><XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={28} interval="preserveStartEnd"/><YAxis tickLine={false} axisLine={false} tickFormatter={value => metric === 'deliveryHours' ? `${formatNumber(Number(value))}ч` : formatNumber(Number(value))}/><Tooltip formatter={(value, name) => [metric === 'deliveryHours' ? formatHours(Number(value)) : formatNumber(Number(value || 0)), name]} /><Legend />{fulfillment !== 'fbs' && <Line dataKey="fbo" name="FBO · Склад WB" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}{fulfillment !== 'fbo' && <Line dataKey="fbs" name="FBS · Маркетплейс" stroke="#10B981" strokeWidth={2.5} dot={false} connectNulls />}</LineChart></ResponsiveContainer></div>
       </article>
+      <aside className="geo-card geo-summary-card"><GeoSummaryRow label="Динамика заказов (общ.)" current={fulfillmentTotals.all} previous={previousFulfillmentTotals.all} accent="all" /><GeoSummaryRow label="FBO · Склад WB" current={fulfillmentTotals.fbo} previous={previousFulfillmentTotals.fbo} accent="fbo" /><GeoSummaryRow label="FBS · Маркетплейс" current={fulfillmentTotals.fbs} previous={previousFulfillmentTotals.fbs} accent="fbs" /><footer className={fulfillmentCoverage.coverage !== null && Math.abs(fulfillmentCoverage.residual) > 0.0001 ? 'warning' : ''}>{fulfillmentCoverageText}</footer></aside>
     </div>
     <div className="geo-map-grid">
       <article className="geo-card geo-map-card">

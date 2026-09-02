@@ -1346,7 +1346,7 @@ export async function importMappedData(
           orders_total: toNumber(row.geo_orders_total), product_local_orders: toNumber(row.geo_product_local_orders),
           product_nonlocal_orders: toNumber(row.geo_product_nonlocal_orders), wb_local_orders: toNumber(row.geo_wb_local_orders),
           wb_nonlocal_orders: toNumber(row.geo_wb_nonlocal_orders), marketplace_local_orders: toNumber(row.geo_mp_local_orders),
-          marketplace_nonlocal_orders: toNumber(row.geo_mp_nonlocal_orders), stock_wb: toNumber(row.geo_stock_wb), stock_marketplace: toNumber(row.geo_stock_mp),
+          marketplace_nonlocal_orders: toNumber(row.geo_mp_nonlocal_orders),
         };
         const key = `${date}|${product.id}|${region}|${area}|${city}`;
         const existing = recordsByKey.get(key);

@@ -198,8 +198,6 @@ export interface GeographyOrderRecord {
   wb_nonlocal_orders: number;
   marketplace_local_orders: number;
   marketplace_nonlocal_orders: number;
-  stock_wb: number;
-  stock_marketplace: number;
 }
 
 export interface GeographyPlanRecord {

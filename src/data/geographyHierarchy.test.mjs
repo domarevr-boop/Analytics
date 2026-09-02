@@ -17,8 +17,6 @@ function record(overrides = {}) {
     wb_nonlocal_orders: 5,
     marketplace_local_orders: 0,
     marketplace_nonlocal_orders: 0,
-    stock_wb: 0,
-    stock_marketplace: 0,
     ...overrides,
   };
 }

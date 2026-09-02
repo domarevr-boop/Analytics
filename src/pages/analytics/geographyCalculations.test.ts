@@ -6,24 +6,20 @@ import {
   aggregateGeography,
   getFulfillmentCoverage,
   getFulfillmentOrders,
-  getFulfillmentStock,
 } from './geographyCalculations.ts';
 
 const record = (overrides: Partial<GeographyOrderRecord> = {}): GeographyOrderRecord => ({
   date: '2026-08-01', product_id: 'p1', region: 'Приволжский', area: 'Самарская область', city: 'Самара',
   delivery_hours: 24, orders_total: 10, product_local_orders: 0, product_nonlocal_orders: 10,
   wb_local_orders: 1, wb_nonlocal_orders: 1, marketplace_local_orders: 2, marketplace_nonlocal_orders: 4,
-  stock_wb: 100, stock_marketplace: 50, ...overrides,
+  ...overrides,
 });
 
-test('maps geography orders and stock to all, FBO and FBS modes', () => {
+test('maps geography orders to all, FBO and FBS modes', () => {
   const row = record();
   assert.equal(getFulfillmentOrders(row, 'all'), 10);
   assert.equal(getFulfillmentOrders(row, 'fbo'), 2);
   assert.equal(getFulfillmentOrders(row, 'fbs'), 6);
-  assert.equal(getFulfillmentStock(row, 'all'), 150);
-  assert.equal(getFulfillmentStock(row, 'fbo'), 100);
-  assert.equal(getFulfillmentStock(row, 'fbs'), 50);
 });
 
 test('aggregates delivery using only the selected fulfillment orders', () => {
