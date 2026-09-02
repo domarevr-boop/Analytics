@@ -4134,7 +4134,7 @@ thead .at-metric:last-child {
 .profit-status-tabs label { display: flex; align-items: center; gap: 5px; margin-left: auto; color: #718097; font-size: 9px; }
 .profit-status-tabs input { width: 52px; min-height: 29px; border: 1px solid #dbe3ed; border-radius: 6px; padding: 0 6px; text-align: right; }
 .profit-page-v2 .profit-table-wrap { max-height: 620px; overflow: auto; border-radius: 10px; }
-.profit-table-v2 { min-width: 1240px; }
+.profit-table-v2 { min-width: 1660px; }
 .profit-table-v2 th { position: sticky; top: 0; z-index: 3; height: 34px; background: #f4f7fa; color: #607089; font-size: 8px; text-align: right; }
 .profit-table-v2 th:nth-child(1), .profit-table-v2 td:nth-child(1) { position: sticky; left: 0; z-index: 4; width: 34px; min-width: 34px; background: #fff; }
 .profit-table-v2 th:nth-child(2), .profit-table-v2 td:nth-child(2) { position: sticky; left: 34px; z-index: 4; width: 270px; min-width: 270px; max-width: 270px; background: #fff; box-shadow: 2px 0 5px rgba(31, 52, 77, .05); }
@@ -4146,6 +4146,29 @@ thead .at-metric:last-child {
 .profit-table-v2 .pt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profit-table-v2 .pt-name small { display: inline; margin-left: 7px; color: #7c899a; font-size: 8px; font-weight: 400; }
 .profit-table-v2 .profit-expand { display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid #dbe3ed; border-radius: 5px; background: #fff; color: #52647c; cursor: pointer; }
+.profit-sort { display: inline-flex; min-height: 26px; align-items: center; justify-content: flex-end; gap: 5px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-transform: inherit; cursor: pointer; }
+.profit-sort b { min-width: 10px; color: #9aa7b8; font-size: 10px; }
+.profit-sort:hover,
+.profit-sort.active { color: #173b61; }
+.profit-sort.active b { color: #2f75df; }
+.pt-classification,
+.pt-role { text-align: center; }
+.profit-abc,
+.profit-role { display: inline-flex; min-height: 22px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; font-weight: 750; white-space: nowrap; }
+.profit-abc { min-width: 38px; padding: 0 7px; }
+.profit-abc-aa,
+.profit-abc-ab,
+.profit-abc-ba { border-color: #bfe5d2; background: #edf8f2; color: #16865c; }
+.profit-abc-ac,
+.profit-abc-bb,
+.profit-abc-bc,
+.profit-abc-ca,
+.profit-abc-cb { border-color: #f2d99a; background: #fff8e7; color: #a46b00; }
+.profit-abc-cc { border-color: #f4c5ca; background: #fff0f2; color: #c23d4a; }
+.profit-role { min-width: 88px; padding: 0 9px; }
+.profit-role-tractor { border-color: #f0d3aa; background: #fff6e9; color: #b46a12; }
+.profit-role-profit-generator { border-color: #bfe5d2; background: #edf8f2; color: #16865c; }
+.profit-role-non-liquid { border-color: #dbe2ea; background: #f5f7fa; color: #66768a; }
 .profit-value-bar { position: relative; display: block; z-index: 0; }
 .profit-value-bar i { position: absolute; z-index: -1; right: 0; bottom: -2px; height: 4px; border-radius: 999px; background: #41b883; opacity: .8; }
 .profit-row .down .profit-value-bar i { background: #e66770; }

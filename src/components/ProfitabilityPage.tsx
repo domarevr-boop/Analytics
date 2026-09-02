@@ -9,6 +9,8 @@ import { getReportGrossProfit } from '../data/profitabilityCalculations';
 import DateRangeFilter from './DateRangeFilter';
 import type { DatePeriod } from '../data/mock';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
+import { classifyProfitabilityRows, flattenExpandedHierarchy } from '../data/profitabilityTableCalculations';
+import type { BusinessRole } from '../data/profitabilityTableCalculations';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const monthOf = (date: string) => date.slice(0, 7);
@@ -20,13 +22,15 @@ const monthLabel = (month: string) => new Intl.DateTimeFormat('ru-RU', { month: 
 const monthTitle = (month: string) => new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(new Date(`${month}-01T00:00:00`));
 
 type Granularity = 'day' | 'week' | 'month';
-type StatusFilter = 'all' | 'profitable' | 'below' | 'loss' | 'no-sales';
+type StatusFilter = 'all' | 'profitable' | 'loss' | 'no-sales';
 type NodeType = 'cabinet' | 'category' | 'group' | 'product';
-type FinanceValue = { revenue: number; grossProfit: number; expenseAmount: number; netProfit: number };
+type SortKey = 'revenue' | 'costs' | 'grossProfit' | 'margin' | 'expensePct' | 'expenseAmount' | 'adSpend' | 'netProfit' | 'profitability';
+type SortDirection = 'asc' | 'desc';
+type FinanceValue = { revenue: number; grossProfit: number; expenseAmount: number; adSpend: number; netProfit: number };
 type ProfitNode = FinanceValue & { id: string; type: NodeType; name: string; sku?: string; parent: string | null; depth: number; cabinetId: string };
 
-const emptyFinance = (): FinanceValue => ({ revenue: 0, grossProfit: 0, expenseAmount: 0, netProfit: 0 });
-const addFinance = (target: FinanceValue, source: FinanceValue) => { target.revenue += source.revenue; target.grossProfit += source.grossProfit; target.expenseAmount += source.expenseAmount; target.netProfit += source.netProfit; };
+const emptyFinance = (): FinanceValue => ({ revenue: 0, grossProfit: 0, expenseAmount: 0, adSpend: 0, netProfit: 0 });
+const addFinance = (target: FinanceValue, source: FinanceValue) => { target.revenue += source.revenue; target.grossProfit += source.grossProfit; target.expenseAmount += source.expenseAmount; target.adSpend += source.adSpend; target.netProfit += source.netProfit; };
 const profitabilityOf = (value: FinanceValue) => value.revenue ? value.netProfit / value.revenue * 100 : 0;
 const marginOf = (value: FinanceValue) => value.revenue ? value.grossProfit / value.revenue * 100 : 0;
 const previousPeriod = (period: DatePeriod): DatePeriod => {
@@ -45,6 +49,12 @@ const bucketDate = (date: string, granularity: Granularity) => {
   const value = new Date(`${date}T00:00:00`); const day = value.getDay() || 7; value.setDate(value.getDate() - day + 1);
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 };
+const roleLabel: Record<BusinessRole, string> = { tractor: 'Тягач', 'profit-generator': 'Генератор ЧП', 'non-liquid': 'Нелик' };
+
+function SortHeader({ label, value, sortKey, direction, onSort }: { label: string; value: SortKey; sortKey: SortKey; direction: SortDirection; onSort: (key: SortKey) => void }) {
+  const active = sortKey === value;
+  return <th><button type="button" className={`profit-sort${active ? ' active' : ''}`} onClick={() => onSort(value)} aria-label={`${label}: сортировать ${active && direction === 'desc' ? 'по возрастанию' : 'по убыванию'}`}><span>{label}</span><b aria-hidden="true">{active ? (direction === 'desc' ? '↓' : '↑') : '↕'}</b></button></th>;
+}
 
 export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
@@ -65,7 +75,8 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
     : expenseMonth;
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [threshold, setThreshold] = useState(0);
+  const [sortKey, setSortKey] = useState<SortKey>('revenue');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const comparison = useMemo(() => previousPeriod(period), [period]);
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
@@ -87,18 +98,21 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       const grossProfit = getReportGrossProfit(record);
       const expenseAmount = revenue * getCabinetExtraExpense(monthOf(record.period_start), product.cabinet_id) / 100;
       const current = byProduct.get(record.product_id) || emptyFinance();
-      addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount });
+      addFinance(current, { revenue, grossProfit, expenseAmount, adSpend: 0, netProfit: grossProfit - expenseAmount });
       byProduct.set(record.product_id, current);
       reportProductDates.add(`${record.product_id}|${record.period_start}`);
     });
     metrics.forEach(row => {
-      if (!allowedIds.has(row.product_id) || row.date < range.start || row.date > range.end || reportProductDates.has(`${row.product_id}|${row.date}`) || !matchesSelectedGroup(row.product_id, row.date)) return;
-      const product = productMap.get(row.product_id); if (!product || !row.profit_revenue) return;
-      const revenue = row.profit_revenue;
-      const grossProfit = revenue - row.cost - row.agent_fee - row.logistics_cost - row.marketing_cost - row.storage_cost;
-      const expenseAmount = revenue * getCabinetExtraExpense(monthOf(row.date), product.cabinet_id) / 100;
+      if (!allowedIds.has(row.product_id) || row.date < range.start || row.date > range.end || !matchesSelectedGroup(row.product_id, row.date)) return;
+      const product = productMap.get(row.product_id); if (!product) return;
       const current = byProduct.get(row.product_id) || emptyFinance();
-      addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount });
+      current.adSpend += row.marketing_cost || row.ad_spend || 0;
+      if (!reportProductDates.has(`${row.product_id}|${row.date}`) && row.profit_revenue) {
+        const revenue = row.profit_revenue;
+        const grossProfit = revenue - row.cost - row.agent_fee - row.logistics_cost - row.marketing_cost - row.storage_cost;
+        const expenseAmount = revenue * getCabinetExtraExpense(monthOf(row.date), product.cabinet_id) / 100;
+        addFinance(current, { revenue, grossProfit, expenseAmount, adSpend: 0, netProfit: grossProfit - expenseAmount });
+      }
       byProduct.set(row.product_id, current);
     });
     return byProduct;
@@ -117,14 +131,21 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       const key = bucketDate(record.period_start, granularity);
       const revenue = record.profit_revenue; const grossProfit = getReportGrossProfit(record);
       const expenseAmount = revenue * getCabinetExtraExpense(monthOf(record.period_start), product.cabinet_id) / 100;
-      const current = byDate.get(key) || emptyFinance(); addFinance(current, { revenue, grossProfit, expenseAmount, netProfit: grossProfit - expenseAmount }); byDate.set(key, current);
+      const current = byDate.get(key) || emptyFinance(); addFinance(current, { revenue, grossProfit, expenseAmount, adSpend: 0, netProfit: grossProfit - expenseAmount }); byDate.set(key, current);
     });
     return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, value]) => ({ date, ...value, margin: marginOf(value), profitability: profitabilityOf(value) }));
   }, [records, allowedIds, productMap, period, granularity, expenseVersion]);
 
   const tree = useMemo(() => {
     const nodes: ProfitNode[] = [];
-    const firstGroupByProduct = new Map<string, string>(); memberships.forEach(item => { if (!firstGroupByProduct.has(item.product_id)) firstGroupByProduct.set(item.product_id, item.group_id); });
+    const groupByProduct = new Map<string, string>();
+    products.forEach(product => {
+      if (filterProps.groupFilter) groupByProduct.set(product.id, filterProps.groupFilter);
+      else {
+        const resolution = resolveGroupAtDate(product.id, period.end, groupHistory, memberships);
+        groupByProduct.set(product.id, resolution.known && resolution.groupId ? resolution.groupId : 'ungrouped');
+      }
+    });
     const addNode = (id: string, type: NodeType, name: string, parent: string | null, depth: number, cabinetId: string, productIds: string[], sku?: string) => {
       const value = emptyFinance(); productIds.forEach(productId => addFinance(value, currentByProduct.get(productId) || emptyFinance()));
       nodes.push({ id, type, name, parent, depth, cabinetId, sku, ...value });
@@ -135,9 +156,9 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       [...new Set(cabinetProducts.map(product => product.category || 'Без категории'))].sort().forEach(category => {
         const categoryProducts = cabinetProducts.filter(product => (product.category || 'Без категории') === category);
         const categoryId = `${cabinetNodeId}|category:${category}`; addNode(categoryId, 'category', category, cabinetNodeId, 1, cabinet.id, categoryProducts.map(item => item.id));
-        const groupKeys = [...new Set(categoryProducts.map(product => firstGroupByProduct.get(product.id) || 'ungrouped'))];
+        const groupKeys = [...new Set(categoryProducts.map(product => groupByProduct.get(product.id) || 'ungrouped'))];
         groupKeys.forEach(groupId => {
-          const groupProducts = categoryProducts.filter(product => (firstGroupByProduct.get(product.id) || 'ungrouped') === groupId);
+          const groupProducts = categoryProducts.filter(product => (groupByProduct.get(product.id) || 'ungrouped') === groupId);
           const groupName = groups.find(group => group.id === groupId)?.name || 'Без склейки';
           const nodeId = `${categoryId}|group:${groupId}`; addNode(nodeId, 'group', groupName, categoryId, 2, cabinet.id, groupProducts.map(item => item.id));
           groupProducts.sort((left, right) => (currentByProduct.get(right.id)?.revenue || 0) - (currentByProduct.get(left.id)?.revenue || 0)).forEach(product => addNode(`product:${product.id}`, 'product', product.name, nodeId, 3, cabinet.id, [product.id], product.sku));
@@ -145,15 +166,24 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
       });
     });
     return nodes;
-  }, [products, cabinets, groups, memberships, allowedIds, currentByProduct]);
+  }, [products, cabinets, groups, memberships, groupHistory, filterProps.groupFilter, period.end, allowedIds, currentByProduct]);
 
-  const statusMatches = (node: ProfitNode) => status === 'all' || (status === 'profitable' && node.netProfit > 0) || (status === 'loss' && node.netProfit < 0) || (status === 'no-sales' && node.revenue === 0) || (status === 'below' && node.revenue > 0 && profitabilityOf(node) < threshold);
-  const statusCounts = useMemo(() => { const productNodes = tree.filter(node => node.type === 'product'); return { all: productNodes.length, profitable: productNodes.filter(node => node.netProfit > 0).length, loss: productNodes.filter(node => node.netProfit < 0).length, below: productNodes.filter(node => node.revenue > 0 && profitabilityOf(node) < threshold).length, noSales: productNodes.filter(node => node.revenue === 0).length }; }, [tree, threshold]);
-  const visible = useMemo(() => {
-    if (status !== 'all') return tree.filter(node => node.type === 'product' && statusMatches(node));
-    return tree.filter(node => !node.parent || expanded.has(node.parent));
-  }, [tree, expanded, status, threshold]);
+  const classifications = useMemo(() => classifyProfitabilityRows(tree.filter(node => node.type === 'product').map(node => ({ id: node.id, groupId: node.parent || 'ungrouped', revenue: node.revenue, netProfit: node.netProfit, adSpend: node.adSpend }))), [tree]);
+  const statusMatches = (node: ProfitNode) => status === 'all' || (status === 'profitable' && node.netProfit > 0) || (status === 'loss' && node.netProfit < 0) || (status === 'no-sales' && node.revenue === 0);
+  const statusCounts = useMemo(() => { const productNodes = tree.filter(node => node.type === 'product'); return { all: productNodes.length, profitable: productNodes.filter(node => node.netProfit > 0).length, loss: productNodes.filter(node => node.netProfit < 0).length, noSales: productNodes.filter(node => node.revenue === 0).length }; }, [tree]);
+  const sortValue = (node: ProfitNode) => {
+    if (sortKey === 'costs') return Math.max(0, node.revenue - node.grossProfit);
+    if (sortKey === 'margin') return marginOf(node);
+    if (sortKey === 'expensePct') return node.revenue ? node.expenseAmount / node.revenue * 100 : 0;
+    if (sortKey === 'profitability') return profitabilityOf(node);
+    return node[sortKey];
+  };
+  const compareNodes = (left: ProfitNode, right: ProfitNode) => (sortValue(left) - sortValue(right)) * (sortDirection === 'asc' ? 1 : -1) || left.name.localeCompare(right.name, 'ru');
+  const visible = status !== 'all'
+    ? tree.filter(node => node.type === 'product' && statusMatches(node)).sort(compareNodes)
+    : flattenExpandedHierarchy(tree, expanded, compareNodes);
   const toggle = (id: string) => setExpanded(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const changeSort = (key: SortKey) => { if (key === sortKey) setSortDirection(current => current === 'desc' ? 'asc' : 'desc'); else { setSortKey(key); setSortDirection('desc'); } };
 
   const kpis = [
     { label: 'Выручка', value: `${fmt(total.revenue)} ₽`, delta: deltaPct(total.revenue, previousTotal.revenue) },
@@ -188,8 +218,8 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
     <section className="profit-chart-grid"><article className="profit-panel"><header><div><span>ДИНАМИКА</span><h2>Рентабельность и чистая прибыль</h2></div><div className="entry-segmented"><button className={granularity === 'day' ? 'active' : ''} onClick={() => setGranularity('day')}>День</button><button className={granularity === 'week' ? 'active' : ''} onClick={() => setGranularity('week')}>Неделя</button><button className={granularity === 'month' ? 'active' : ''} onClick={() => setGranularity('month')}>Месяц</button></div></header><ResponsiveContainer width="100%" height={270}><ComposedChart data={dailyData} margin={{ top: 14, right: 22, left: 4, bottom: 4 }}><CartesianGrid stroke="#E8EDF3" strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 9 }} /><YAxis yAxisId="money" tickFormatter={value => `${Math.round(Number(value) / 1000)}к`} tick={{ fontSize: 9 }} /><YAxis yAxisId="rate" orientation="right" tickFormatter={value => `${fmt1(Number(value))}%`} tick={{ fontSize: 9 }} /><Tooltip formatter={(value, name) => [name === 'Чистая прибыль' ? `${fmt(Number(value || 0))} ₽` : `${fmt1(Number(value || 0))}%`, name]} /><Bar yAxisId="money" dataKey="netProfit" name="Чистая прибыль" fill="#78A9F7" radius={[3, 3, 0, 0]} maxBarSize={22} /><Line yAxisId="rate" dataKey="profitability" name="Рентабельность" stroke="#10A778" strokeWidth={2.2} dot={false} /><Line yAxisId="rate" dataKey="margin" name="Маржинальность" stroke="#8B5CF6" strokeWidth={1.8} dot={false} /></ComposedChart></ResponsiveContainer></article>
       <article className="profit-panel"><header><div><span>СТРУКТУРА</span><h2>Формирование чистой прибыли</h2></div><small>{monthLabel(monthOf(period.end))}</small></header><ResponsiveContainer width="100%" height={270}><BarChart data={waterfall} margin={{ top: 22, right: 12, left: 8, bottom: 4 }}><CartesianGrid stroke="#E8EDF3" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 9 }} /><YAxis tickFormatter={value => `${Math.round(Number(value) / 1_000_000)}м`} tick={{ fontSize: 9 }} /><Tooltip formatter={(value, name, item) => name === 'Значение' ? [`${fmt(Number(item.payload.label))} ₽`, 'Изменение'] : [value, name]} /><ReferenceLine y={0} stroke="#8391A3" /><Bar dataKey="base" stackId="waterfall" fill="transparent" /><Bar dataKey="value" name="Значение" stackId="waterfall" radius={[3, 3, 0, 0]}>{waterfall.map(item => <Cell key={item.name} fill={item.color} />)}</Bar></BarChart></ResponsiveContainer></article></section>
 
-    <div className="profit-status-tabs"><button className={status === 'all' ? 'active' : ''} onClick={() => setStatus('all')}>Все <b>{statusCounts.all}</b></button><button className={status === 'profitable' ? 'active' : ''} onClick={() => setStatus('profitable')}>Прибыльные <b>{statusCounts.profitable}</b></button><button className={status === 'below' ? 'active' : ''} onClick={() => setStatus('below')}>Ниже цели <b>{statusCounts.below}</b></button><button className={status === 'loss' ? 'active' : ''} onClick={() => setStatus('loss')}>Убыточные <b>{statusCounts.loss}</b></button><button className={status === 'no-sales' ? 'active' : ''} onClick={() => setStatus('no-sales')}>Без продаж <b>{statusCounts.noSales}</b></button><label>Цель <input type="number" value={threshold} onChange={event => setThreshold(Number(event.target.value) || 0)} />%</label></div>
+    <div className="profit-status-tabs"><button className={status === 'all' ? 'active' : ''} onClick={() => setStatus('all')}>Все <b>{statusCounts.all}</b></button><button className={status === 'profitable' ? 'active' : ''} onClick={() => setStatus('profitable')}>Прибыльные <b>{statusCounts.profitable}</b></button><button className={status === 'loss' ? 'active' : ''} onClick={() => setStatus('loss')}>Убыточные <b>{statusCounts.loss}</b></button><button className={status === 'no-sales' ? 'active' : ''} onClick={() => setStatus('no-sales')}>Без продаж <b>{statusCounts.noSales}</b></button></div>
 
-    <div className="profit-table-wrap"><table className="profit-table profit-table-v2"><thead><tr><th className="pt-toggle-col"></th><th className="pt-name-col">Артикул / Название</th><th>Выручка</th><th>Себестоимость и расходы</th><th>Валовая прибыль</th><th>Маржа</th><th>Пост. расходы, %</th><th>Пост. расходы, ₽</th><th>Чистая прибыль</th><th>Рентабельность</th></tr></thead><tbody>{visible.map(node => { const hasChildren = tree.some(child => child.parent === node.id); const margin = marginOf(node); const profitability = profitabilityOf(node); const expensePct = node.revenue ? node.expenseAmount / node.revenue * 100 : 0; return <tr key={node.id} className={`profit-row profit-${node.type}`}><td className="pt-td pt-toggle">{hasChildren && status === 'all' && <button className="profit-expand" onClick={() => toggle(node.id)}>{expanded.has(node.id) ? '−' : '+'}</button>}</td><td className="pt-td pt-name" style={{ paddingLeft: 12 + node.depth * 18 }}>{node.type === 'product' ? <><span className="profit-sku">{node.sku}</span><small>{node.name}</small></> : <strong>{node.name}</strong>}</td><td className="pt-td pt-num">{fmt(node.revenue)} ₽</td><td className="pt-td pt-num pt-dim">{fmt(Math.max(0, node.revenue - node.grossProfit))} ₽</td><td className={`pt-td pt-num ${node.grossProfit >= 0 ? 'up' : 'down'}`}>{fmt(node.grossProfit)} ₽</td><td className="pt-td pt-num">{fmt1(margin)}%</td><td className="pt-td pt-num">{fmt1(expensePct)}%</td><td className="pt-td pt-num">{fmt(node.expenseAmount)} ₽</td><td className={`pt-td pt-num ${node.netProfit >= 0 ? 'up' : 'down'}`}><span className="profit-value-bar"><i style={{ width: `${Math.min(100, Math.abs(node.netProfit) / Math.max(Math.abs(total.netProfit), 1) * 100)}%` }} />{fmt(node.netProfit)} ₽</span></td><td className={`pt-td pt-num ${profitability >= 0 ? 'up' : 'down'}`}>{fmt1(profitability)}%</td></tr>; })}{!visible.length && <tr><td colSpan={10} className="pt-empty">Нет данных в выбранном срезе</td></tr>}</tbody></table></div>
+    <div className="profit-table-wrap"><table className="profit-table profit-table-v2"><thead><tr><th className="pt-toggle-col"></th><th className="pt-name-col">Артикул / Название</th><SortHeader label="Выручка" value="revenue" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Себестоимость и расходы" value="costs" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Валовая прибыль" value="grossProfit" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Маржа" value="margin" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Пост. расходы, %" value="expensePct" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Пост. расходы, ₽" value="expenseAmount" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Рекламные расходы" value="adSpend" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Чистая прибыль" value="netProfit" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><SortHeader label="Рентабельность" value="profitability" {...{ sortKey, direction: sortDirection, onSort: changeSort }} /><th>ABC (В/ЧП)</th><th>Бизнес-роль</th></tr></thead><tbody>{visible.map(node => { const hasChildren = tree.some(child => child.parent === node.id); const margin = marginOf(node); const profitability = profitabilityOf(node); const expensePct = node.revenue ? node.expenseAmount / node.revenue * 100 : 0; const classification = classifications.get(node.id); return <tr key={node.id} className={`profit-row profit-${node.type}`}><td className="pt-td pt-toggle">{hasChildren && status === 'all' && <button className="profit-expand" onClick={() => toggle(node.id)}>{expanded.has(node.id) ? '−' : '+'}</button>}</td><td className="pt-td pt-name" style={{ paddingLeft: 12 + node.depth * 18 }}>{node.type === 'product' ? <><span className="profit-sku">{node.sku}</span><small>{node.name}</small></> : <strong>{node.name}</strong>}</td><td className="pt-td pt-num">{fmt(node.revenue)} ₽</td><td className="pt-td pt-num pt-dim">{fmt(Math.max(0, node.revenue - node.grossProfit))} ₽</td><td className={`pt-td pt-num ${node.grossProfit >= 0 ? 'up' : 'down'}`}>{fmt(node.grossProfit)} ₽</td><td className="pt-td pt-num">{fmt1(margin)}%</td><td className="pt-td pt-num">{fmt1(expensePct)}%</td><td className="pt-td pt-num">{fmt(node.expenseAmount)} ₽</td><td className="pt-td pt-num">{fmt(node.adSpend)} ₽</td><td className={`pt-td pt-num ${node.netProfit >= 0 ? 'up' : 'down'}`}><span className="profit-value-bar"><i style={{ width: `${Math.min(100, Math.abs(node.netProfit) / Math.max(Math.abs(total.netProfit), 1) * 100)}%` }} />{fmt(node.netProfit)} ₽</span></td><td className={`pt-td pt-num ${profitability >= 0 ? 'up' : 'down'}`}>{fmt1(profitability)}%</td><td className="pt-td pt-classification">{classification ? <span className={`profit-abc profit-abc-${classification.abc.toLowerCase()}`} title="Первая буква — ABC выручки, вторая — ABC чистой прибыли">{classification.abc}</span> : '—'}</td><td className="pt-td pt-role">{classification ? <span className={`profit-role profit-role-${classification.role}`} title="Роль рассчитана внутри склейки за выбранный период">{roleLabel[classification.role]}</span> : '—'}</td></tr>; })}{!visible.length && <tr><td colSpan={13} className="pt-empty">Нет данных в выбранном срезе</td></tr>}</tbody></table></div>
   </div>;
 }
