@@ -1,0 +1,137 @@
+.overview-design-page.ds-page {
+  gap: var(--ds-space-3);
+  min-height: calc(100vh - 48px);
+  padding: 18px 24px 36px;
+  background: var(--ds-color-canvas);
+  color: var(--ds-color-text);
+}
+
+.overview-design-page .ds-page-actions b { color: var(--ds-color-ink); }
+.overview-design-page .ds-toolbar-main { min-width: 0; }
+.overview-design-page :where(select, input:not([type='checkbox'])) {
+  min-height: var(--ds-control-height);
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-control);
+}
+
+.overview-design-page :where(select, input, button):focus-visible {
+  outline: none;
+  box-shadow: var(--ds-focus-ring);
+}
+
+.overview-design-page :where(.geo-card, .competitors-section, .reporting-card) {
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-panel);
+}
+
+.overview-design-page :where(.geo-card-head, .competitors-section > header, .reporting-card-head) h2 {
+  color: var(--ds-color-ink);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+.overview-design-page :where(.geo-card-head, .competitors-section > header, .reporting-card-head) p {
+  color: var(--ds-color-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* Geography: retain the established functional layout, normalize its shell and surfaces. */
+.overview-design-page.geo-page-v2 .geo-toolbar.ds-toolbar { display: block; padding: 9px 10px; }
+.overview-design-page.geo-page-v2 .geo-toolbar .ds-toolbar-main { display: flex; align-items: center; gap: var(--ds-space-2); }
+.overview-design-page.geo-page-v2 .geo-toolbar .ds-toolbar-main > .date-filters { flex: 0 0 auto; }
+.overview-design-page.geo-page-v2 .geo-toolbar .ds-toolbar-main > .filterbar-dashboard { flex: 1 1 auto; min-width: 0; }
+.overview-design-page.geo-page-v2 .geo-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ds-space-2);
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.overview-design-page.geo-page-v2 .geo-kpis > .ds-kpi {
+  min-height: 142px;
+  padding: 14px 15px;
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+}
+
+.overview-design-page.geo-page-v2 .geo-kpi .ds-kpi-value-row { margin: 9px 0 5px; }
+.overview-design-page.geo-page-v2 .geo-kpi .ds-kpi-value-row strong { font-size: 22px; }
+.overview-design-page.geo-page-v2 .geo-kpi .ds-kpi-details { margin-top: 8px; padding-top: 0; border-top: 0; }
+.overview-design-page.geo-page-v2 .geo-kpi-split { margin-top: 0; }
+.overview-design-page.geo-page-v2 .geo-content-grid { gap: var(--ds-space-3); }
+.overview-design-page.geo-page-v2 .geo-summary-row.fbo::before { background: var(--ds-series-fbo); }
+.overview-design-page.geo-page-v2 .geo-summary-row.fbs::before { background: var(--ds-series-fbs); }
+.overview-design-page.geo-page-v2 .geo-fulfillment-filter button.active,
+.overview-design-page.geo-page-v2 .geo-segmented button.active { background: var(--ds-color-brand-soft); color: var(--ds-color-ink); }
+.overview-design-page.geo-page-v2 .geo-table { color: var(--ds-color-text); font-variant-numeric: tabular-nums; }
+.overview-design-page.geo-page-v2 .geo-table th { background: #f8fafc; color: var(--ds-color-muted); }
+
+/* Competitors: rich comparison KPI uses the common anatomy with a secondary own-data row. */
+.overview-design-page.competitors-v2 { margin: 0; }
+.overview-design-page .competitor-page-tabs { margin: 0; }
+.overview-design-page .competitors-toolbar.ds-toolbar { display: block; margin: 0; }
+.overview-design-page .competitors-toolbar .ds-toolbar-main {
+  display: grid;
+  grid-template-columns: auto 220px minmax(260px, 1fr) auto;
+  gap: var(--ds-space-2);
+}
+
+.overview-design-page .competitors-toolbar .ds-button { border: 1px solid var(--ds-color-border); background: var(--ds-color-surface); }
+.overview-design-page .competitors-kpis { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--ds-space-2); margin: 0; }
+.overview-design-page .competitors-kpis .ds-kpi { min-height: 132px; padding: 13px 12px; }
+.overview-design-page .competitors-kpis .ds-kpi-value-row { margin: 8px 0 5px; }
+.overview-design-page .competitors-kpis .ds-kpi-value-row strong { font-size: 18px; }
+.overview-design-page .competitors-kpis .ds-delta { display: block; min-height: 14px; font-size: 9px; }
+.overview-design-page .competitors-kpis .ds-kpi-details { margin-top: 7px; padding-top: 7px; }
+.overview-design-page .competitor-kpi-own { margin: 0; padding: 0; border: 0; }
+.overview-design-page .competitors-section { margin: 0; }
+.overview-design-page .competitor-brand-table table,
+.overview-design-page .competitor-table-wrap table { font-variant-numeric: tabular-nums; }
+.overview-design-page .competitor-brand-table thead th,
+.overview-design-page .competitor-table-wrap thead th { background: #f8fafc; color: var(--ds-color-muted); }
+
+/* Reporting: the common toolbar and KPI tiles replace the third local implementation. */
+.overview-design-page.reporting-page .reporting-toolbar.ds-toolbar { display: grid; margin: 0; }
+.overview-design-page.reporting-page .reporting-toolbar .ds-toolbar-main { display: flex; align-items: center; gap: var(--ds-space-2); }
+.overview-design-page.reporting-page .reporting-toolbar .ds-toolbar-trailing { margin-left: auto; }
+.overview-design-page.reporting-page .reporting-reset { min-height: var(--ds-control-height); }
+.overview-design-page.reporting-page .reporting-kpis { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--ds-space-2); }
+.overview-design-page.reporting-page .reporting-kpi { min-height: 108px; padding: 14px 12px; }
+.overview-design-page.reporting-page .reporting-kpi .ds-kpi-value-row { margin: 9px 0 6px; }
+.overview-design-page.reporting-page .reporting-kpi .ds-kpi-value-row strong { font-size: 18px; }
+.overview-design-page.reporting-page .reporting-kpi .ds-delta { font-size: 9px; }
+.overview-design-page.reporting-page .reporting-kpi .ds-kpi-details { margin-top: 6px; padding-top: 6px; font-size: 8px; }
+.overview-design-page.reporting-page .reporting-status { margin: 0; border-color: var(--ds-color-border); }
+.overview-design-page.reporting-page .reporting-main-grid { gap: var(--ds-space-3); }
+.overview-design-page.reporting-page .reporting-table-wrap thead th { background: #f8fafc; color: var(--ds-color-muted); }
+
+@media (max-width: 1640px) {
+  .overview-design-page .competitors-kpis,
+  .overview-design-page.reporting-page .reporting-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1280px) {
+  .overview-design-page.geo-page-v2 .geo-toolbar .ds-toolbar-main { align-items: stretch; flex-wrap: wrap; }
+  .overview-design-page.geo-page-v2 .geo-toolbar .ds-toolbar-main > .filterbar-dashboard { flex-basis: 100%; }
+  .overview-design-page.geo-page-v2 .geo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-design-page .competitors-toolbar .ds-toolbar-main { grid-template-columns: auto 190px minmax(220px, 1fr) auto; }
+}
+
+@media (max-width: 1000px) {
+  .overview-design-page.ds-page { padding: 16px; }
+  .overview-design-page .competitors-toolbar .ds-toolbar-main { display: flex; flex-wrap: wrap; }
+  .overview-design-page .competitors-toolbar .ds-toolbar-main > label { flex: 1 1 260px; }
+  .overview-design-page.reporting-page .reporting-toolbar .ds-toolbar-trailing { margin-left: 0; }
+}
+
+@media (max-width: 700px) {
+  .overview-design-page.ds-page { padding: 12px; }
+  .overview-design-page.geo-page-v2 .geo-kpis,
+  .overview-design-page .competitors-kpis,
+  .overview-design-page.reporting-page .reporting-kpis { grid-template-columns: 1fr; }
+}

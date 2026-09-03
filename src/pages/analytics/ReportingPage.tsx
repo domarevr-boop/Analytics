@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
+import { AnalyticsPageHeader, AnalyticsToolbar, EmptyState, KpiTile as CommonKpiTile, SegmentedControl } from '../../components/AnalyticsPrimitives';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { getCabinetExtraExpense, getExtraExpensesVersion, subscribeExtraExpenses } from '../../data/profitStore';
 import { getCabinets, getMarketDynamics, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
@@ -101,12 +102,16 @@ function Sparkline({ values, color }: { values: Array<number | null>; color: str
 }
 
 function KpiTile({ label, value, delta, points, values, color, note }: { label: string; value: string; delta: number | null; points?: boolean; values?: Array<number | null>; color: string; note?: string }) {
-  return <article className="reporting-kpi">
-    <span>{label}</span>
-    <div className="reporting-kpi-main"><strong>{value}</strong>{values && <Sparkline values={values} color={color} />}</div>
-    <small className={delta === null ? 'neutral' : delta >= 0 ? 'positive' : 'negative'}>{formatDelta(delta, points)} <em>к пред. периоду</em></small>
-    {note && <small className="reporting-kpi-note">{note}</small>}
-  </article>;
+  return <CommonKpiTile
+    className="reporting-kpi"
+    label={label}
+    value={value}
+    delta={formatDelta(delta, points)}
+    deltaSuffix=""
+    tone={delta === null ? 'neutral' : delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral'}
+    visual={values ? <Sparkline values={values} color={color} /> : undefined}
+    details={note}
+  />;
 }
 
 function DeltaValue({ value, points = false }: { value: number | null; points?: boolean }) {
@@ -232,21 +237,16 @@ export default function ReportingPage() {
 
   if (showHelp) return <AnalyticsHelp data={reportingHelp} onClose={() => setShowHelp(false)} />;
 
-  return <div className="reporting-page analytics-page-shell">
-    <header className="analytics-page-header reporting-header">
-      <div><span>АНАЛИТИКА · УПРАВЛЕНЧЕСКАЯ СВОДКА</span><h1>Отчётность</h1><p>Собственные результаты, положение на рынке и изменения за сопоставимые периоды.</p></div>
-      <button type="button" onClick={() => setShowHelp(true)}>Справка</button>
-    </header>
+  return <div className="reporting-page overview-design-page analytics-page-shell ds-page">
+    <AnalyticsPageHeader eyebrow="Аналитика › Управленческая сводка" title="Отчётность" description="Собственные результаты, положение на рынке и изменения за сопоставимые периоды." actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
 
-    <section className="reporting-toolbar page-card">
+    <AnalyticsToolbar className="reporting-toolbar" trailing={<><SegmentedControl value={granularity} label="Гранулярность отчётности" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button reporting-reset" onClick={() => setPeriod(getInitialPeriod(dates))}>Сбросить</button></>}>
       <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} />
       <span className="reporting-comparison">Сравнение: <strong>{formatPeriod(comparison)}</strong></span>
-      <div className="entry-segmented"><button type="button" className={granularity === 'day' ? 'active' : ''} onClick={() => setGranularity('day')}>День</button><button type="button" className={granularity === 'week' ? 'active' : ''} onClick={() => setGranularity('week')}>Неделя</button><button type="button" className={granularity === 'month' ? 'active' : ''} onClick={() => setGranularity('month')}>Месяц</button></div>
-      <button type="button" className="reporting-reset" onClick={() => setPeriod(getInitialPeriod(dates))}>Сбросить</button>
-    </section>
+    </AnalyticsToolbar>
 
-    {!ownDataAvailable && !marketDataAvailable ? <section className="reporting-empty page-card"><strong>Нет данных для отчётности</strong><span>Импортируйте локальные метрики или отчёт «Рынок», затем выберите период с данными.</span></section> : <>
-      <section className="reporting-kpis">
+    {!ownDataAvailable && !marketDataAvailable ? <EmptyState title="Нет данных для отчётности" description="Импортируйте локальные метрики или отчёт «Рынок», затем выберите период с данными." /> : <>
+      <section className="reporting-kpis ds-kpi-grid">
         <KpiTile label="Заказы, ₽" value={ownDataAvailable ? formatMoney(currentOwn.orderedAmount) : '—'} delta={ownDataAvailable ? ownDelta : null} values={ownPoints.map(point => point.orderedAmount)} color="#2563EB" note="локальные метрики" />
         <KpiTile label="Заказы, шт." value={ownDataAvailable ? formatNumber(currentOwn.orders) : '—'} delta={ownDataAvailable ? getPercentDelta(currentOwn.orders, previousOwn.orders) : null} values={ownPoints.map(point => point.orders)} color="#10A778" />
         <KpiTile label="Рентабельность" value={financeDataAvailable ? formatPercentOrDash(currentFinance.profitability) : '—'} delta={financeDataAvailable ? getPointsDelta(currentFinance.profitability, previousFinance.profitability) : null} points values={undefined} color="#8B5CF6" />

@@ -33,6 +33,7 @@ import ChartsBlock from './components/ChartsBlock';
 import MiniChartsBlock from './components/MiniChartsBlock';
 import { useChartData } from './hooks/useChartData';
 import './App.css';
+import './styles/overview-pages.css';
 
 const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
 const LAST_PAGE_KEY = 'analytics_last_page_v1';

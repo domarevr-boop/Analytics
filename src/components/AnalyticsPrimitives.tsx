@@ -20,8 +20,8 @@ export function AnalyticsPageHeader({ eyebrow, title, description, meta, actions
   </header>;
 }
 
-export function AnalyticsToolbar({ children, trailing, status }: { children: ReactNode; trailing?: ReactNode; status?: ReactNode }) {
-  return <section className="ds-toolbar">
+export function AnalyticsToolbar({ children, trailing, status, className = '' }: { children: ReactNode; trailing?: ReactNode; status?: ReactNode; className?: string }) {
+  return <section className={`ds-toolbar${className ? ` ${className}` : ''}`}>
     <div className="ds-toolbar-main">{children}</div>
     {trailing && <div className="ds-toolbar-trailing">{trailing}</div>}
     {status && <div className="ds-toolbar-status">{status}</div>}
@@ -39,7 +39,7 @@ export function SegmentedControl<T extends string>({ value, options, onChange, l
   </div>;
 }
 
-export function KpiTile({ label, value, delta, deltaSuffix = '%', comparison = 'к предыдущему периоду', tone = 'neutral', visual, details }: {
+export function KpiTile({ label, value, delta, deltaSuffix = '%', comparison = 'к предыдущему периоду', tone = 'neutral', visual, details, className = '' }: {
   label: string;
   value: ReactNode;
   delta?: ReactNode;
@@ -48,8 +48,9 @@ export function KpiTile({ label, value, delta, deltaSuffix = '%', comparison = '
   tone?: Tone;
   visual?: ReactNode;
   details?: ReactNode;
+  className?: string;
 }) {
-  return <article className="ds-kpi">
+  return <article className={`ds-kpi${className ? ` ${className}` : ''}`}>
     <span className="ds-kpi-label">{label}</span>
     <div className="ds-kpi-value-row"><strong>{value}</strong>{visual}</div>
     {delta !== undefined && <small className={`ds-delta ds-delta-${tone}`}>{tone === 'positive' ? '▲' : tone === 'negative' ? '▼' : '•'} {delta}{deltaSuffix} <em>{comparison}</em></small>}
