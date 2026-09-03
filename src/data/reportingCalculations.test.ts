@@ -35,7 +35,12 @@ test('own summary aggregates money, units, ad spend and derived values', () => {
   ];
   const summary = summarizeOwnMetrics(rows, { start: '2026-08-10', end: '2026-08-11' });
   assert.deepEqual(summary, { orderedAmount: 1500, orders: 5, adSpend: 125, avgCheck: 300, drr: 125 / 1500 * 100 });
+  assert.deepEqual(
+    summarizeOwnMetrics(rows, { start: '2026-08-10', end: '2026-08-11' }, new Set(['p1'])),
+    { orderedAmount: 1000, orders: 4, adSpend: 100, avgCheck: 250, drr: 10 },
+  );
   assert.equal(aggregateOwnMetrics(rows, { start: '2026-08-10', end: '2026-08-11' }, 'day').length, 2);
+  assert.equal(aggregateOwnMetrics(rows, { start: '2026-08-10', end: '2026-08-11' }, 'day', new Set(['p1'])).length, 1);
 });
 
 test('finance profitability is calculated from summed money, not average row percentages', () => {

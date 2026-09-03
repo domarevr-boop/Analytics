@@ -99,6 +99,9 @@
 .overview-design-page.reporting-page .reporting-toolbar.ds-toolbar { display: grid; margin: 0; }
 .overview-design-page.reporting-page .reporting-toolbar .ds-toolbar-main { display: flex; align-items: center; gap: var(--ds-space-2); }
 .overview-design-page.reporting-page .reporting-toolbar .ds-toolbar-trailing { margin-left: auto; }
+.overview-design-page.reporting-page .reporting-entity-filter { display: block; }
+.overview-design-page.reporting-page .reporting-entity-filter > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.overview-design-page.reporting-page .reporting-entity-filter select { min-width: 150px; padding: 0 30px 0 10px; border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-control); background: var(--ds-color-surface); color: var(--ds-color-text); font: inherit; }
 .overview-design-page.reporting-page .reporting-reset { min-height: var(--ds-control-height); }
 .overview-design-page.reporting-page .reporting-kpis { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--ds-space-2); }
 .overview-design-page.reporting-page .reporting-kpi { min-height: 108px; padding: 14px 12px; }

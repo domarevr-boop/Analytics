@@ -206,27 +206,39 @@ export default function ReportingPage() {
   const [granularity, setGranularity] = useState<ReportingGranularity>('day');
   const [ownMetric, setOwnMetric] = useState<OwnMetric>('orderedAmount');
   const [marketView, setMarketView] = useState<MarketView>('index');
+  const [cabinetFilter, setCabinetFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [showHelp, setShowHelp] = useState(false);
   const productMap = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
+  const categories = useMemo(() => [...new Set(products
+    .filter(product => !cabinetFilter || product.cabinet_id === cabinetFilter)
+    .map(product => product.category || 'Без категории'))]
+    .sort((left, right) => left.localeCompare(right, 'ru')), [products, cabinetFilter]);
+  const filteredProducts = useMemo(() => products.filter(product =>
+    (!cabinetFilter || product.cabinet_id === cabinetFilter)
+    && (!categoryFilter || (product.category || 'Без категории') === categoryFilter),
+  ), [products, cabinetFilter, categoryFilter]);
+  const filteredProductIds = useMemo(() => new Set(filteredProducts.map(product => product.id)), [filteredProducts]);
+  const activeProductIds = cabinetFilter || categoryFilter ? filteredProductIds : undefined;
   const dates = useMemo(() => [...new Set([...metrics.map(row => row.date), ...marketRows.map(row => row.date), ...profitability.flatMap(row => [row.period_start, row.period_end])])].sort(), [metrics, marketRows, profitability]);
   const maxDate = dates.at(-1) || period.end;
   const comparison = useMemo(() => previousPeriod(period), [period]);
-  const currentOwn = useMemo(() => summarizeOwnMetrics(metrics, period), [metrics, period]);
-  const previousOwn = useMemo(() => summarizeOwnMetrics(metrics, comparison), [metrics, comparison]);
-  const currentFinance = useMemo(() => { void expenseVersion; return summarizeFinance(profitability, productMap, period, getCabinetExtraExpense); }, [profitability, productMap, period, expenseVersion]);
-  const previousFinance = useMemo(() => { void expenseVersion; return summarizeFinance(profitability, productMap, comparison, getCabinetExtraExpense); }, [profitability, productMap, comparison, expenseVersion]);
+  const currentOwn = useMemo(() => summarizeOwnMetrics(metrics, period, activeProductIds), [metrics, period, activeProductIds]);
+  const previousOwn = useMemo(() => summarizeOwnMetrics(metrics, comparison, activeProductIds), [metrics, comparison, activeProductIds]);
+  const currentFinance = useMemo(() => { void expenseVersion; return summarizeFinance(profitability, productMap, period, getCabinetExtraExpense, activeProductIds); }, [profitability, productMap, period, expenseVersion, activeProductIds]);
+  const previousFinance = useMemo(() => { void expenseVersion; return summarizeFinance(profitability, productMap, comparison, getCabinetExtraExpense, activeProductIds); }, [profitability, productMap, comparison, expenseVersion, activeProductIds]);
   const currentMarket = useMemo(() => summarizeMarket(marketRows, period), [marketRows, period]);
   const previousMarket = useMemo(() => summarizeMarket(marketRows, comparison), [marketRows, comparison]);
-  const ownPoints = useMemo(() => aggregateOwnMetrics(metrics, period, granularity), [metrics, period, granularity]);
-  const previousOwnPoints = useMemo(() => aggregateOwnMetrics(metrics, comparison, granularity), [metrics, comparison, granularity]);
+  const ownPoints = useMemo(() => aggregateOwnMetrics(metrics, period, granularity, activeProductIds), [metrics, period, granularity, activeProductIds]);
+  const previousOwnPoints = useMemo(() => aggregateOwnMetrics(metrics, comparison, granularity, activeProductIds), [metrics, comparison, granularity, activeProductIds]);
   const marketPoints = useMemo(() => aggregateMarket(marketRows, period, granularity), [marketRows, period, granularity]);
   const ownChartData = useMemo(() => buildOwnChartData(ownPoints, previousOwnPoints, ownMetric), [ownPoints, previousOwnPoints, ownMetric]);
   const marketChartData = useMemo(() => buildMarketChartData(marketPoints, marketView), [marketPoints, marketView]);
-  const cabinetRows = useMemo(() => { void expenseVersion; return buildCabinetRows(cabinets, products, metrics, profitability, period, comparison, getCabinetExtraExpense); }, [cabinets, products, metrics, profitability, period, comparison, expenseVersion]);
-  const ownDataAvailable = metrics.some(row => row.date >= period.start && row.date <= period.end);
-  const financeDataAvailable = profitability.some(row => row.period_end >= period.start && row.period_start <= period.end);
-  const previousOwnDataAvailable = metrics.some(row => row.date >= comparison.start && row.date <= comparison.end);
-  const previousFinanceDataAvailable = profitability.some(row => row.period_end >= comparison.start && row.period_start <= comparison.end);
+  const cabinetRows = useMemo(() => { void expenseVersion; return buildCabinetRows(cabinets, filteredProducts, metrics, profitability, period, comparison, getCabinetExtraExpense); }, [cabinets, filteredProducts, metrics, profitability, period, comparison, expenseVersion]);
+  const ownDataAvailable = metrics.some(row => row.date >= period.start && row.date <= period.end && (!activeProductIds || activeProductIds.has(row.product_id)));
+  const financeDataAvailable = profitability.some(row => row.period_end >= period.start && row.period_start <= period.end && (!activeProductIds || activeProductIds.has(row.product_id)));
+  const previousOwnDataAvailable = metrics.some(row => row.date >= comparison.start && row.date <= comparison.end && (!activeProductIds || activeProductIds.has(row.product_id)));
+  const previousFinanceDataAvailable = profitability.some(row => row.period_end >= comparison.start && row.period_start <= comparison.end && (!activeProductIds || activeProductIds.has(row.product_id)));
   const marketDataAvailable = marketRows.some(row => row.date >= period.start && row.date <= period.end);
   const previousMarketDataAvailable = marketRows.some(row => row.date >= comparison.start && row.date <= comparison.end);
   const ownDelta = getPercentDelta(currentOwn.orderedAmount, previousOwn.orderedAmount);
@@ -240,8 +252,22 @@ export default function ReportingPage() {
   return <div className="reporting-page overview-design-page analytics-page-shell ds-page">
     <AnalyticsPageHeader eyebrow="Аналитика › Управленческая сводка" title="Отчётность" description="Собственные результаты, положение на рынке и изменения за сопоставимые периоды." actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
 
-    <AnalyticsToolbar className="reporting-toolbar" trailing={<><SegmentedControl value={granularity} label="Гранулярность отчётности" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button reporting-reset" onClick={() => setPeriod(getInitialPeriod(dates))}>Сбросить</button></>}>
+    <AnalyticsToolbar className="reporting-toolbar" trailing={<><SegmentedControl value={granularity} label="Гранулярность отчётности" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button reporting-reset" onClick={() => { setPeriod(getInitialPeriod(dates)); setCabinetFilter(''); setCategoryFilter(''); }}>Сбросить</button></>}>
       <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} />
+      <label className="reporting-entity-filter">
+        <span>Кабинет</span>
+        <select value={cabinetFilter} onChange={event => { setCabinetFilter(event.target.value); setCategoryFilter(''); }}>
+          <option value="">Все кабинеты</option>
+          {cabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}
+        </select>
+      </label>
+      <label className="reporting-entity-filter">
+        <span>Категория</span>
+        <select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+          <option value="">Все категории</option>
+          {categories.map(category => <option key={category} value={category}>{category}</option>)}
+        </select>
+      </label>
       <span className="reporting-comparison">Сравнение: <strong>{formatPeriod(comparison)}</strong></span>
     </AnalyticsToolbar>
 
@@ -257,7 +283,7 @@ export default function ReportingPage() {
         <KpiTile label="Средний чек рынка" value={marketDataAvailable ? formatCheck(currentMarket.marketCheck) : '—'} delta={marketDataAvailable ? marketCheckDelta : null} color="#64748B" />
       </section>
 
-      <section className="reporting-status page-card"><span className="reporting-status-icon">i</span><span>Период {formatPeriod(period)} сравнивается с равным предыдущим периодом. Данные рынка остаются агрегированными и не фильтруются по кабинетам или категориям.</span></section>
+      <section className="reporting-status page-card"><span className="reporting-status-icon">i</span><span>Период {formatPeriod(period)} сравнивается с равным предыдущим периодом. Кабинет и категория фильтруют собственные KPI, график и таблицу; данные рынка остаются агрегированными.</span></section>
 
       <section className="reporting-main-grid">
         <article className="reporting-card reporting-own-card">
