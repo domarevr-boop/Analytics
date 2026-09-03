@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { PageName } from './types';
+import './styles/design-system.css';
 import type { DatePeriod } from './data/mock';
 import { getDefaultPeriods } from './data/mock';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
