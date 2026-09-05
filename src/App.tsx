@@ -12,6 +12,7 @@ import FilterBar from './components/FilterBar';
 import AnalyticsTable, { TABLE_METRIC_GROUPS, type TableMetricKey } from './components/AnalyticsTable';
 import MetricColumnPicker from './components/MetricColumnPicker';
 import DateRangeFilter from './components/DateRangeFilter';
+import { AnalyticsPageHeader, PanelHeader } from './components/AnalyticsPrimitives';
 import PlanningPage from './components/PlanningPage';
 import ImportPage from './components/ImportPage';
 import DictionaryPage from './components/DictionaryPage';
@@ -122,7 +123,12 @@ function DashboardContent(props: DashboardContentProps) {
     URL.revokeObjectURL(url);
   };
 
-  return <div className="page-content">
+  return <div className="dashboard-design-page analytics-page-shell ds-page">
+    <AnalyticsPageHeader
+      eyebrow="Главная"
+      title="Обзор бизнеса"
+      description="План, факт и прогноз по ключевым показателям с детализацией до кабинета, категории, склейки и товара."
+    />
     <section className="dashboard-overview">
       <DashboardBlock
         selectedCategory={props.categoryFilter}
@@ -135,7 +141,10 @@ function DashboardContent(props: DashboardContentProps) {
         onExport={exportDashboardData}
       />
     </section>
-    <div className="page-card table-card">
+    <div className="page-card table-card dashboard-table-card">
+      <div className="dashboard-table-heading">
+        <PanelHeader eyebrow="Детализация" title="Результаты по структуре бизнеса" description="Период, сравнение и товарные фильтры применяются к таблице и графикам ниже." />
+      </div>
       <div className="table-toolbar">
         <div className="date-filters">
           <DateRangeFilter label="Период" value={props.periodA} onChange={props.onPeriodAChange} maxDate={props.maxDate} />

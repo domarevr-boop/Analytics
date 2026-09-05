@@ -66,7 +66,7 @@ description: Audit, design, and improve dense Analytics MVP dashboards, filters,
 
 - Overview: KPI → category navigation → toolbar → hierarchy table → linked charts.
 - Product detail: identity + period → comparative KPI → trend + funnel → traffic → geography.
-- Analytical matrix: эталон страницы «Динамика ниши» — sticky entity/metric → sparkline → delta → shared fixed date axis → average → absolute period change; grouped entity rows, row-local heatmap, no date stretching.
+- Analytical matrix: эталон расширенного блока страницы «Рынок» — sticky entity/metric → sparkline → delta → shared fixed date axis → average → absolute period change; grouped entity rows, row-local heatmap, no date stretching.
 - CX topics: composite indexes → drivers → symmetric topic map → topic table → selected-topic detail.
 - Standard topic map: `Нишевые / Мейнстрим × Позитивные / Негативные`; X share, Y tonality, size mentions, color group, outline selection.
 
