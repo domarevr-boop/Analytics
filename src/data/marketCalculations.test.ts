@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getComparableChange, getMarketAverageCheck } from './marketCalculations.ts';
+import { decomposeAmountShare, getComparableChange, getMarketAverageCheck } from './marketCalculations.ts';
 import type { MarketDynamicsRecord } from '../types/index.ts';
 
 const base: MarketDynamicsRecord = {
@@ -21,4 +21,11 @@ test('recomputes the market check only from the same market report', () => {
 test('does not invent a comparison without a previous base', () => {
   assert.equal(getComparableChange(100, 0), null);
   assert.equal(getComparableChange(110, 100), 10);
+});
+
+test('decomposes the amount-share change into market and own-order effects', () => {
+  const result = decomposeAmountShare(1200, 144, 1000, 100);
+  assert.equal(result.previousShare, 10);
+  assert.equal(result.currentShare, 12);
+  assert.ok(Math.abs(result.marketEffect + result.ownEffect - 2) < 1e-10);
 });

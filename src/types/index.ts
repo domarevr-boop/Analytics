@@ -121,7 +121,7 @@ export interface TableRow {
 export type EntityType = 'cabinet' | 'group' | 'product';
 
 export type PageName = 'dashboard' | 'import' | 'dictionary' | 'planning' | 'profitability' | 'admin' | 'dev'
-  | 'funnel' | 'entry-points' | 'search-phrases' | 'niche' | 'market' | 'geography' | 'client-experience' | 'competitors' | 'reporting' | 'product';
+  | 'funnel' | 'entry-points' | 'search-phrases' | 'market' | 'geography' | 'client-experience' | 'competitors' | 'reporting' | 'product';
 
 export interface PlanRecord {
   entityId: string;

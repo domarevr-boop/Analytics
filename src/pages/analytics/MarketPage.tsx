@@ -14,6 +14,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import { getMarketDynamics, getVersion, subscribe } from '../../data/store';
 import type { MarketDynamicsRecord } from '../../types';
 import { marketHelp } from './analyticsHelpContent';
+import MarketDeepDive from './MarketDeepDive';
 import './MarketPage.css';
 
 type Granularity = 'day' | 'week' | 'month';
@@ -120,6 +121,12 @@ export default function MarketPage() {
         <ResponsiveContainer width="100%" height={245}><LineChart data={points} margin={{ top: 10, right: 14, left: 6, bottom: 2 }}><CartesianGrid stroke="var(--ds-color-border-soft)" strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 9 }} /><YAxis tick={{ fontSize: 9 }} tickFormatter={value => chart.metrics.some(metric => metricMeta[metric].percent) ? `${fmt(Number(value), 1)}%` : fmt(Number(value))} /><Tooltip labelFormatter={label => shortDate(String(label ?? ''))} formatter={(value, name) => { const meta = metricMeta[name as MetricKey]; return [meta.percent ? `${fmt(Number(value), 2)}%` : meta.money ? `${fmt(Number(value))} ₽` : fmt(Number(value)), meta.title]; }} />{chart.metrics.map(metric => <Line key={metric} type="monotone" dataKey={metric} stroke={metricMeta[metric].color} strokeWidth={2} dot={false} />)}</LineChart></ResponsiveContainer>
         <div className="market-pilot-legend">{chart.metrics.map(metric => <span key={metric}><i style={{ background: metricMeta[metric].color }} />{metricMeta[metric].title}</span>)}</div>
       </AnalyticsPanel>)}</section>
+      <MarketDeepDive
+        points={points}
+        currentTotals={totals}
+        previousTotals={previousTotals}
+        comparisonLabel={`${shortDate(comparison.start)} — ${shortDate(comparison.end)}`}
+      />
       <AnalyticsPanel className="market-pilot-insights" density="data">
         <div className="market-pilot-table-heading"><PanelHeader title="Ключевые выводы" description={`Сравнение с предыдущим равным периодом: ${shortDate(comparison.start)} — ${shortDate(comparison.end)}`} /></div>
         <div className="market-pilot-insight-table"><div className="head"><span>Показатель</span><span>Текущее значение</span><span>Изменение</span><span>Тренд</span><span>Комментарий</span></div>{insights.map((item, index) => <div key={item.label}><strong>{item.label}</strong><span>{item.format}</span><b className={item.change > 0 ? 'positive' : item.change < 0 ? 'negative' : ''}>{item.change > 0 ? '+' : ''}{fmt(item.change, item.points ? 2 : 1)}{item.points ? ' п.п.' : '%'}</b><Sparkline values={index === 0 ? points.map(point => point.marketAmount) : index === 1 ? points.map(point => point.ownAmount) : index === 2 ? points.map(point => point.amountShare) : points.map(point => point.ownCheck)} color={index === 0 ? 'var(--ds-series-market)' : 'var(--ds-series-own)'} /><span>{index === 0 ? 'Показывает изменение общего спроса.' : index === 1 ? item.change >= 0 ? 'Наши продажи растут.' : 'Наши продажи снижаются.' : index === 2 ? item.change >= 0 ? 'Доля рынка укрепилась.' : 'Доля рынка снизилась.' : ownCheck >= marketCheck ? 'Наш средний чек выше рыночного.' : 'Наш средний чек ниже рыночного.'}</span></div>)}</div>

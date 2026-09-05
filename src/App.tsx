@@ -22,7 +22,6 @@ import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
-import NicheDynamicsPage from './pages/analytics/NicheDynamicsPage';
 import MarketPage from './pages/analytics/MarketPage';
 import GeographyPage from './pages/analytics/GeographyPage';
 import ClientExperiencePage from './pages/analytics/ClientExperiencePage';
@@ -38,7 +37,7 @@ import './styles/overview-pages.css';
 const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
 const LAST_PAGE_KEY = 'analytics_last_page_v1';
 const ALL_TABLE_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
-const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'niche', 'market', 'geography', 'client-experience', 'competitors', 'reporting', 'product'];
+const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'market', 'geography', 'client-experience', 'competitors', 'reporting', 'product'];
 
 function getInitialPage(): PageName {
   if (typeof localStorage === 'undefined') return 'dashboard';
@@ -383,8 +382,6 @@ function App() {
         <div className="page-content"><EntryPointsPage /></div>
       ) : page === 'search-phrases' ? (
         <div className="page-content"><SearchPhrasesPage /></div>
-      ) : page === 'niche' ? (
-        <div className="page-content"><NicheDynamicsPage /></div>
       ) : page === 'market' ? (
         <div className="page-content"><MarketPage /></div>
       ) : page === 'geography' ? (
