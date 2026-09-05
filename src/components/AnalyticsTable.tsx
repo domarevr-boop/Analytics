@@ -9,6 +9,7 @@ import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { getEffectivePlanMetrics } from '../data/planningStore';
+import { sortDashboardSiblingsByOrders } from '../data/dashboardTableCalculations';
 
 const emptyMetrics = (): MetricValues => ({ impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, avg_price: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, plan_orders_qty: 0, plan_sum: 0, plan_price: 0, plan_net_profit: 0, plan_profitability: 0, plan_revenue: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 });
 const addTo = (a: MetricValues, b: MetricValues) => {
@@ -356,7 +357,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
         const isIncluded = !hasProductFilter || includedIds.has(row.id);
         if (isIncluded) {
           result.push(row);
-          const children = allRows.filter(r => r.parent === row.id);
+          const children = sortDashboardSiblingsByOrders(allRows.filter(r => r.parent === row.id));
           const shouldExpand = expanded.has(row.id) || (hasProductFilter && children.some(child => includedIds.has(child.id)));
           if (shouldExpand && children.length) {
             walk(children);

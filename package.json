@@ -12,6 +12,7 @@
     "test:cx": "node --test src/features/clientExperience/cxCalculations.test.ts",
     "test:groups": "node --test src/data/groupMembershipHistory.test.ts",
     "test:planning": "node --test src/data/planningCalculations.test.ts src/data/planningSelectors.test.ts src/data/planningPlanActions.test.ts",
+    "test:dashboard": "node --test src/data/dashboardTableCalculations.test.ts",
     "test:profitability": "node --test src/data/profitabilityTableCalculations.test.ts",
     "test:reporting": "node --test src/data/reportingCalculations.test.ts",
     "preview": "vite preview",

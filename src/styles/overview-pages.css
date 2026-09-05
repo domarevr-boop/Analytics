@@ -45,8 +45,7 @@
 .dashboard-design-page .dashboard-insights-grid > .page-card,
 .dashboard-design-page .dashboard-insights-grid .mini-chart { border-color: var(--ds-color-border); border-radius: var(--ds-radius-panel); background: var(--ds-color-surface); box-shadow: var(--ds-shadow-panel); }
 .dashboard-design-page .dashboard-overview { margin: 0; }
-.dashboard-design-page .db-overview-toolbar { margin: 0 0 var(--ds-space-3); padding: 0; border: 0; background: transparent; box-shadow: none; }
-.dashboard-design-page .db-heading strong { color: var(--ds-color-ink); font-size: 14px; }
+.dashboard-design-page .db-overview-toolbar { min-height: 34px; margin: 0 0 var(--ds-space-2); padding: 0; border: 0; background: transparent; box-shadow: none; }
 .dashboard-design-page .db-month-selector { margin-left: auto; }
 .dashboard-design-page .db-primary-cards { gap: var(--ds-space-2); }
 .dashboard-design-page .db-primary-cards .db-card { border-color: var(--ds-color-border); border-radius: var(--ds-radius-panel); box-shadow: var(--ds-shadow-panel); }

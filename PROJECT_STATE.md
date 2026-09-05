@@ -73,4 +73,5 @@
 - `npm run test:cx`
 - `npm run test:reporting`
 - `npm run test:planning`
+- `npm run test:dashboard`
 - Публикация: `npm run deploy`
