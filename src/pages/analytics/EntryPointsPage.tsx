@@ -14,6 +14,7 @@ import {
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
+import { AnalyticsPageHeader, AnalyticsToolbar, EmptyState, KpiTile } from '../../components/AnalyticsPrimitives';
 import { getEntryPoints, getMemberships, getGroupMembershipHistory, getProducts, getVersion, subscribe } from '../../data/store';
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
 import { entryPointsHelp } from './analyticsHelpContent';
@@ -86,10 +87,14 @@ function percentDelta(current: number, previous: number): number | null {
   return (current - previous) / Math.abs(previous) * 100;
 }
 
-function KpiDelta({ current, previous, neutral = false }: { current: number; previous: number; neutral?: boolean }) {
+function getKpiDelta(current: number, previous: number, neutral = false) {
   const delta = percentDelta(current, previous);
   const tone = delta === null || neutral ? 'neutral' : delta >= 0 ? 'positive' : 'negative';
-  return <small className={`entry-kpi-delta ${tone}`}>{delta === null ? '— нет базы' : `${delta > 0 ? '+' : ''}${fmt(delta)}%`} к прошлому периоду</small>;
+  return {
+    value: delta === null ? '—' : `${delta > 0 ? '+' : ''}${fmt(delta)}%`,
+    comparison: delta === null ? 'нет базы сравнения' : 'к прошлому периоду',
+    tone,
+  } as const;
 }
 
 function median(values: number[]): number {
@@ -432,31 +437,35 @@ export default function EntryPointsPage() {
   const previousActivePointCount = useMemo(() => new Set(previousFiltered
     .filter(row => row.impressions > 0)
     .map(row => pointName(row))).size, [previousFiltered]);
+  const impressionsDelta = getKpiDelta(totals.impressions, previousTotals.impressions);
+  const clicksDelta = getKpiDelta(totals.clicks, previousTotals.clicks);
+  const ordersDelta = getKpiDelta(totals.orders, previousTotals.orders);
+  const pointsDelta = getKpiDelta(matrixRows.length, previousActivePointCount, true);
 
   const structureDataKey = structureMetric;
   const structureMetricLabel = structureMetric === 'orders' ? 'Заказы' : structureMetric === 'clicks' ? 'Переходы' : 'Чистая прибыль';
 
   if (showHelp) return <section className="entry-page"><AnalyticsHelp data={entryPointsHelp} onClose={() => setShowHelp(false)} /></section>;
 
-  if (!rows.length) return <section className="entry-page analytics-empty-page">
-    <header className="entry-header analytics-page-heading-with-action"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
-    <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>Точки входа пока недоступны</h2><p>Импортируйте отчёт «Точки входа», чтобы собрать структуру трафика и финансовую аналитику каналов.</p></article>
+  if (!rows.length) return <section className="entry-page analytical-design-page analytics-page-shell ds-page">
+    <AnalyticsPageHeader eyebrow="Аналитика › Трафик" title="Структура трафика" description="Точки входа, динамика и товарные лидеры в едином фильтрованном контексте." actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
+    <EmptyState title="Точки входа пока недоступны" description="Импортируйте отчёт «Точки входа», чтобы собрать структуру трафика и финансовую аналитику каналов." />
   </section>;
 
   return (
-    <section className="entry-page entry-page-v2">
-      <header className="entry-header analytics-page-heading-with-action"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Структура трафика</h1><p>Точки входа, динамика и товарные лидеры в едином фильтрованном контексте.</p></div><button type="button" className="analytics-help-toggle" onClick={() => setShowHelp(true)}>Справка</button></header>
+    <section className="entry-page entry-page-v2 analytical-design-page analytics-page-shell ds-page">
+      <AnalyticsPageHeader eyebrow="Аналитика › Трафик" title="Структура трафика" description="Точки входа, динамика и товарные лидеры в едином фильтрованном контексте." actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
 
-      <article className="entry-card entry-filter-card table-toolbar entry-analytics-toolbar">
+      <AnalyticsToolbar className="entry-filter-card entry-analytics-toolbar">
         <div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={availableDates.at(-1) || end} /></div>
         <FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={groupId} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroupId} onSkuChange={setQuery} period={{ start, end }} variant="dashboard" afterControls={<><select className="entry-context-select" aria-label="Раздел" value={section} onChange={event => { setSection(event.target.value); setEntryPoint(''); }}><option value="">Все разделы</option>{sections.map(item => <option key={item}>{item}</option>)}</select><select className="entry-context-select" aria-label="Точка входа" value={entryPoint} onChange={event => setEntryPoint(event.target.value)}><option value="">Все точки входа</option>{points.map(item => <option key={item}>{item}</option>)}</select></>} />
-      </article>
+      </AnalyticsToolbar>
 
-      <div className="entry-kpis">
-        <article><div><span>Показы</span><strong>{fmt(totals.impressions)}</strong><small>CTR {fmt(totals.ctr)}%</small><KpiDelta current={totals.impressions} previous={previousTotals.impressions} /></div><Sparkline values={kpiSparklines.impressions} color="#10A778" /></article>
-        <article><div><span>Переходы</span><strong>{fmt(totals.clicks)}</strong><small>В корзину {fmt(totals.cartCr)}%</small><KpiDelta current={totals.clicks} previous={previousTotals.clicks} /></div><Sparkline values={kpiSparklines.clicks} color="#2563EB" /></article>
-        <article><div><span>Заказы</span><strong>{fmt(totals.orders)}</strong><small>CR показ → заказ {fmt(totals.impressionOrderCr)}%</small><KpiDelta current={totals.orders} previous={previousTotals.orders} /></div><Sparkline values={kpiSparklines.orders} color="#10A778" /></article>
-        <article><div><span>Точки входа</span><strong>{matrixRows.length}</strong><small>Активных в выбранном срезе</small><KpiDelta current={matrixRows.length} previous={previousActivePointCount} neutral /></div><Sparkline values={kpiSparklines.points} color="#F59E0B" /></article>
+      <div className="entry-kpis ds-kpi-grid">
+        <KpiTile className="entry-kpi" label="Показы" value={fmt(totals.impressions)} delta={impressionsDelta.value} deltaSuffix="" comparison={impressionsDelta.comparison} tone={impressionsDelta.tone} visual={<Sparkline values={kpiSparklines.impressions} color="#10A778" />} details={`CTR ${fmt(totals.ctr)}%`} />
+        <KpiTile className="entry-kpi" label="Переходы" value={fmt(totals.clicks)} delta={clicksDelta.value} deltaSuffix="" comparison={clicksDelta.comparison} tone={clicksDelta.tone} visual={<Sparkline values={kpiSparklines.clicks} color="#2563EB" />} details={`В корзину ${fmt(totals.cartCr)}%`} />
+        <KpiTile className="entry-kpi" label="Заказы" value={fmt(totals.orders)} delta={ordersDelta.value} deltaSuffix="" comparison={ordersDelta.comparison} tone={ordersDelta.tone} visual={<Sparkline values={kpiSparklines.orders} color="#10A778" />} details={`CR показ → заказ ${fmt(totals.impressionOrderCr)}%`} />
+        <KpiTile className="entry-kpi" label="Точки входа" value={matrixRows.length} delta={pointsDelta.value} deltaSuffix="" comparison={pointsDelta.comparison} tone={pointsDelta.tone} visual={<Sparkline values={kpiSparklines.points} color="#F59E0B" />} details="Активных в выбранном срезе" />
       </div>
 
       <article className="entry-card entry-top-card">
