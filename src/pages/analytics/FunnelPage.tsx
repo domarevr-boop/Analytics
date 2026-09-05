@@ -1,5 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts';
+import { AnalyticsPageHeader, AnalyticsToolbar, EmptyState } from '../../components/AnalyticsPrimitives';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
 import { appendToMap } from '../../data/collectionUtils';
@@ -173,14 +174,17 @@ export default function FunnelPage() {
 
   const toggleRow = (id: string) => setExpanded(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
-  if (!metrics.length) return <section className="funnel-page analytics-empty-page">
-    <header className="entry-header"><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Воронка продаж</h1><p>Диагностика эффективности ассортимента по локальным данным воронки.</p></header>
-    <article className="analytics-empty-card"><span>ДАННЫЕ НЕ ЗАГРУЖЕНЫ</span><h2>Воронка пока недоступна</h2><p>Загрузите отчёт «Воронка WB», чтобы увидеть этапы, конверсии и сравнение SKU.</p></article>
+  if (!metrics.length) return <section className="funnel-page analytical-design-page analytics-page-shell ds-page">
+    <AnalyticsPageHeader eyebrow="Аналитика › Трафик" title="Воронка продаж" description="Диагностика эффективности ассортимента по локальным данным воронки." />
+    <EmptyState title="Воронка пока недоступна" description="Загрузите отчёт «Воронка WB», чтобы увидеть этапы, конверсии и сравнение SKU." />
   </section>;
 
-  return <section className="funnel-page funnel-page-v2">
-    <header className="entry-header"><div><span className="geo-eyebrow">АНАЛИТИКА</span><h1>Воронка продаж</h1><p>Диагностика эффективности ассортимента, SKU и ценовых сегментов по всей воронке.</p></div></header>
-    <div className="entry-toolbar table-toolbar entry-analytics-toolbar page-card funnel-toolbar"><div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || end} /></div><FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={group} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroup} onSkuChange={setQuery} period={{ start, end }} variant="dashboard" /></div>
+  return <section className="funnel-page funnel-page-v2 analytical-design-page analytics-page-shell ds-page">
+    <AnalyticsPageHeader eyebrow="Аналитика › Трафик" title="Воронка продаж" description="Диагностика эффективности ассортимента, SKU и ценовых сегментов по всей воронке." />
+    <AnalyticsToolbar className="funnel-toolbar">
+      <div className="date-filters"><DateRangeFilter label="Период" value={{ start, end }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || end} /></div>
+      <FilterBar cabinetFilter={cabinet} categoryFilter={category} brandFilter={brand} groupFilter={group} skuFilter={query} onCabinetChange={setCabinet} onCategoryChange={setCategory} onBrandChange={setBrand} onGroupChange={setGroup} onSkuChange={setQuery} period={{ start, end }} variant="dashboard" />
+    </AnalyticsToolbar>
 
     <article className="entry-card funnel-overview">
       <div className="funnel-section-head"><div><h2>Воронка продаж</h2><p>{fmt(productRows.length)} SKU в выбранном срезе</p></div><span>Локальные данные</span></div>
