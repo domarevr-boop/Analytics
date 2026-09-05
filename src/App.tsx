@@ -12,7 +12,7 @@ import FilterBar from './components/FilterBar';
 import AnalyticsTable, { TABLE_METRIC_GROUPS, type TableMetricKey } from './components/AnalyticsTable';
 import MetricColumnPicker from './components/MetricColumnPicker';
 import DateRangeFilter from './components/DateRangeFilter';
-import { AnalyticsPageHeader, PanelHeader } from './components/AnalyticsPrimitives';
+import { PanelHeader } from './components/AnalyticsPrimitives';
 import PlanningPage from './components/PlanningPage';
 import ImportPage from './components/ImportPage';
 import DictionaryPage from './components/DictionaryPage';
@@ -124,11 +124,6 @@ function DashboardContent(props: DashboardContentProps) {
   };
 
   return <div className="dashboard-design-page analytics-page-shell ds-page">
-    <AnalyticsPageHeader
-      eyebrow="Главная"
-      title="Обзор бизнеса"
-      description="План, факт и прогноз по ключевым показателям с детализацией до кабинета, категории, склейки и товара."
-    />
     <section className="dashboard-overview">
       <DashboardBlock
         selectedCategory={props.categoryFilter}
