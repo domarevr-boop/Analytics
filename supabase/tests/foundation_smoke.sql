@@ -22,5 +22,12 @@ select jsonb_build_object(
     where n.nspname in ('app', 'core', 'ingest', 'analytics')
       and c.relkind = 'r'
       and c.relrowsecurity
+  ),
+  'private_bootstrap_exposed_count', (
+    select count(*)
+    from information_schema.routine_privileges rp
+    where rp.routine_schema = 'app'
+      and rp.routine_name = 'bootstrap_first_admin'
+      and rp.grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')
   )
 ) as foundation_smoke;

@@ -9,9 +9,39 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
   const active = readdirSync(activeDirectory).filter(name => name.endsWith('.sql'));
   const legacy = readdirSync(legacyDirectory).filter(name => name.endsWith('.sql'));
 
-  assert.deepEqual(active, ['20260906000000_v5_foundation.sql']);
+  assert.deepEqual(active, [
+    '20260906000000_v5_foundation.sql',
+    '20260906001000_v5_access_management.sql',
+  ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
+});
+
+test('access management requires an existing administrator and keeps bootstrap private', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260906001000_v5_access_management.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'create table app.access_audit',
+    'app.bootstrap_first_admin',
+    'public.v5_admin_set_user_access',
+    'public.v5_admin_set_cabinet_access',
+    'if not app.is_admin()',
+    'cannot demote or disable their own account',
+    "'schema_version', '20260906001000'",
+  ]) {
+    assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing access contract: ${fragment}`);
+  }
+  assert.match(
+    sql,
+    /revoke all on function app\.bootstrap_first_admin\(uuid\) from public, anon, authenticated, service_role/iu,
+  );
+  assert.doesNotMatch(sql, /insert\s+into\s+auth\.users/iu);
+});
+
+test('first-admin command refuses ambiguous Auth state', () => {
+  const sql = readFileSync(new URL('../supabase/scripts/bootstrap_only_auth_user.sql', import.meta.url), 'utf8');
+  assert.match(sql, /v_user_count\s*<>\s*1/iu);
+  assert.match(sql, /app\.bootstrap_first_admin\(v_user_id\)/iu);
+  assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
 test('foundation migration contains the required isolation and ingestion contracts', () => {
