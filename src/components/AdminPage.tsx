@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { adminBootstrap, adminMe, createUser, deleteUser, listSessionLogs, listUsers, updateUser, type AdminSessionLogRow, type AdminUserRow } from '../admin/adminApi';
 import { getAdminEmail, getCurrentUserEmail, isConfiguredAdminEmail } from '../auth/auth';
+import { AnalyticsPageHeader, AnalyticsPanel, EmptyState, PanelHeader } from './AnalyticsPrimitives';
 
 export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => void }) {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
@@ -32,7 +33,10 @@ export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => v
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   const refresh = async () => {
     await load();
@@ -110,51 +114,53 @@ export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => v
   const currentAdminEmail = getAdminEmail() || 'не задан';
 
   return (
-    <div className="admin-page analytics-page-shell">
-      <header className="analytics-page-header">
-        <div><span>УПРАВЛЕНИЕ</span><h1>Админ-панель</h1><p>Аккаунты, роли и журнал пользовательских сессий.</p></div>
-      </header>
-      <h2>Админ-панель</h2>
+    <div className="admin-page analytics-page-shell ds-page admin-design-page">
+      <AnalyticsPageHeader eyebrow="Управление" title="Админ-панель" description="Аккаунты, права доступа и журнал пользовательских сессий." />
       <div className="admin-meta">
-        <div>Админ email: {currentAdminEmail}</div>
-        <div>Текущий пользователь: {getCurrentUserEmail() || '—'}</div>
+        <div><span>Администратор</span><strong>{currentAdminEmail}</strong></div>
+        <div><span>Текущий пользователь</span><strong>{getCurrentUserEmail() || '—'}</strong></div>
       </div>
 
-      {message && <div className="admin-message">{message}</div>}
-      {error && <div className="admin-error">{error}</div>}
+      {message && <div className="admin-message" role="status">{message}</div>}
+      {error && <div className="admin-error" role="alert">{error}</div>}
 
-      {loading ? <div>Загрузка...</div> : null}
+      {loading ? <div className="admin-loading" role="status">Загрузка административных данных…</div> : null}
 
       {adminInfo && !adminInfo.isAdmin && canBootstrap && (
-        <section className="admin-block">
-          <h3>Первичная активация</h3>
+        <AnalyticsPanel className="admin-block admin-bootstrap">
+          <PanelHeader eyebrow="Доступ" title="Первичная активация" />
           <p>Пока админов нет. Можно назначить текущий аккаунт админом.</p>
           <button onClick={onBootstrap} disabled={busy}>Сделать себя админом</button>
-        </section>
+        </AnalyticsPanel>
       )}
 
-      <section className="admin-block">
-        <h3>Создать аккаунт</h3>
-        <input placeholder="email" value={createEmail} onChange={e => setCreateEmail(e.target.value)} />
-        <input placeholder="password" type="password" value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
-        <button onClick={onCreate} disabled={busy}>Создать</button>
-      </section>
+      <div className="admin-actions-grid">
+        <AnalyticsPanel className="admin-block">
+          <PanelHeader eyebrow="Аккаунты" title="Создать аккаунт" description="Добавьте пользователя с email и временным паролем." />
+          <div className="admin-form">
+            <label><span>Email</span><input placeholder="name@example.com" type="email" autoComplete="off" value={createEmail} onChange={e => setCreateEmail(e.target.value)} /></label>
+            <label><span>Пароль</span><input placeholder="Временный пароль" type="password" autoComplete="new-password" value={createPassword} onChange={e => setCreatePassword(e.target.value)} /></label>
+            <div className="admin-form-actions"><button onClick={onCreate} disabled={busy}>Создать</button></div>
+          </div>
+        </AnalyticsPanel>
 
-      <section className="admin-block">
-        <h3>Редактировать аккаунт</h3>
-        <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
-          <option value="">Выберите пользователя</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.email || u.id}</option>)}
-        </select>
-        <input placeholder="new email" value={updateEmail} onChange={e => setUpdateEmail(e.target.value)} />
-        <input placeholder="new password" type="password" value={updatePassword} onChange={e => setUpdatePassword(e.target.value)} />
-        <button onClick={onUpdate} disabled={busy || !selectedUserId}>Сохранить</button>
-        <button onClick={onDelete} disabled={busy || !selectedUserId}>Удалить</button>
-      </section>
+        <AnalyticsPanel className="admin-block">
+          <PanelHeader eyebrow="Аккаунты" title="Редактировать аккаунт" description="Измените реквизиты или удалите выбранного пользователя." />
+          <div className="admin-form">
+            <label><span>Пользователь</span><select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
+              <option value="">Выберите пользователя</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.email || u.id}</option>)}
+            </select></label>
+            <label><span>Новый email</span><input placeholder="Оставьте пустым без изменения" type="email" autoComplete="off" value={updateEmail} onChange={e => setUpdateEmail(e.target.value)} /></label>
+            <label><span>Новый пароль</span><input placeholder="Оставьте пустым без изменения" type="password" autoComplete="new-password" value={updatePassword} onChange={e => setUpdatePassword(e.target.value)} /></label>
+            <div className="admin-form-actions"><button onClick={onUpdate} disabled={busy || !selectedUserId}>Сохранить</button><button className="admin-delete-action" onClick={onDelete} disabled={busy || !selectedUserId}>Удалить</button></div>
+          </div>
+        </AnalyticsPanel>
+      </div>
 
-      <section className="admin-block">
-        <h3>Пользователи</h3>
-        <table>
+      <AnalyticsPanel className="admin-block admin-table-panel" density="data">
+        <div className="admin-panel-heading"><PanelHeader eyebrow="Доступ" title="Пользователи" description={`${users.length} аккаунтов`} /></div>
+        <div className="admin-table-wrap"><table>
           <thead>
             <tr>
               <th>Email</th><th>Создан</th><th>Последний вход</th><th>Подтверждён</th>
@@ -170,12 +176,13 @@ export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => v
               </tr>
             ))}
           </tbody>
-        </table>
-      </section>
+        </table></div>
+        {!loading && users.length === 0 && <EmptyState title="Пользователей нет" description="Создайте первый аккаунт с помощью формы выше." />}
+      </AnalyticsPanel>
 
-      <section className="admin-block">
-        <h3>Сессии</h3>
-        <table>
+      <AnalyticsPanel className="admin-block admin-table-panel" density="data">
+        <div className="admin-panel-heading"><PanelHeader eyebrow="Аудит" title="Сессии" description="Последние события входа пользователей" /></div>
+        <div className="admin-table-wrap"><table>
           <thead>
             <tr>
               <th>Email</th><th>Событие</th><th>Время</th>
@@ -190,8 +197,9 @@ export default function AdminPage({ onAdminChanged }: { onAdminChanged?: () => v
               </tr>
             ))}
           </tbody>
-        </table>
-      </section>
+        </table></div>
+        {!loading && logs.length === 0 && <EmptyState title="Событий пока нет" description="Журнал заполнится после пользовательских входов и выходов." />}
+      </AnalyticsPanel>
     </div>
   );
 }
