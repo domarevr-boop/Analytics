@@ -3,6 +3,9 @@ import {
   Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from 'recharts';
+import {
+  AnalyticsPageHeader, AnalyticsPanel, AnalyticsToolbar, EmptyState, KpiTile, PanelHeader,
+} from '../../components/AnalyticsPrimitives';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import type { DatePeriod } from '../../data/mock';
 import {
@@ -164,24 +167,24 @@ export default function ClientExperiencePage() {
     setPage(0);
   };
 
-  return (
-    <div className="cx-page">
-      <header className="analytics-page-title cx-header">
-        <div>
-          <span>КЛИЕНТСКИЙ ОПЫТ</span>
-          <h1>Отзывы покупателей</h1>
-          <p>Оценки, динамика негатива и товары, которым требуется внимание.</p>
-        </div>
-        <div className="cx-tabs" role="tablist">
-          <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Обзор</button>
-          <button className={tab === 'topics' ? 'active' : ''} onClick={() => setTab('topics')}>Темы</button>
-          <button className={tab === 'reviews' ? 'active' : ''} onClick={() => setTab('reviews')}>Отзывы</button>
-          <button className={tab === 'methodology' ? 'active' : ''} onClick={() => setTab('methodology')}>Методология</button>
-          <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Настройки анализа</button>
-        </div>
-      </header>
+  const scopeNote = tab === 'methodology'
+    ? 'Описание использует текущую опубликованную версию словаря и не зависит от фильтров аналитического среза.'
+    : tab === 'topics'
+    ? 'Дашборд использует последнюю опубликованную и полностью рассчитанную версию словаря.'
+    : 'Оценочный обзор и исходные отзывы. Тематическая аналитика доступна на вкладке «Темы» после публикации словаря.';
 
-      {tab !== 'methodology' && <section className="page-card cx-toolbar">
+  return (
+    <div className="analytics-page-shell ds-page cx-page cx-design-page">
+      <AnalyticsPageHeader eyebrow="Аналитика › Клиентский опыт" title="Отзывы покупателей" description="Оценки, динамика негатива и товары, которым требуется внимание." />
+      <div className="cx-tabs" role="tablist" aria-label="Разделы клиентского опыта">
+        <button type="button" role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Обзор</button>
+        <button type="button" role="tab" aria-selected={tab === 'topics'} className={tab === 'topics' ? 'active' : ''} onClick={() => setTab('topics')}>Темы</button>
+        <button type="button" role="tab" aria-selected={tab === 'reviews'} className={tab === 'reviews' ? 'active' : ''} onClick={() => setTab('reviews')}>Отзывы</button>
+        <button type="button" role="tab" aria-selected={tab === 'methodology'} className={tab === 'methodology' ? 'active' : ''} onClick={() => setTab('methodology')}>Методология</button>
+        <button type="button" role="tab" aria-selected={tab === 'settings'} className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Настройки анализа</button>
+      </div>
+
+      {tab !== 'methodology' && <AnalyticsToolbar className="cx-toolbar" status={<span>{scopeNote}</span>} trailing={<button type="button" className="ds-button cx-reset" onClick={resetFilters}>Сбросить</button>}>
         {bounds.end && <DateRangeFilter label="Период" value={period} onChange={value => { setPeriod(value); setPage(0); }} maxDate={bounds.end} />}
         <select value={cabinet} onChange={event => { setCabinet(event.target.value); setPage(0); }}>
           <option value="">Все кабинеты</option>
@@ -204,33 +207,26 @@ export default function ClientExperiencePage() {
           <option value="">Все оценки</option>
           {[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} звёзд</option>)}
         </select>
-        <button type="button" className="cx-reset" onClick={resetFilters}>Сбросить</button>
-      </section>}
+      </AnalyticsToolbar>}
 
       {error && <div className="cx-error">{error}</div>}
-      <div className="cx-scope-note">
-        {tab === 'methodology'
-          ? 'Описание использует текущую опубликованную версию словаря и не зависит от фильтров аналитического среза.'
-          : tab === 'topics'
-          ? 'Дашборд использует последнюю опубликованную и полностью рассчитанную версию словаря.'
-          : 'Оценочный обзор и исходные отзывы. Тематическая аналитика доступна на вкладке «Темы» после публикации словаря.'}
-      </div>
+      {tab === 'methodology' && <div className="cx-scope-note">{scopeNote}</div>}
 
       {tab === 'settings' ? <ClientExperienceSettings /> : tab === 'methodology' ? <ClientExperienceMethodology /> : tab === 'topics' ? <ClientExperienceTopics filters={filters} /> : tab === 'overview' ? (
         <>
           <section className={`cx-kpis${dashboardLoading ? ' loading' : ''}`}>
-            <Kpi title="Всего отзывов" value={numberFormatter.format(summary.totalReviews)} note={`${numberFormatter.format(summary.textReviews)} с текстом`} tone="blue" />
-            <Kpi title="Средняя оценка" value={`${decimalFormatter.format(summary.averageRating)} ★`} note="С учётом пустых отзывов" tone="yellow" />
-            <Kpi title="Негатив 1–3★" value={`${decimalFormatter.format(negativeShare)}%`} note={`${numberFormatter.format(summary.negativeReviews)} отзывов`} tone="red" />
-            <Kpi title="Покрытие текстом" value={`${decimalFormatter.format(textCoverage)}%`} note={`${numberFormatter.format(summary.emptyReviews)} без текста`} tone="green" />
-            <Kpi title="Ответы продавца" value={`${decimalFormatter.format(answeredShare)}%`} note="От отзывов с текстом" tone="violet" />
-            <Kpi title="Связано с товаром" value={`${decimalFormatter.format(matchedShare)}%`} note="Готово для аналитики товара" tone="blue" />
+            <Kpi title="Всего отзывов" value={numberFormatter.format(summary.totalReviews)} note={`${numberFormatter.format(summary.textReviews)} с текстом`} />
+            <Kpi title="Средняя оценка" value={`${decimalFormatter.format(summary.averageRating)} ★`} note="С учётом пустых отзывов" />
+            <Kpi title="Негатив 1–3★" value={`${decimalFormatter.format(negativeShare)}%`} note={`${numberFormatter.format(summary.negativeReviews)} отзывов`} />
+            <Kpi title="Покрытие текстом" value={`${decimalFormatter.format(textCoverage)}%`} note={`${numberFormatter.format(summary.emptyReviews)} без текста`} />
+            <Kpi title="Ответы продавца" value={`${decimalFormatter.format(answeredShare)}%`} note="От отзывов с текстом" />
+            <Kpi title="Связано с товаром" value={`${decimalFormatter.format(matchedShare)}%`} note="Готово для аналитики товара" />
           </section>
 
           <section className="cx-main-grid">
-            <article className="page-card cx-section">
-              <div className="cx-section-head"><div><span>ДИНАМИКА</span><h2>Отзывы и качество по дням</h2></div></div>
-              <div className="cx-chart cx-trend-chart">
+            <AnalyticsPanel className="cx-section" density="analytics">
+              <PanelHeader eyebrow="Динамика" title="Отзывы и качество по дням" description="Количество отзывов и средняя оценка в выбранном периоде." />
+              {dashboard.trend.length || dashboardLoading ? <div className="cx-chart cx-trend-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dashboard.trend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                     <CartesianGrid stroke="#E7EDF4" strokeDasharray="3 3" vertical={false} />
@@ -242,11 +238,11 @@ export default function ClientExperiencePage() {
                     <Line yAxisId="rating" dataKey="averageRating" name="Средняя оценка" stroke="#0DA878" strokeWidth={2.2} dot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
-              </div>
-            </article>
+              </div> : <EmptyState title="Нет данных по дням" description="Измените период или фильтры, чтобы увидеть динамику отзывов." />}
+            </AnalyticsPanel>
 
-            <article className="page-card cx-section">
-              <div className="cx-section-head"><div><span>СТРУКТУРА</span><h2>Распределение оценок</h2></div></div>
+            <AnalyticsPanel className="cx-section" density="analytics">
+              <PanelHeader eyebrow="Структура" title="Распределение оценок" description="Количество отзывов по значениям рейтинга." />
               <div className="cx-chart cx-rating-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={ratingData} layout="vertical" margin={{ top: 4, right: 24, bottom: 0, left: 8 }}>
@@ -260,14 +256,11 @@ export default function ClientExperiencePage() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </article>
+            </AnalyticsPanel>
           </section>
 
-          <section className="page-card cx-section cx-problems">
-            <div className="cx-section-head">
-              <div><span>ЗОНА ВНИМАНИЯ</span><h2>Товары с высокой долей негативных отзывов</h2></div>
-              <small>Показываются товары минимум с 3 отзывами</small>
-            </div>
+          <AnalyticsPanel className="cx-section cx-problems" density="data">
+            <div className="cx-panel-heading"><PanelHeader eyebrow="Зона внимания" title="Товары с высокой долей негативных отзывов" description="Показываются товары минимум с 3 отзывами." /></div>
             <div className="cx-table-wrap">
               <table>
                 <thead><tr><th>Товар</th><th>Кабинет</th><th>Отзывы</th><th>Средняя оценка</th><th>Негатив</th><th>Доля негатива</th></tr></thead>
@@ -286,7 +279,7 @@ export default function ClientExperiencePage() {
                 </tbody>
               </table>
             </div>
-          </section>
+          </AnalyticsPanel>
         </>
       ) : (
         <section className="page-card cx-section cx-reviews-section">
@@ -321,8 +314,8 @@ export default function ClientExperiencePage() {
   );
 }
 
-function Kpi({ title, value, note, tone }: { title: string; value: string; note: string; tone: string }) {
-  return <article className={`page-card cx-kpi cx-tone-${tone}`}><span>{title}</span><strong>{value}</strong><small>{note}</small><i /></article>;
+function Kpi({ title, value, note }: { title: string; value: string; note: string }) {
+  return <KpiTile className="cx-kpi" label={title} value={value} details={note} />;
 }
 
 function ReviewTableRows({ item, expanded, onToggle }: { item: CxReviewRow; expanded: boolean; onToggle: () => void }) {
