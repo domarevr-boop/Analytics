@@ -8,6 +8,7 @@ import type { ColumnMapping } from '../data/columnMapping';
 import type { ImportSource, ImportFileLog } from '../types';
 import ImportColumnMapper from './ImportColumnMapper';
 import DataCoverage from './DataCoverage';
+import { AnalyticsPageHeader, AnalyticsPanel, PanelHeader } from './AnalyticsPrimitives';
 import { getLatestReviewImport, importReviewsToSupabase } from '../features/clientExperience/reviewImport';
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
 
@@ -241,10 +242,8 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="import-page analytics-page-shell">
-      <header className="analytics-page-header">
-        <div><span>ДАННЫЕ</span><h1>Импорт отчётов</h1><p>Единая точка загрузки, проверки покрытия и обновления аналитических источников.</p></div>
-      </header>
+    <div className="import-page analytics-page-shell ds-page import-design-page">
+      <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description="Единая точка загрузки, проверки покрытия и обновления аналитических источников." />
       {parsed && (
         <div className="import-mapper-wrapper">
           {loading && (
@@ -283,14 +282,20 @@ export default function ImportPage() {
           </div>
         </div>
       )}
-
-      <h2 className="import-title">Импорт данных</h2>
-
       <div
         className={`import-dropzone ${loading ? 'loading' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-disabled={loading}
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => document.getElementById('file-input')?.click()}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            document.getElementById('file-input')?.click();
+          }
+        }}
       >
         <input
           id="file-input"
@@ -310,15 +315,9 @@ export default function ImportPage() {
       </div>
 
       {latestReviewImport && (
-        <div className="import-log import-review-latest">
-          <div className="import-section-head">
-            <div>
-              <h3 className="log-title">Последний импорт отзывов WB</h3>
-              <p>{latestReviewImport.fileName}</p>
-            </div>
-            <span>{latestReviewImport.status === 'completed' ? 'Проверен' : latestReviewImport.status}</span>
-          </div>
-          <table className="import-table">
+        <AnalyticsPanel className="import-log import-review-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур" title="Последний импорт отзывов WB" description={latestReviewImport.fileName} controls={<span>{latestReviewImport.status === 'completed' ? 'Проверен' : latestReviewImport.status}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
             <thead><tr><th>Дата</th><th>Всего строк</th><th>С текстом</th><th>Без текста</th><th>Дубликаты</th><th>Отклонено</th><th>Исходный файл</th></tr></thead>
             <tbody><tr>
               <td>{formatDate(latestReviewImport.importedAt)}</td>
@@ -329,15 +328,15 @@ export default function ImportPage() {
               <td>{latestReviewImport.rejectedRows}</td>
               <td>{latestReviewImport.fileDeletedAt ? 'Удалён после сверки' : 'Сохранён для диагностики'}</td>
             </tr></tbody>
-          </table>
+          </table></div>
           {latestReviewImport.errorMessage && <p className="import-mapper-error">{latestReviewImport.errorMessage}</p>}
-        </div>
+        </AnalyticsPanel>
       )}
 
       {latestLogs.length > 0 && (
-        <div className="import-log import-latest-files">
-          <div className="import-section-head"><div><h3 className="log-title">Последние файлы</h3><p>По одному последнему импорту для каждого типа отчёта</p></div><span>{latestLogs.length} источников</span></div>
-          <table className="import-table">
+        <AnalyticsPanel className="import-log import-latest-files" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Локальные данные" title="Последние файлы" description="По одному последнему импорту для каждого типа отчёта" controls={<span>{latestLogs.length} источников</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
             <thead>
               <tr>
                 <th>Отчёт</th>
@@ -391,8 +390,8 @@ export default function ImportPage() {
                 );
               })}
             </tbody>
-          </table>
-        </div>
+          </table></div>
+        </AnalyticsPanel>
       )}
 
       <DataCoverage />
