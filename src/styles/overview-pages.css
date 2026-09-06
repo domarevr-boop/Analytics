@@ -615,7 +615,7 @@
 .cx-design-page .cx-topic-group button.active { background: var(--ds-color-brand-soft); color: var(--ds-color-ink); }
 .cx-design-page :where(.cx-topic-form, .cx-rule-form) { border-color: var(--ds-color-border); background: #f8fafc; }
 .cx-design-page :where(.cx-topic-form, .cx-rule-form, .cx-rule-test) :where(input, select, textarea):focus-visible {
-  border-color: var(--ds-color-blue);
+  border-color: var(--ds-color-primary);
   outline: none;
   box-shadow: var(--ds-focus-ring);
 }
@@ -662,14 +662,14 @@
   background: linear-gradient(180deg, var(--ds-color-surface), #fafcfe);
   box-shadow: var(--ds-shadow-panel);
 }
-.import-design-page .import-dropzone:hover { border-color: var(--ds-color-blue); background: #f7faff; }
+.import-design-page .import-dropzone:hover { border-color: var(--ds-color-primary); background: #f7faff; }
 .import-design-page .import-dropzone:focus-visible {
-  border-color: var(--ds-color-blue);
+  border-color: var(--ds-color-primary);
   outline: none;
   box-shadow: var(--ds-focus-ring);
 }
 .import-design-page .import-dropzone[aria-disabled='true'] { cursor: progress; }
-.import-design-page .dropzone-icon { color: var(--ds-color-blue); }
+.import-design-page .dropzone-icon { color: var(--ds-color-primary); }
 .import-design-page .dropzone-text { color: var(--ds-color-ink); }
 .import-design-page .dropzone-hint { color: var(--ds-color-muted); }
 
@@ -715,4 +715,111 @@
   .import-design-page .import-dropzone { min-height: 132px; padding: 28px 18px; }
   .import-design-page .import-section-head > .ds-panel-header { align-items: flex-start; flex-direction: column; }
   .import-design-page .import-section-head .ds-panel-controls { width: 100%; }
+}
+
+/* Product registry: quality overview, one filter bar and a dense master table. */
+.registry-design-page {
+  display: grid;
+  align-content: start;
+  gap: var(--ds-space-3);
+}
+
+.registry-design-page .registry-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+  box-shadow: var(--ds-shadow-panel);
+}
+.registry-design-page .registry-stats button {
+  min-width: 0;
+  min-height: 82px;
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--ds-color-border-soft);
+  border-radius: 0;
+  background: var(--ds-color-surface);
+  color: var(--ds-color-muted);
+  padding: 13px 15px;
+  text-align: left;
+}
+.registry-design-page .registry-stats button:last-child { border-right: 0; }
+.registry-design-page .registry-stats button:hover { background: #f8fafc; }
+.registry-design-page .registry-stats button:focus-visible { position: relative; outline: none; box-shadow: inset var(--ds-focus-ring); }
+.registry-design-page .registry-stats button.active { background: var(--ds-color-brand-soft); color: var(--ds-color-ink); }
+.registry-design-page .registry-stats button span {
+  display: block;
+  color: inherit;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.registry-design-page .registry-stats button strong { display: block; margin-top: 8px; color: var(--ds-color-ink); font-size: 22px; }
+
+.registry-design-page .registry-surface.ds-panel {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border-color: var(--ds-color-border);
+  box-shadow: var(--ds-shadow-panel);
+}
+.registry-design-page .registry-panel-heading { padding: 14px 15px 7px; }
+.registry-design-page .registry-panel-heading > .ds-panel-header { margin: 0; }
+.registry-design-page .registry-toolbar.ds-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 50px;
+  align-items: center;
+  margin: 0;
+  padding: 7px 10px;
+  border-width: 1px 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.registry-design-page .registry-toolbar .ds-toolbar-main {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(150px, .35fr) minmax(150px, .35fr);
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+.registry-design-page .registry-toolbar .ds-toolbar-main > input { width: 100%; min-width: 0; }
+.registry-design-page .registry-date-filter { display: grid; grid-template-columns: auto auto; align-items: center; gap: 7px; color: var(--ds-color-muted); font-size: 9px; white-space: nowrap; }
+.registry-design-page .registry-date-filter input { width: 130px; }
+.registry-design-page .registry-toolbar .ds-toolbar-trailing { color: var(--ds-color-muted); font-size: 10px; white-space: nowrap; }
+.registry-design-page .registry-table-wrap { max-height: calc(100vh - 320px); overflow: auto; }
+.registry-design-page .registry-table { color: var(--ds-color-text); font-variant-numeric: tabular-nums; }
+.registry-design-page .registry-table th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: var(--ds-color-muted); }
+.registry-design-page .registry-table tbody tr:hover td { background: #f8fafd; }
+.registry-design-page .registry-table td:last-child { text-align: center; }
+.registry-design-page .registry-table-wrap > .ds-empty { min-height: 220px; border: 0; border-radius: 0; box-shadow: none; }
+
+.registry-design-page .registry-editor {
+  border-left-color: var(--ds-color-border);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-floating);
+}
+.registry-design-page .registry-form-grid :where(input, select, textarea):focus-visible {
+  border-color: var(--ds-color-primary);
+  outline: none;
+  box-shadow: var(--ds-focus-ring);
+}
+.registry-design-page .registry-icon-btn:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+
+@media (max-width: 1050px) {
+  .registry-design-page .registry-toolbar.ds-toolbar { grid-template-columns: 1fr; }
+  .registry-design-page .registry-toolbar .ds-toolbar-main { grid-template-columns: minmax(220px, 1fr) auto minmax(150px, .5fr); }
+  .registry-design-page .registry-toolbar .ds-toolbar-main > :last-child { grid-column: 1 / -1; }
+  .registry-design-page .registry-toolbar .ds-toolbar-trailing { justify-content: flex-start; }
+}
+
+@media (max-width: 700px) {
+  .registry-design-page .registry-stats { grid-template-columns: 1fr 1fr; }
+  .registry-design-page .registry-stats button:nth-child(2) { border-right: 0; }
+  .registry-design-page .registry-stats button:nth-child(-n + 2) { border-bottom: 1px solid var(--ds-color-border-soft); }
+  .registry-design-page .registry-toolbar .ds-toolbar-main { grid-template-columns: 1fr; }
+  .registry-design-page .registry-toolbar .ds-toolbar-main > :last-child { grid-column: auto; }
+  .registry-design-page .registry-date-filter { justify-content: space-between; }
+  .registry-design-page .registry-editor { width: 100%; }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { Product } from '../types';
 import {
   subscribe, getVersion, getCabinets, getBrands, getGroups, getMemberships,
@@ -6,6 +6,7 @@ import {
 } from '../data/store';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
+import { AnalyticsPageHeader, AnalyticsPanel, AnalyticsToolbar, EmptyState, PanelHeader } from './AnalyticsPrimitives';
 
 type QualityFilter = 'all' | 'complete' | 'missing_wb' | 'unassigned' | 'archived';
 
@@ -57,21 +58,6 @@ function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClo
     aliases: (product.aliases || []).join(', '),
     status: product.status || 'active',
   });
-
-  useEffect(() => {
-    setForm({
-      sku: product.sku,
-      wb_sku: product.wb_sku || '',
-      name: product.name || '',
-      category: product.category || '',
-      brand_id: product.brand_id || '',
-      cabinet_id: product.cabinet_id || '',
-      group_id: resolvedGroup.known ? resolvedGroup.groupId || '' : '',
-      effectiveDate: asOfDate,
-      aliases: (product.aliases || []).join(', '),
-      status: product.status || 'active',
-    });
-  }, [product.id, asOfDate]);
 
   const setField = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
   const save = () => {
@@ -129,12 +115,12 @@ function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClo
 
 export default function DictionaryPage() {
   const version = useSyncExternalStore(subscribe, getVersion);
-  const products = useMemo(() => getProducts(), [version]);
-  const brands = useMemo(() => getBrands(), [version]);
-  const cabinets = useMemo(() => getCabinets(), [version]);
-  const groups = useMemo(() => getGroups(), [version]);
-  const memberships = useMemo(() => getMemberships(), [version]);
-  const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
+  const products = useMemo(() => { void version; return getProducts(); }, [version]);
+  const brands = useMemo(() => { void version; return getBrands(); }, [version]);
+  const cabinets = useMemo(() => { void version; return getCabinets(); }, [version]);
+  const groups = useMemo(() => { void version; return getGroups(); }, [version]);
+  const memberships = useMemo(() => { void version; return getMemberships(); }, [version]);
+  const groupHistory = useMemo(() => { void version; return getGroupMembershipHistory(); }, [version]);
   const [query, setQuery] = useState('');
   const [quality, setQuality] = useState<QualityFilter>('all');
   const [cabinetId, setCabinetId] = useState('');
@@ -179,25 +165,22 @@ export default function DictionaryPage() {
   };
 
   return (
-    <div className="registry-page analytics-page-shell">
-      <header className="registry-header analytics-page-header">
-        <div><span className="registry-eyebrow">Единый товарный реестр</span><h1>Справочник товаров</h1><p>Постоянная карточка для всех исторических и будущих импортов.</p></div>
-        <button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>
-      </header>
-      <section className="registry-stats">
-        <button onClick={() => setQuality('all')} className={quality === 'all' ? 'active' : ''}><span>Всего</span><strong>{stats.all}</strong></button>
-        <button onClick={() => setQuality('complete')} className={quality === 'complete' ? 'active' : ''}><span>Полные карточки</span><strong>{stats.complete}</strong></button>
-        <button onClick={() => setQuality('missing_wb')} className={quality === 'missing_wb' ? 'active' : ''}><span>Нет WB ID</span><strong>{stats.missingWb}</strong></button>
-        <button onClick={() => setQuality('unassigned')} className={quality === 'unassigned' ? 'active' : ''}><span>Не распределены</span><strong>{stats.unassigned}</strong></button>
+    <div className="registry-page analytics-page-shell ds-page registry-design-page">
+      <AnalyticsPageHeader eyebrow="Справочник" title="Справочник товаров" description="Постоянная карточка товара и фактический состав склеек на выбранную дату." actions={<button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>} />
+      <section className="registry-stats" aria-label="Фильтр по качеству карточек">
+        <button type="button" aria-pressed={quality === 'all'} onClick={() => setQuality('all')} className={quality === 'all' ? 'active' : ''}><span>Всего</span><strong>{stats.all}</strong></button>
+        <button type="button" aria-pressed={quality === 'complete'} onClick={() => setQuality('complete')} className={quality === 'complete' ? 'active' : ''}><span>Полные карточки</span><strong>{stats.complete}</strong></button>
+        <button type="button" aria-pressed={quality === 'missing_wb'} onClick={() => setQuality('missing_wb')} className={quality === 'missing_wb' ? 'active' : ''}><span>Нет WB ID</span><strong>{stats.missingWb}</strong></button>
+        <button type="button" aria-pressed={quality === 'unassigned'} onClick={() => setQuality('unassigned')} className={quality === 'unassigned' ? 'active' : ''}><span>Не распределены</span><strong>{stats.unassigned}</strong></button>
       </section>
-      <section className="registry-surface">
-        <div className="registry-toolbar">
+      <AnalyticsPanel className="registry-surface" density="data">
+        <div className="registry-panel-heading"><PanelHeader eyebrow="Товарные карточки" title="Реестр" description="Поиск, контроль заполнения и состав склеек на дату" /></div>
+        <AnalyticsToolbar className="registry-toolbar" trailing={<span>Найдено: <strong>{visibleProducts.length}</strong></span>}>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по SKU, WB ID, названию или алиасу" />
           <label className="registry-date-filter"><span>Состав на дату</span><input type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} /></label>
           <select value={cabinetId} onChange={e => setCabinetId(e.target.value)}><option value="">Все кабинеты</option>{cabinets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
           <select value={quality} onChange={e => setQuality(e.target.value as QualityFilter)}><option value="all">Все активные</option><option value="complete">Полные карточки</option><option value="missing_wb">Без WB ID</option><option value="unassigned">Не распределены</option><option value="archived">Архив</option></select>
-          <span>Найдено: <strong>{visibleProducts.length}</strong></span>
-        </div>
+        </AnalyticsToolbar>
         <div className="registry-table-wrap">
           <table className="registry-table">
             <thead><tr><th>Товар</th><th>Артикул продавца</th><th>WB ID</th><th>Категория</th><th>Бренд</th><th>Кабинет</th><th>Склейка</th><th>Качество</th></tr></thead>
@@ -219,10 +202,10 @@ export default function DictionaryPage() {
               })}
             </tbody>
           </table>
-          {!visibleProducts.length && <div className="registry-empty">Товары по выбранным условиям не найдены.</div>}
+          {!visibleProducts.length && <EmptyState title="Товары не найдены" description="Измените поиск, кабинет, дату состава или фильтр качества карточек." />}
         </div>
-      </section>
-      {selectedProduct && <ProductEditor product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
+      </AnalyticsPanel>
+      {selectedProduct && <ProductEditor key={`${selectedProduct.id}:${asOfDate}`} product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }
