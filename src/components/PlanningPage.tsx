@@ -7,6 +7,7 @@ import { makeAggregatePlanId, patchAggregatePlanField, type AggregatePlanMetrics
 import { selectAggregatePlanMetrics } from '../data/planningSelectors';
 import { buildBackupRecords, buildPromotedFixedRecords, buildRestoredFixedRecords, removeBackupForYear } from '../data/planningPlanActions';
 import type { AggregateMonthlyPlanRecord, AggregatePlanKind, Cabinet } from '../types';
+import { AnalyticsPageHeader, KpiTile, PanelHeader } from './AnalyticsPrimitives';
 
 type MetricKey = keyof Pick<AggregatePlanMetrics, 'ordersSum' | 'ordersQty' | 'avgCheck' | 'buyoutRate' | 'buyoutAmount' | 'payoutRate' | 'payoutAmount' | 'profitability' | 'netProfit' | 'ordersPerDay' | 'netProfitPerDay' | 'daysInMonth'>;
 type ColumnKey = 'ordersSum' | 'ordersQty' | 'avgCheck' | 'buyoutRate' | 'buyoutAmount' | 'payoutRate' | 'payoutAmount' | 'profitability' | 'netProfit';
@@ -202,27 +203,21 @@ export default function PlanningPage() {
   const total = periodMetrics(months.map(month => getMetrics('fixed', '', null, month)));
   const common = { cabinets, categoriesByCabinet, months, columns, expanded, collapsedCabinets, onToggle: toggleExpanded, onToggleCabinet: toggleCabinet, getMetrics, getRecord, onSave: save };
 
-  return <div className="planning-page analytics-page-shell aggregate-plan-page planning-mock-page">
-    <header className="analytics-page-header aggregate-plan-header">
-      <div><span>БИЗНЕС-МЕТРИКИ</span><h1>Планирование</h1><p>Совокупный план по кабинетам и категориям. Редактируйте базовые параметры — расчёты обновятся автоматически.</p></div>
-      <div className="aggregate-plan-controls">
+  return <div className="ds-page planning-page aggregate-plan-page planning-mock-page">
+    <AnalyticsPageHeader eyebrow="Бизнес-метрики" title="Планирование" description="Совокупный план по кабинетам и категориям. Редактируйте базовые параметры — расчёты обновятся автоматически." actions={<div className="aggregate-plan-controls">
         <label>Год<input type="number" value={year} min="2020" max="2100" onChange={event => setYear(Number(event.target.value) || year)} /></label>
         <label className="aggregate-plan-priority"><input type="checkbox" checked={preferAggregate} onChange={event => setPreferAggregatePlan(event.target.checked)} /><span><strong>Совокупный план — источник истины</strong><small>Действует для всех месяцев и главной страницы.</small></span></label>
-      </div>
-    </header>
+      </div>} />
 
-    <div className="aggregate-plan-kpis planning-kpis">
+    <div className="ds-kpi-grid aggregate-plan-kpis planning-kpis">
       <Summary label="Сумма заказов (всего)" value={formatValue(total.ordersSum, 'money')} /><Summary label="Чистая прибыль (всего)" value={formatValue(total.netProfit, 'money')} /><Summary label="К перечислению (всего)" value={formatValue(total.payoutAmount, 'money')} /><Summary label="Рентабельность (ср. взвеш.)" value={formatValue(total.profitability, 'percent')} />
     </div>
 
-    <div className="compact-plan-toolbar planning-table-toolbar">
-      <div><h2>Совокупный план ВБ</h2><span>{year === currentDate.year && !showPast ? `Оставшийся период ${year}` : `Полный год ${year}`}</span></div>
-      <div className="planning-toolbar-actions">
+    <PanelHeader title="Совокупный план ВБ" description={year === currentDate.year && !showPast ? `Оставшийся период ${year}` : `Полный год ${year}`} controls={<div className="planning-toolbar-actions">
         {year === currentDate.year && <button type="button" onClick={() => setShowPast(value => !value)}>{showPast ? 'Скрыть прошедшие месяцы' : 'Показать прошедшие месяцы'}</button>}
         <details className="planning-column-settings planning-category-settings"><summary>Категории: {visibleCategoryCount}/{allCategoryNames.length}</summary><div><button type="button" onClick={showAllCategories} disabled={visibleCategoryCount === allCategoryNames.length}>Показать все</button>{allCategoryNames.map(name => <label key={name}><input type="checkbox" checked={!hiddenCategories.has(name)} onChange={() => toggleCategory(name)} />{name}</label>)}</div></details>
         <details className="planning-column-settings"><summary>Настройки столбцов</summary><div>{COLUMNS.filter(column => !column.required).map(column => <label key={column.key}><input type="checkbox" checked={visibleColumnKeys.has(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}</div></details>
-      </div>
-    </div>
+      </div>} />
 
     <FixedPlanSection {...common} />
     <ScenarioSection {...common} actions={<><button type="button" onClick={() => void copyFixedToScenario()}>Скопировать из плана</button><button type="button" className="secondary" onClick={() => void resetScenario()}>Сбросить сценарий</button>{hasBackup && <button type="button" className="secondary" onClick={() => void undoApply()}>Отменить применение</button>}<button type="button" className="apply" disabled={!scenarioYearRecords.length} onClick={() => void applyScenario()}>Применить сценарий</button></>} />
@@ -231,7 +226,7 @@ export default function PlanningPage() {
   </div>;
 }
 
-function Summary({ label, value }: { label: string; value: string }) { return <div className="aggregate-plan-kpi"><span>{label}</span><strong>{value}</strong><small>за видимый период</small></div>; }
+function Summary({ label, value }: { label: string; value: string }) { return <KpiTile className="aggregate-plan-kpi" label={label} value={value} details="За видимый период" />; }
 
 interface CommonTableProps {
   cabinets: Cabinet[]; categoriesByCabinet: Map<string, CategoryEntity[]>; months: string[]; columns: ColumnDefinition[]; expanded: Set<string>; collapsedCabinets: Set<string>;
@@ -246,7 +241,7 @@ function FixedPlanSection(props: CommonTableProps) {
   return <section className="aggregate-plan-section analytics-sheet planning-main-section"><CabinetList kind="fixed" mode="fixed" {...props} /></section>;
 }
 function ScenarioSection({ actions, ...props }: CommonTableProps & { actions: ReactNode }) {
-  return <section className="aggregate-plan-section analytics-sheet planning-scenario-section"><div className="aggregate-plan-section-head"><div><h2>Сценарная модель <small>Черновик</small></h2><p>Изменяйте драйверы по месяцам и сравнивайте результат с утверждённым планом.</p></div><div className="aggregate-plan-actions">{actions}</div></div><CabinetList kind="scenario" mode="scenario" {...props} /></section>;
+  return <section className="aggregate-plan-section analytics-sheet planning-scenario-section"><PanelHeader title="Сценарная модель" eyebrow="Черновик" description="Изменяйте драйверы по месяцам и сравнивайте результат с утверждённым планом." controls={<div className="aggregate-plan-actions">{actions}</div>} /><CabinetList kind="scenario" mode="scenario" {...props} /></section>;
 }
 
 function CabinetList({ kind, mode, cabinets, categoriesByCabinet, ...props }: CommonTableProps & { kind: AggregatePlanKind; mode: 'fixed' | 'scenario' }) {

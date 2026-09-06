@@ -7792,3 +7792,74 @@ thead .at-metric:last-child {
 @media (max-width: 520px) {
   .profit-page-v2 .profit-kpis { grid-template-columns: 1fr; }
 }
+
+/* Planning: shared shell with a specialized dense annual matrix. */
+.planning-mock-page {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: visible;
+  padding: 18px 24px 32px;
+  background: var(--ds-color-canvas);
+}
+.planning-mock-page .ds-page-header { margin: 0; }
+.planning-mock-page .aggregate-plan-controls { align-items: center; }
+.planning-mock-page .planning-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.planning-mock-page .planning-kpis .aggregate-plan-kpi {
+  min-height: 100px;
+  padding: 14px 15px;
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+  box-shadow: var(--ds-shadow-panel);
+}
+.planning-mock-page .planning-kpis .ds-kpi-label { font-size: 9px; }
+.planning-mock-page .planning-kpis .ds-kpi-value-row { margin: 10px 0 4px; }
+.planning-mock-page .planning-kpis .ds-kpi-value-row strong { margin: 0; font-size: 21px; }
+.planning-mock-page .planning-kpis .ds-kpi-details { margin-top: 8px; color: var(--ds-color-muted); font-size: 9px; }
+.planning-mock-page > .ds-panel-header { align-items: center; min-height: 38px; margin: 2px 0 -2px; }
+.planning-mock-page .planning-toolbar-actions {
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.planning-mock-page .planning-toolbar-actions > button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-control);
+  background: #fff;
+  color: var(--ds-color-text);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.planning-mock-page .planning-toolbar-actions > button:hover { border-color: #cbd5e1; background: #f8fafc; }
+.planning-mock-page .planning-toolbar-actions > button:focus-visible,
+.planning-mock-page .planning-column-settings summary:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+.planning-mock-page .planning-scenario-section {
+  padding: 14px;
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+  box-shadow: var(--ds-shadow-panel);
+}
+.planning-mock-page .planning-scenario-section > .ds-panel-header { align-items: center; margin-bottom: 12px; }
+.planning-mock-page .planning-scenario-section > .ds-panel-header .ds-eyebrow { color: #7c8796; }
+
+@media (max-width: 1100px) {
+  .planning-mock-page .planning-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
+  .planning-mock-page > .ds-panel-header,
+  .planning-mock-page .planning-scenario-section > .ds-panel-header { align-items: flex-start; flex-direction: column; }
+  .planning-mock-page .planning-toolbar-actions { align-items: flex-start; flex-direction: row; justify-content: flex-start; }
+}
+
+@media (max-width: 760px) {
+  .planning-mock-page { padding: 12px; }
+  .planning-mock-page .aggregate-plan-controls { align-items: stretch; width: 100%; flex-direction: column; }
+  .planning-mock-page .aggregate-plan-priority { width: 100%; }
+  .planning-mock-page .aggregate-plan-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  .planning-mock-page .planning-kpis { grid-template-columns: 1fr; }
+}
