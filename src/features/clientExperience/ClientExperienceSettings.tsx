@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import DateRangeFilter from '../../components/DateRangeFilter';
+import { AnalyticsPanel, PanelHeader } from '../../components/AnalyticsPrimitives';
 import type { DatePeriod } from '../../data/mock';
 import {
   createCxDictionaryDraft, deleteCxTopicRule, getCxAnalysisSettings, saveCxTopic, saveCxTopicRule,
@@ -108,14 +109,13 @@ export default function ClientExperienceSettings() {
   return (
     <div className="cx-settings">
       {error && <div className="cx-error">{error}</div>}
-      <section className="page-card cx-settings-version">
-        <div>
-          <span>СЛОВАРЬ</span>
-          <h2>{draft ? `Черновик v${draft.versionNumber}` : `Опубликована v${published?.versionNumber || '—'}`}</h2>
-          <p>{draft ? 'Изменения изолированы и не влияют на рабочие метрики.' : 'Для редактирования создайте новый черновик.'}</p>
-        </div>
-        {!draft && <button disabled={saving} onClick={() => void run(() => createCxDictionaryDraft('Рабочий черновик'))}>Создать черновик</button>}
-        <div className="cx-settings-actions">
+      <AnalyticsPanel className="cx-settings-version">
+        <PanelHeader
+          eyebrow="СЛОВАРЬ"
+          title={draft ? `Черновик v${draft.versionNumber}` : `Опубликована v${published?.versionNumber || '—'}`}
+          description={draft ? 'Изменения изолированы и не влияют на рабочие метрики.' : 'Для редактирования создайте новый черновик.'}
+          controls={<div className="cx-settings-actions">
+          {!draft && <button disabled={saving} onClick={() => void run(() => createCxDictionaryDraft('Рабочий черновик'))}>Создать черновик</button>}
           {(lemmaPending.reviews > 0 || lemmaPending.fragments > 0) && <button disabled={lemmatizing} onClick={() => {
             setLemmatizing(true); setError('');
             void backfillReviewLemmas(progress => setLemmaProgress(progress)).then(() => getLemmaBackfillPending()).then(setLemmaPending)
@@ -133,16 +133,16 @@ export default function ClientExperienceSettings() {
             void run(() => cancelCxAnalysis(activeRun.id));
           }}>Остановить</button>}
           {draft && <span className="cx-draft-badge">Черновик · не опубликован</span>}
-        </div>
-      </section>
+        </div>}
+        />
+      </AnalyticsPanel>
 
-      <section className="page-card cx-range-analysis">
-        <div>
-          <span>ОБНОВЛЕНИЕ ДАННЫХ</span>
-          <h2>Перерасчёт выбранного диапазона</h2>
-          <p>Используйте после импорта новых отзывов. Опубликованный словарь не меняется, остальные даты не пересчитываются.</p>
-        </div>
-        <div className="cx-range-analysis-controls">
+      <AnalyticsPanel className="cx-range-analysis">
+        <PanelHeader
+          eyebrow="ОБНОВЛЕНИЕ ДАННЫХ"
+          title="Перерасчёт выбранного диапазона"
+          description="Используйте после импорта новых отзывов. Опубликованный словарь не меняется, остальные даты не пересчитываются."
+          controls={<div className="cx-range-analysis-controls">
           {dateBounds.end && <DateRangeFilter label="Диапазон" value={rangePeriod} onChange={setRangePeriod} maxDate={dateBounds.end} popupAlignment="end" />}
           <button disabled={!published || publishing || rangeProcessing || lemmatizing || lemmaPending.reviews > 0 || Boolean(fullRun) || !rangePeriod.start || !rangePeriod.end} onClick={() => {
             setRangeProcessing(true); setError('');
@@ -152,12 +152,13 @@ export default function ClientExperienceSettings() {
           }}>{rangeProcessing
             ? `Диапазон ${rangeProgress?.processedReviews || 0} / ${rangeProgress?.totalReviews || rangeRun?.totalReviews || 0}`
             : rangeRun ? `Продолжить диапазон · ${rangeRun.processedReviews}/${rangeRun.totalReviews}` : 'Пересчитать диапазон'}</button>
-        </div>
-      </section>
+        </div>}
+        />
+      </AnalyticsPanel>
 
       <div className="cx-settings-grid">
-        <section className="page-card cx-settings-topics">
-          <div className="cx-section-head"><div><span>ТАКСОНОМИЯ</span><h2>Темы</h2></div><small>{settings.topics.length} тем</small></div>
+        <AnalyticsPanel className="cx-settings-topics" density="data">
+          <PanelHeader eyebrow="ТАКСОНОМИЯ" title="Темы" controls={<small>{settings.topics.length} тем</small>} />
           <div className="cx-topic-list">
             {settings.groups.map(group => (
               <div key={group.id} className="cx-topic-group">
@@ -170,13 +171,15 @@ export default function ClientExperienceSettings() {
               </div>
             ))}
           </div>
-        </section>
+        </AnalyticsPanel>
 
-        <section className="page-card cx-settings-editor">
-          <div className="cx-section-head">
-            <div><span>ТЕМА</span><h2>{selectedTopic?.name || 'Выберите тему'}</h2><p>{selectedTopic?.description || 'Описание пока не задано'}</p></div>
-            {draft && selectedTopic && <button className="cx-secondary-action" onClick={startTopicEdit}>Редактировать</button>}
-          </div>
+        <AnalyticsPanel className="cx-settings-editor" density="data">
+          <PanelHeader
+            eyebrow="ТЕМА"
+            title={selectedTopic?.name || 'Выберите тему'}
+            description={selectedTopic?.description || 'Описание пока не задано'}
+            controls={draft && selectedTopic ? <button className="cx-secondary-action" onClick={startTopicEdit}>Редактировать</button> : undefined}
+          />
 
           {topicName && draft && (
             <form className="cx-topic-form" onSubmit={event => {
@@ -235,12 +238,12 @@ export default function ClientExperienceSettings() {
               <button disabled={saving}>Добавить</button>
             </form>
           )}
-        </section>
+        </AnalyticsPanel>
       </div>
 
       <div className="cx-settings-bottom">
-        <section className="page-card cx-rule-test">
-          <div className="cx-section-head"><div><span>ПРОВЕРКА</span><h2>Тестирование словаря</h2></div></div>
+        <AnalyticsPanel className="cx-rule-test">
+          <PanelHeader eyebrow="ПРОВЕРКА" title="Тестирование словаря" />
           <textarea value={testText} onChange={event => setTestText(event.target.value)} placeholder="Введите пример отзыва…" />
           <button disabled={!testText.trim() || testing} onClick={() => {
             setTesting(true); setError('');
@@ -250,22 +253,22 @@ export default function ClientExperienceSettings() {
             {testResults.map(result => <div key={result.topicId} className={result.excluded ? 'excluded' : ''}><strong>{result.topicName}</strong><span>{result.groupName}</span><small>{result.excluded ? 'Исключено правилом' : <><span className={`cx-sentiment cx-sentiment-${result.sentiment}`}>{sentimentLabel(result.sentiment)}</span>{result.matchedRules.map(rule => rule.pattern).join(', ')}</>}</small></div>)}
             {!testing && testText && testResults.length === 0 && <p>Совпадений нет</p>}
           </div>
-        </section>
+        </AnalyticsPanel>
 
-        <section className="page-card cx-methodology">
-          <div className="cx-section-head"><div><span>МЕТОДОЛОГИЯ</span><h2>Централизованные параметры</h2></div></div>
+        <AnalyticsPanel className="cx-methodology">
+          <PanelHeader eyebrow="МЕТОДОЛОГИЯ" title="Централизованные параметры" />
           <MethodRow label="Минимум упоминаний" value={methodology.minimum_mentions} />
           <MethodRow label="Порог уверенности" value={methodology.minimum_confidence} />
           <MethodRow label="Уверенная выборка" value={methodology.confident_mentions_threshold} />
           <MethodRow label="Высокий риск" value={(methodology.risk_thresholds as Record<string, unknown> | undefined)?.high} />
           <p>Редактирование методологии будет включено вместе с batch-анализатором, чтобы каждое изменение запускало контролируемый перерасчёт.</p>
-        </section>
+        </AnalyticsPanel>
 
-        <section className="page-card cx-version-history">
-          <div className="cx-section-head"><div><span>ИСТОРИЯ</span><h2>Версии словаря</h2></div></div>
+        <AnalyticsPanel className="cx-version-history">
+          <PanelHeader eyebrow="ИСТОРИЯ" title="Версии словаря" />
           {settings.versions.map(version => <div key={version.id}><strong>v{version.versionNumber}</strong><span className={`cx-version-status ${version.status}`}>{version.status}</span><small>{version.description || 'Без описания'}</small></div>)}
           {draft && <p>При публикации новая версия сначала полностью пересчитывается. Рабочий словарь переключается только после сверки всех отзывов.</p>}
-        </section>
+        </AnalyticsPanel>
       </div>
     </div>
   );
