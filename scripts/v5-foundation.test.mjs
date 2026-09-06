@@ -53,6 +53,17 @@ test('admin smoke check is transactional and does not expose identity', () => {
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
+test('viewer and importer smoke checks roll back role, cabinet and batch fixtures', () => {
+  const sql = readFileSync(new URL('../supabase/tests/role_access_smoke.sql', import.meta.url), 'utf8');
+  assert.equal((sql.match(/^begin;/gimu) ?? []).length, 2);
+  assert.equal((sql.match(/^rollback;/gimu) ?? []).length, 2);
+  assert.match(sql, /set access_role = 'viewer'/iu);
+  assert.match(sql, /set access_role = 'importer'/iu);
+  assert.match(sql, /insert into ingest\.import_batches/iu);
+  assert.match(sql, /denied_cabinet_hidden/iu);
+  assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
+});
+
 test('foundation migration contains the required isolation and ingestion contracts', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260906000000_v5_foundation.sql', import.meta.url), 'utf8');
   for (const fragment of [

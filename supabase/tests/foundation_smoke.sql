@@ -29,5 +29,18 @@ select jsonb_build_object(
     where rp.routine_schema = 'app'
       and rp.routine_name = 'bootstrap_first_admin'
       and rp.grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')
+  ),
+  'role_smoke_fixture_count', (
+    (
+      select count(*)
+      from core.cabinets
+      where external_key in ('__v5_rls_test_allowed__', '__v5_rls_test_denied__')
+    )
+    +
+    (
+      select count(*)
+      from ingest.import_batches
+      where idempotency_key in ('__v5_role_smoke__', '__v5_viewer_must_not_import__')
+    )
   )
 ) as foundation_smoke;

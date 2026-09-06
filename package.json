@@ -21,6 +21,7 @@
     "db:v5:push": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db push",
     "db:v5:smoke": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/foundation_smoke.sql",
     "db:v5:smoke-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/admin_access_smoke.sql",
+    "db:v5:smoke-roles": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/role_access_smoke.sql",
     "db:v5:bootstrap-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/scripts/bootstrap_only_auth_user.sql",
     "preview": "vite preview",
     "predeploy": "node scripts/check-production-env.mjs && node scripts/copy-az-dicts.mjs",
