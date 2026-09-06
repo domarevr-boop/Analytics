@@ -44,6 +44,15 @@ test('first-admin command refuses ambiguous Auth state', () => {
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
+test('admin smoke check is transactional and does not expose identity', () => {
+  const sql = readFileSync(new URL('../supabase/tests/admin_access_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^begin;/iu);
+  assert.match(sql, /set local role authenticated/iu);
+  assert.match(sql, /public\.v5_admin_set_user_access/iu);
+  assert.match(sql, /rollback;/iu);
+  assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
+});
+
 test('foundation migration contains the required isolation and ingestion contracts', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260906000000_v5_foundation.sql', import.meta.url), 'utf8');
   for (const fragment of [
