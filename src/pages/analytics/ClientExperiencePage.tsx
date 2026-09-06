@@ -282,14 +282,11 @@ export default function ClientExperiencePage() {
           </AnalyticsPanel>
         </>
       ) : (
-        <section className="page-card cx-section cx-reviews-section">
-          <div className="cx-section-head cx-review-head">
-            <div><span>СЕРВЕРНАЯ ВЫБОРКА</span><h2>Отзывы покупателей</h2><p>{numberFormatter.format(reviewsTotal)} строк после фильтрации</p></div>
-            <form onSubmit={event => { event.preventDefault(); setPage(0); setReviewSearch(reviewSearchDraft); }}>
+        <AnalyticsPanel className="cx-section cx-reviews-section" density="data">
+          <div className="cx-review-panel-heading"><PanelHeader eyebrow="Серверная выборка" title="Отзывы покупателей" description={`${numberFormatter.format(reviewsTotal)} строк после фильтрации`} controls={<form className="cx-review-search" role="search" onSubmit={event => { event.preventDefault(); setPage(0); setReviewSearch(reviewSearchDraft); }}>
               <input value={reviewSearchDraft} onChange={event => setReviewSearchDraft(event.target.value)} placeholder="Поиск по тексту, SKU или товару" />
-              <button type="submit">Найти</button>
-            </form>
-          </div>
+              <button type="submit" className="ds-button">Найти</button>
+            </form>} /></div>
           <div className="cx-table-wrap cx-review-table-wrap">
             <table>
               <thead><tr><th>Дата</th><th>Товар</th><th>Оценка</th><th>Отзыв</th><th>Кабинет</th><th>Статус</th></tr></thead>
@@ -302,13 +299,13 @@ export default function ClientExperiencePage() {
             </table>
           </div>
           <div className="cx-pagination">
-            <span>Страница {page + 1} из {pageCount}</span>
+            <span>{reviewsTotal > 0 ? `${numberFormatter.format(page * PAGE_SIZE + 1)}–${numberFormatter.format(Math.min(reviewsTotal, (page + 1) * PAGE_SIZE))} из ${numberFormatter.format(reviewsTotal)}` : '0 отзывов'} · страница {page + 1} из {pageCount}</span>
             <div>
-              <button disabled={page === 0 || reviewsLoading} onClick={() => setPage(value => Math.max(0, value - 1))}>Назад</button>
-              <button disabled={page + 1 >= pageCount || reviewsLoading} onClick={() => setPage(value => value + 1)}>Далее</button>
+              <button type="button" className="ds-button" disabled={page === 0 || reviewsLoading} onClick={() => setPage(value => Math.max(0, value - 1))}>Назад</button>
+              <button type="button" className="ds-button" disabled={page + 1 >= pageCount || reviewsLoading} onClick={() => setPage(value => value + 1)}>Далее</button>
             </div>
           </div>
-        </section>
+        </AnalyticsPanel>
       )}
     </div>
   );
@@ -323,7 +320,7 @@ function ReviewTableRows({ item, expanded, onToggle }: { item: CxReviewRow; expa
     <>
       <tr className="cx-review-row" onClick={onToggle}>
         <td>{formatDate(item.reviewDate)}</td>
-        <td><strong>{item.productName || item.sellerSku || 'Без названия'}</strong><span>SKU {item.sellerSku || '—'} · WB {item.wbSku || '—'}</span></td>
+        <td><button type="button" className="cx-review-toggle" aria-expanded={expanded} onClick={event => { event.stopPropagation(); onToggle(); }}><i aria-hidden="true">›</i><span><strong>{item.productName || item.sellerSku || 'Без названия'}</strong><small>SKU {item.sellerSku || '—'} · WB {item.wbSku || '—'}</small></span></button></td>
         <td><span className={`cx-rating-pill rating-${item.rating}`}>{item.rating} ★</span></td>
         <td><p>{item.reviewText || item.advantages || item.disadvantages || 'Без текста'}</p></td>
         <td>{item.cabinetName}</td>
