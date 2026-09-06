@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 type Density = 'overview' | 'analytics' | 'data';
 type Tone = 'positive' | 'negative' | 'neutral';
+type TrendDirection = 'up' | 'down' | 'flat';
 
 export function AnalyticsPageHeader({ eyebrow, title, description, meta, actions }: {
   eyebrow?: string;
@@ -39,21 +40,23 @@ export function SegmentedControl<T extends string>({ value, options, onChange, l
   </div>;
 }
 
-export function KpiTile({ label, value, delta, deltaSuffix = '%', comparison = 'к предыдущему периоду', tone = 'neutral', visual, details, className = '' }: {
+export function KpiTile({ label, value, delta, deltaSuffix = '%', comparison = 'к предыдущему периоду', tone = 'neutral', direction, visual, details, className = '' }: {
   label: string;
   value: ReactNode;
   delta?: ReactNode;
   deltaSuffix?: string;
   comparison?: string;
   tone?: Tone;
+  direction?: TrendDirection;
   visual?: ReactNode;
   details?: ReactNode;
   className?: string;
 }) {
+  const trendDirection = direction || (tone === 'positive' ? 'up' : tone === 'negative' ? 'down' : 'flat');
   return <article className={`ds-kpi${className ? ` ${className}` : ''}`}>
     <span className="ds-kpi-label">{label}</span>
     <div className="ds-kpi-value-row"><strong>{value}</strong>{visual}</div>
-    {delta !== undefined && <small className={`ds-delta ds-delta-${tone}`}>{tone === 'positive' ? '▲' : tone === 'negative' ? '▼' : '•'} {delta}{deltaSuffix} <em>{comparison}</em></small>}
+    {delta !== undefined && <small className={`ds-delta ds-delta-${tone}`}>{trendDirection === 'up' ? '▲' : trendDirection === 'down' ? '▼' : '•'} {delta}{deltaSuffix} <em>{comparison}</em></small>}
     {details && <div className="ds-kpi-details">{details}</div>}
   </article>;
 }

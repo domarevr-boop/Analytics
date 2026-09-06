@@ -10,7 +10,7 @@
 
 - `AnalyticsPageHeader` — eyebrow, заголовок, назначение, дата/мета и действия страницы.
 - `AnalyticsToolbar` — единая поверхность глобальных фильтров, правых переключателей и строки активных условий.
-- `KpiTile` — label, value, delta/comparison, реальный sparkline и optional details; направление цвета передаёт страница с учётом смысла метрики.
+- `KpiTile` — label, value, delta/comparison, реальный sparkline и optional details; `tone` передаёт оценку изменения, а `direction` — фактическое направление стрелки.
 - `AnalyticsPanel` — поверхность с плотностью `overview`, `analytics` или `data`.
 - `PanelHeader` — заголовок и вопрос блока слева, controls справа.
 - `SegmentedControl` — взаимоисключающий выбор; не используется вместо multi-select.
@@ -86,6 +86,7 @@
 - Размеры и порядок одинаковы внутри одного ряда.
 - Loading не меняет размер плитки.
 - `null` показывается как `—`, отсутствие плана — `Не задан`.
+- Для inverse-good метрик снижение может быть зелёным со стрелкой вниз: цвет и направление не подменяют друг друга.
 
 ## Analytical Matrix
 

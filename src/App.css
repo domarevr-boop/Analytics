@@ -7737,3 +7737,58 @@ thead .at-metric:last-child {
 @media (max-width: 1180px) { .reporting-main-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.reporting-signals-card { grid-column: 1 / -1; }.reporting-toolbar { flex-wrap: wrap; }.reporting-toolbar .entry-segmented { margin-left: 0; } }
 @media (max-width: 860px) { .reporting-page { padding: 12px; }.reporting-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }.reporting-main-grid { grid-template-columns: 1fr; }.reporting-signals-card { grid-column: auto; }.reporting-header, .reporting-card-head { align-items: flex-start; flex-direction: column; }.reporting-header > button { align-self: flex-end; }.reporting-chart-controls { width: 100%; max-width: none; }.reporting-chart-controls .entry-segmented { justify-content: flex-start; }.reporting-card-head > .entry-segmented { flex-wrap: wrap; }.reporting-comparison { white-space: normal; } }
 @media (max-width: 520px) { .reporting-kpis { grid-template-columns: 1fr; }.reporting-toolbar > * { width: 100%; }.reporting-toolbar .entry-segmented { width: max-content; }.reporting-reset { width: 100%; } }
+
+/* Profitability: canonical analytical page composition. */
+.profit-page-v2 {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: visible;
+  padding: 18px 24px 32px;
+  background: var(--ds-color-canvas);
+}
+.profit-page-v2 .ds-page-header { margin: 0; }
+.profit-page-v2 .profit-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-height: 54px;
+  padding: 9px 10px;
+  border-radius: var(--ds-radius-panel);
+}
+.profit-page-v2 .profit-toolbar .ds-toolbar-main { min-width: 0; flex-wrap: wrap; }
+.profit-page-v2 .profit-toolbar .filterbar-dashboard { flex: 1 1 620px; min-width: 0; }
+.profit-page-v2 .profit-toolbar .ds-toolbar-status { padding-top: 8px; }
+.profit-page-v2 .profit-month-navigation { max-width: 100%; }
+.profit-page-v2 .profit-month-strip { max-width: min(100%, 720px); overflow-x: auto; scrollbar-width: thin; }
+.profit-page-v2 .profit-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.profit-page-v2 .profit-kpis .ds-kpi { min-height: 108px; padding: 14px 15px; }
+.profit-page-v2 .profit-kpis .ds-kpi-label { font-size: 9px; }
+.profit-page-v2 .profit-kpis .ds-kpi-value-row strong { margin: 0; font-size: 21px; }
+.profit-page-v2 .profit-kpis .ds-kpi-details { margin-top: 8px; color: var(--ds-color-muted); font-size: 9px; font-style: normal; }
+.profit-page-v2 .profit-panel { padding: 14px 16px; border-radius: var(--ds-radius-panel); }
+.profit-page-v2 .profit-panel > .ds-panel-header { min-height: 42px; margin-bottom: 8px; }
+.profit-chart-period { color: var(--ds-color-muted); font-size: 10px; text-transform: capitalize; }
+.profit-table-panel > .ds-panel-header { align-items: center; padding: 14px 16px 6px; margin: 0; }
+.profit-table-panel .profit-table-wrap { max-height: 620px; margin: 0; overflow: auto; border: 0; border-top: 1px solid var(--ds-color-border); border-radius: 0; box-shadow: none; }
+.profit-table-panel .profit-status-tabs { justify-content: flex-end; }
+.profit-table-panel .profit-status-tabs button { min-height: 30px; }
+
+@media (max-width: 1180px) {
+  .profit-page-v2 .profit-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .profit-table-panel > .ds-panel-header { align-items: flex-start; flex-direction: column; }
+  .profit-table-panel .profit-status-tabs { justify-content: flex-start; }
+}
+
+@media (max-width: 760px) {
+  .profit-page-v2 { padding: 12px; }
+  .profit-page-v2 .profit-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .profit-page-v2 .profit-settings { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .profit-page-v2 .profit-setting-values { max-width: 100%; overflow-x: auto; }
+  .profit-page-v2 .profit-month-navigation { align-items: flex-start; flex-wrap: wrap; }
+  .profit-page-v2 .profit-month-strip { order: 3; width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .profit-page-v2 .profit-kpis { grid-template-columns: 1fr; }
+}

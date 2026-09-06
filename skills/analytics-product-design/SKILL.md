@@ -44,7 +44,7 @@ description: Audit, design, and improve dense Analytics MVP dashboards, filters,
 
 - Главная задаёт эталон фильтра периода и entity filters.
 - Период визуально отделён от сущностей; редкие фильтры скрыты прогрессивно.
-- KPI выводятся отдельными плитками: label, value, delta, sparkline, optional progress.
+- KPI выводятся отдельными плитками: label, value, delta, sparkline, optional progress. Отделяй семантический цвет от направления стрелки: inverse-good метрика может снижаться зелёным цветом со стрелкой вниз.
 - Отсутствующие значения не превращаются в нули.
 - Numeric columns выравниваются вправо, text columns — влево; tabular numerals обязательны для плотных данных.
 - Product cell объединяет фото, название, SKU и вторичные ID.
