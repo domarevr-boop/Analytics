@@ -1,46 +1,40 @@
 # Analytics MVP
 
-Локальная аналитическая система для отчётов Wildberries: продажи, воронка, реклама, рентабельность, география, точки входа, поисковый спрос, динамика ниши и клиентский опыт.
+Аналитическая система для отчётов Wildberries: продажи, воронка, реклама, рентабельность, география, точки входа, поисковый спрос, рынок, конкуренты и клиентский опыт.
 
-## Текущий контур
+## Контуры проекта
 
-- React + TypeScript + Vite.
-- Основные отчёты работают local-first в браузере.
-- Отзывы и CX-аналитика используют изолированный контур Supabase.
-- Активная версия: **v4.0**.
-- Публикация: GitHub Pages.
+- **V4 production** — ветка `main`, local-first хранение основных отчётов в браузере и отдельный серверный CX-контур Supabase. Рабочая папка владельца: `C:\Users\vipdo\Documents\test\Analytics`.
+- **V5 development** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`. Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 не публикуется и не должна использовать БД/Storage V4.
 
-## Документация
+Текущая архитектура и статус зафиксированы в [PROJECT_STATE](PROJECT_STATE.md), полный переход — в [плане миграции V5](docs/V5_MIGRATION_PLAN.md), а документы и агентские средства — в [едином реестре](docs/INDEX.md). Перед изменениями прочитайте [AGENTS.md](AGENTS.md) и ближайший локальный `AGENTS.md`.
 
-- [Единый индекс документации](docs/INDEX.md)
-- [Текущее состояние](PROJECT_STATE.md)
-- [Версии](docs/VERSIONS.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Дизайн-система](docs/DESIGN_SYSTEM.md)
-- [UI-компоненты](docs/UI_COMPONENTS.md)
-- [Импорт](docs/IMPORTS.md)
-- [Клиентский опыт](docs/CLIENT_EXPERIENCE.md)
-- [Товарный справочник](docs/PRODUCT_REGISTRY.md)
-
-Перед изменениями прочитайте [AGENTS.md](AGENTS.md) и ближайший локальный `AGENTS.md`.
-
-Источником актуального кода является `origin/main`. Соседние рабочие папки Git и внешний каталог `_archive` могут содержать старые или незавершённые снимки и не используются как документация проекта.
-
-## Команды
+## Локальный запуск
 
 ```bash
-npm install
+npm ci
 npm run dev
-npm run test:cx
-npm run lint
-npm run build
-npm run deploy
 ```
 
-Перед `npm run deploy` должен существовать локальный `.env.production.local` с `VITE_SUPABASE_URL` и публичным `VITE_SUPABASE_ANON_KEY`. Проверка останавливает публикацию, если конфигурация отсутствует, чтобы GitHub Pages не получил нерабочую сборку. Service-role ключ в frontend использовать нельзя.
+Основные проверки:
 
-## Безопасность
+```bash
+npm run build
+npm run lint
+npm run test:cx
+npm run test:groups
+npm run test:planning
+npm run test:dashboard
+npm run test:profitability
+npm run test:reporting
+```
 
-- Не коммитьте `.env.local`, пароли и service-role ключи.
-- Публичный frontend не должен обходить RLS/RPC Supabase.
-- Полные наборы отзывов не загружаются во frontend; используйте агрегаты и пагинацию.
+Для V5 скопируйте `.env.example` в локальный `.env.local` и укажите только URL и публичный anon key **отдельного V5 Supabase-проекта**. Service-role ключ запрещён во frontend и Git. До создания такого проекта серверные миграции V5 не запускаются.
+
+## Публикация и безопасность
+
+Текущий GitHub Actions workflow публикует только `main`, то есть V4. `npm run deploy` требует `.env.production.local` и предназначен для принятого production-контура; из V5 worktree его не запускают. Параллельный URL V5 будет добавлен отдельным release-этапом без перезаписи V4.
+
+- Не коммитьте `.env.local`, исходные рабочие выгрузки, пароли и service-role ключи.
+- Не связывайте Supabase CLI в V5 worktree с проектом V4.
+- Публичный frontend не должен обходить RLS/RPC или загружать полные большие наборы данных.

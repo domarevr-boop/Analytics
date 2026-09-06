@@ -1,5 +1,6 @@
 -- Supabase schema migration for Wildberries Analytics Panel
--- Run this once in the Supabase SQL Editor (https://supabase.com/dashboard/project/ncqugkrhiwboobrnypxn/sql/new)
+-- Historical V4 baseline. Do not run against any project until the target
+-- environment and migration sequence have been verified explicitly.
 
 CREATE TABLE IF NOT EXISTS cabinets (
   id TEXT PRIMARY KEY,

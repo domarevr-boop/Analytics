@@ -64,7 +64,7 @@ Do not normalize currency, counts, percentages, and durations together.
 - Repeating the same insight in KPI, large chart, sparkline, and heatmap without a distinct purpose.
 # Эталонная матрица
 
-Канонический образец проекта — «Матрица показателей» страницы «Динамика ниши».
+Канонический действующий образец проекта — временная «Матрица показателей» страницы «Рынок».
 
 - Контекст слева: сущность/метрика, trend sparkline, изменение.
 - В центре: общая фиксированная ось дат без растягивания.
