@@ -2,6 +2,8 @@
 
 Этот каталог содержит только активный backend-контур V5. Исторические миграции и функция V4/CX сохранены в `legacy-v4/` и не участвуют в `supabase db push`.
 
+Foundation `20260906000000` применён к `analytics-v5-dev` 6 сентября 2026. После применения migration list совпал, `db lint --linked` не нашёл ошибок, health RPC вернул ожидаемую версию, anon REST не увидел приватную ingest-таблицу, а private bucket `v5-import-sources` существует и пуст.
+
 ## Защита окружения
 
 - Разрешена только ветка `v5/*` и worktree с именем `Analytics-v5`.

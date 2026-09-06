@@ -72,7 +72,7 @@ function run() {
   }
 
   const env = parseEnv(readFileSync(envPath, 'utf8'));
-  const branch = execFileSync('git', ['branch', '--show-current'], {
+  const branch = execFileSync('git', ['-c', `safe.directory=${workspace.replaceAll('\\', '/')}`, 'branch', '--show-current'], {
     cwd: workspace,
     encoding: 'utf8',
   }).trim();
