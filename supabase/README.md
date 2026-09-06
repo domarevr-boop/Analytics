@@ -2,7 +2,7 @@
 
 Этот каталог содержит только активный backend-контур V5. Исторические миграции и функция V4/CX сохранены в `legacy-v4/` и не участвуют в `supabase db push`.
 
-Foundation `20260906000000` применён к `analytics-v5-dev` 6 сентября 2026. После применения migration list совпал, `db lint --linked` не нашёл ошибок, health RPC вернул ожидаемую версию, anon REST не увидел приватную ingest-таблицу, а private bucket `v5-import-sources` существует и пуст.
+Foundation `20260906000000` применён к `analytics-v5-dev` 6 сентября 2026. После применения migration list совпал, `db lint --linked` не нашёл ошибок, health RPC вернул ожидаемую версию, anon REST не увидел приватную ingest-таблицу, а private bucket `v5-import-sources` существует и пуст. `npm run db:v5:smoke` дополнительно подтвердил 12 источников, 10 foundation-таблиц и RLS на всех 10; пользователей Auth и назначенных ролей пока нет.
 
 ## Защита окружения
 
@@ -33,5 +33,6 @@ Foundation `20260906000000` применён к `analytics-v5-dev` 6 сентя�
 3. Выполнить `npm run db:v5:guard`.
 4. Просмотреть план изменений через `npm run db:v5:dry-run`.
 5. Только после проверки выполнить `npm run db:v5:push`.
+6. После применения выполнить read-only проверку `npm run db:v5:smoke`.
 
 Локальный `supabase start` пока недоступен, потому что Docker на машине не установлен.

@@ -81,7 +81,7 @@
 ## Проверки
 
 - Базовая проверка worktree V5 от 6 сентября 2026: `npm ci` успешно; production build успешно; 59 тестов V4 в 15 файлах и 7 инфраструктурных тестов V5 успешно.
-- Удалённая проверка V5: guard успешен; dry-run после применения сообщает `Remote database is up to date`; migration list содержит только `20260906000000`; `db lint --linked` не нашёл ошибок; health RPC возвращает V5/schema marker; приватная ingest-таблица недоступна anon REST (HTTP 404); private bucket `v5-import-sources` существует и пуст.
+- Удалённая проверка V5: guard успешен; dry-run после применения сообщает `Remote database is up to date`; migration list содержит только `20260906000000`; `db lint --linked` не нашёл ошибок; health RPC возвращает V5/schema marker; приватная ingest-таблица недоступна anon REST (HTTP 404); private bucket `v5-import-sources` существует и пуст. Повторяемый read-only smoke-test подтверждает 12 источников, 10 foundation-таблиц и RLS на всех 10; пользователей Auth и назначенных ролей пока нет.
 - Полный `npm run lint` воспроизводит унаследованный baseline V4: 53 проблемы (27 ошибок, 26 предупреждений). В рамках подготовки V5 они не исправлялись, чтобы не смешивать изоляцию с массовым рефакторингом.
 - `npm run build`
 - `npm run lint`
