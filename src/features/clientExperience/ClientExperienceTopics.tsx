@@ -4,6 +4,9 @@ import {
   Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts';
 import {
+  AnalyticsPanel, EmptyState, KpiTile, PanelHeader, SegmentedControl,
+} from '../../components/AnalyticsPrimitives';
+import {
   getCxTopicDashboard, getCxTopicReviewsPage,
   type CxFilters, type CxTopicDashboard, type CxTopicExample, type CxTopicMetric,
   type CxTopicGranularity, type CxTopicReviewRow, type CxTopicSentiment, type CxTopicTrendPoint,
@@ -314,33 +317,30 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
 
   if (error) return <div className="cx-error">{error}</div>;
   if (!loading && dashboard.version === 0) {
-    return <section className="page-card cx-topic-empty"><strong>Пока нет опубликованных результатов</strong><p>Создайте тему, опубликуйте словарь и дождитесь завершения перерасчёта.</p></section>;
+    return <EmptyState title="Пока нет опубликованных результатов" description="Создайте тему, опубликуйте словарь и дождитесь завершения перерасчёта." />;
   }
 
   return (
     <div className={`cx-topic-dashboard${loading ? ' loading' : ''}`}>
-      <div className="cx-topic-dashboard-head">
-        <div><span>СВОДКА ПО ВСЕМ ТЕМАМ</span><h2>Карта клиентского опыта</h2><p>Риски, сильные стороны и вклад тем в CXI в выбранном срезе.</p></div>
-        <span className="cx-published-badge">Словарь v{dashboard.version}</span>
-      </div>
+      <PanelHeader eyebrow="Сводка по всем темам" title="Карта клиентского опыта" description="Риски, сильные стороны и вклад тем в CXI в выбранном срезе." controls={<span className="cx-published-badge">Словарь v{dashboard.version}</span>} />
 
       <section className="cx-cxi-overview">
-        <article className="page-card cx-section cx-cxi-composite">
-          <div className="cx-section-head"><div><span>КОМПОЗИТНЫЕ ИНДЕКСЫ</span><h2>Клиентский опыт по оценочным упоминаниям</h2></div></div>
+        <AnalyticsPanel className="cx-section cx-cxi-composite" density="analytics">
+          <PanelHeader eyebrow="Композитные индексы" title="Клиентский опыт по оценочным упоминаниям" />
           <div className="cx-cxi-cards">
             <CxiCard title="Overall CXI" value={dashboard.overallCxi.value} delta={dashboard.overallCxi.delta} note={`${integer.format(dashboard.overallCxi.evaluativeMentions)} оценочных упоминаний`} primary />
             {dashboard.groups.map(group => <CxiCard key={group.code} title={groupTitles[group.code]?.replace(' опыт', ' CXI') || group.name} value={group.cxi} delta={group.delta} note={group.name} />)}
           </div>
-        </article>
-        <article className="page-card cx-section cx-cxi-drivers">
-          <div className="cx-section-head"><div><span>ДИНАМИКА ВКЛАДА</span><h2>Что изменило CXI</h2><p>Изменение вклада темы к прошлому равному периоду</p></div></div>
+        </AnalyticsPanel>
+        <AnalyticsPanel className="cx-section cx-cxi-drivers" density="analytics">
+          <PanelHeader eyebrow="Динамика вклада" title="Что изменило CXI" description="Изменение вклада темы к прошлому равному периоду." />
           <div className="cx-cxi-driver-columns"><CxiDrivers title="Рост" rows={positiveDrivers} tone="good" /><CxiDrivers title="Снижение" rows={negativeDrivers} tone="bad" /></div>
-        </article>
+        </AnalyticsPanel>
       </section>
 
       <section className="cx-topic-overview-grid">
-        <article className="page-card cx-section cx-topic-attention">
-          <div className="cx-section-head"><div><span>ПРИОРИТЕТЫ</span><h2>Что требует внимания</h2><p>Темы с максимальным Problem Index</p></div></div>
+        <AnalyticsPanel className="cx-section cx-topic-attention" density="analytics">
+          <PanelHeader eyebrow="Приоритеты" title="Что требует внимания" description="Темы с максимальным Problem Index." />
           <div className="cx-topic-attention-list">
             {dashboard.attention.map(item => <button key={item.id} type="button" onClick={() => selectTopic(item.id)}>
               <i style={{ background: riskColors[item.risk] }} />
@@ -349,10 +349,10 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
             </button>)}
             {!loading && dashboard.attention.length === 0 && <div className="cx-settings-empty">Нет тем с упоминаниями в выбранном срезе</div>}
           </div>
-        </article>
+        </AnalyticsPanel>
 
-        <article className="page-card cx-section cx-topic-map">
-          <div className="cx-section-head cx-topic-map-head"><div><span>ПОЗИЦИОНИРОВАНИЕ</span><h2>Карта тем</h2></div><div className="cx-topic-map-controls"><label>X<select value={mapX} onChange={event => setMapX(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Y<select value={mapY} onChange={event => setMapY(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Размер<select value={mapSize} onChange={event => setMapSize(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label></div></div>
+        <AnalyticsPanel className="cx-section cx-topic-map" density="analytics">
+          <PanelHeader eyebrow="Позиционирование" title="Карта тем" description="Сравнение тем по трём настраиваемым показателям." controls={<div className="cx-topic-map-controls"><label>X<select value={mapX} onChange={event => setMapX(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Y<select value={mapY} onChange={event => setMapY(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label><label>Размер<select value={mapSize} onChange={event => setMapSize(event.target.value as MapMetric)}>{Object.entries(mapMetrics).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select></label></div>} />
           <div className="cx-topic-map-chart">
             {defaultMap && <div className="cx-topic-quadrants" aria-hidden="true"><span><b>Нишевые</b><small>Позитивные</small></span><span><b>Мейнстрим</b><small>Позитивные</small></span><span><b>Нишевые</b><small>Негативные</small></span><span><b>Мейнстрим</b><small>Негативные</small></span></div>}
             <ResponsiveContainer width="100%" height="100%">
@@ -377,10 +377,10 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
           </div>
           <div className="cx-group-legend"><span><i className="product" />Продукт</span><span><i className="service" />Сервис</span><span><i className="outcomes" />Результат опыта</span></div>
           <div className="cx-topic-map-decoding"><span><b>X</b>{mapMetrics[mapX].label}</span><span><b>Y</b>{mapMetrics[mapY].label}</span><span><b>Размер</b>{mapMetrics[mapSize].label}</span></div>
-        </article>
+        </AnalyticsPanel>
 
-        <article className="page-card cx-section cx-all-topics">
-          <div className="cx-section-head"><div><span>СТРУКТУРА</span><h2>Все темы</h2><p>Клик по строке открывает детализацию</p></div></div>
+        <AnalyticsPanel className="cx-section cx-all-topics" density="data">
+          <div className="cx-panel-heading"><PanelHeader eyebrow="Структура" title="Все темы" description="Клик по строке открывает детализацию." /></div>
           <div className="cx-table-wrap">
             <table><thead><tr><th>Тема</th><th>Группа</th><th>Вес в группе</th><th>Оценочные</th><th>Тональность</th><th>Доля нег.</th><th>Вклад в CXI</th><th>Δ вклада</th></tr></thead>
               <tbody>{cxiTopics.map(topic => <tr key={topic.id} className={topic.id === selectedTopic?.id ? 'selected' : ''} onClick={() => selectTopic(topic.id)}>
@@ -390,11 +390,11 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
                 <td className={(topic.contributionDelta || 0) >= 0 ? 'good' : 'bad'}>{topic.contributionDelta === null ? '—' : signed(topic.contributionDelta)}</td>
               </tr>)}</tbody></table>
           </div>
-        </article>
+        </AnalyticsPanel>
       </section>
 
       <div className="cx-topic-detail">
-        <div className="cx-topic-dashboard-head"><div><span>ДЕТАЛИЗАЦИЯ ТЕМЫ</span><h2>{selectedTopic?.name || 'Тема не выбрана'}</h2><p>{selectedTopic?.groupName || 'Выберите тему в сводке'}</p></div></div>
+        <PanelHeader eyebrow="Детализация темы" title={selectedTopic?.name || 'Тема не выбрана'} description={selectedTopic?.groupName || 'Выберите тему в сводке'} />
 
         <section className="cx-topic-kpis">
           <TopicKpi title="Отзывы с текстом" value={integer.format(dashboard.summary.textReviews)} note="В выбранном срезе" tone="blue" trend={dashboard.trend.map(point => point.textReviews)} delta={signed(dashboard.comparisons.textReviews.deltaPercent, '%')} deltaValue={dashboard.comparisons.textReviews.deltaPercent} />
@@ -404,44 +404,44 @@ export default function ClientExperienceTopics({ filters }: { filters: CxFilters
           <TopicKpi title="Доля негатива" value={`${decimal.format(dashboard.summary.negativeShare)}%`} note="Негативные совпадения темы" tone="red" trend={dashboard.trend.map(point => point.negativeShare)} delta={dashboard.comparisons.negativeShare.delta === null ? '—' : signed(dashboard.comparisons.negativeShare.delta)} deltaValue={dashboard.comparisons.negativeShare.delta || 0} inverseDelta />
         </section>
 
-        <section className="page-card cx-sentiment-overview">
+        <AnalyticsPanel className="cx-sentiment-overview" density="data">
           <button type="button" onClick={() => openDrilldown('positive')}><span>Позитив</span><strong>{decimal.format(dashboard.summary.positiveShare)}%</strong><small>Показать отзывы</small></button>
           <button type="button" onClick={() => openDrilldown('neutral')}><span>Нейтрально</span><strong>{decimal.format(dashboard.summary.neutralShare)}%</strong><small>Показать отзывы</small></button>
           <button type="button" onClick={() => openDrilldown('negative')}><span>Негатив</span><strong>{decimal.format(dashboard.summary.negativeShare)}%</strong><small>Показать отзывы</small></button>
           <div><span>Оценочные</span><strong>{decimal.format(dashboard.summary.evaluativeShare)}%</strong><small>Позитив + негатив</small></div>
           <i aria-label="Распределение тональности"><b className="positive" style={{ width: `${dashboard.summary.positiveShare}%` }} /><b className="neutral" style={{ width: `${dashboard.summary.neutralShare}%` }} /><b className="negative" style={{ width: `${dashboard.summary.negativeShare}%` }} /></i>
-        </section>
+        </AnalyticsPanel>
 
         <section className="cx-topic-detail-grid">
-          <article className="page-card cx-section cx-topic-ranking">
-            <div className="cx-section-head"><div><span>НАВИГАЦИЯ</span><h2>Темы отзывов</h2><p>Быстрое переключение</p></div></div>
+          <AnalyticsPanel className="cx-section cx-topic-ranking" density="analytics">
+            <PanelHeader eyebrow="Навигация" title="Темы отзывов" description="Быстрое переключение." />
             <div className="cx-topic-ranking-list">{dashboard.topics.map(topic => <button key={topic.id} type="button" className={topic.id === selectedTopic?.id ? 'active' : ''} onClick={() => selectTopic(topic.id)}><span><small>{topic.groupName}</small><strong>{topic.name}</strong></span><span><strong>{integer.format(topic.reviewCount)}</strong><small>нег. {decimal.format(topic.negativeShare)}%</small></span><i><b style={{ width: `${Math.min(100, topic.share)}%` }} /></i></button>)}</div>
-          </article>
+          </AnalyticsPanel>
 
-          <article className="page-card cx-section cx-topic-trend">
-            <div className="cx-section-head cx-topic-trend-head"><div><span>ДИНАМИКА</span><h2>Динамика темы</h2><p>{selectedTopic?.name || 'Все темы'} · серверная агрегация</p></div><div className="cx-topic-trend-controls"><div className="cx-granularity-switch">{(['day', 'week', 'month'] as CxTopicGranularity[]).map(value => <button key={value} type="button" className={granularity === value ? 'active' : ''} onClick={() => setGranularityOverride({ period: periodKey, value })}>{value === 'day' ? 'День' : value === 'week' ? 'Неделя' : 'Месяц'}</button>)}</div><select value={visibleMetrics[0]} onChange={event => setTrendMetric(0, event.target.value as TrendMetric)}>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select><select value={visibleMetrics[1]} onChange={event => setTrendMetric(1, event.target.value as TrendMetric | '')}><option value="">Без второй метрики</option>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select></div></div>
+          <AnalyticsPanel className="cx-section cx-topic-trend" density="analytics">
+            <PanelHeader eyebrow="Динамика" title="Динамика темы" description={`${selectedTopic?.name || 'Все темы'} · серверная агрегация`} controls={<div className="cx-topic-trend-controls"><SegmentedControl value={granularity} label="Гранулярность динамики темы" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={value => setGranularityOverride({ period: periodKey, value })} /><select value={visibleMetrics[0]} onChange={event => setTrendMetric(0, event.target.value as TrendMetric)}>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select><select value={visibleMetrics[1]} onChange={event => setTrendMetric(1, event.target.value as TrendMetric | '')}><option value="">Без второй метрики</option>{Object.entries(trendMetrics).map(([value, metric]) => <option key={value} value={value}>{metric.label}</option>)}</select></div>} />
             <TopicTrendChart data={dashboard.trend} metrics={visibleMetrics.filter(Boolean) as TrendMetric[]} />
-          </article>
+          </AnalyticsPanel>
 
-          <article className="page-card cx-section cx-topic-reasons">
-            <div className="cx-section-head"><div><span>ДИАГНОСТИКА</span><h2>Причины негатива</h2><p>Частые сработавшие правила</p></div></div>
+          <AnalyticsPanel className="cx-section cx-topic-reasons" density="analytics">
+            <PanelHeader eyebrow="Диагностика" title="Причины негатива" description="Частые сработавшие правила." />
             <ol>{dashboard.negativeReasons.slice(0, 6).map(reason => <li key={reason.pattern}><span>{reason.pattern}</span><strong>{integer.format(reason.mentions)}</strong></li>)}</ol>
             {!loading && dashboard.negativeReasons.length === 0 && <div className="cx-settings-empty">Нет негативных совпадений</div>}
-          </article>
+          </AnalyticsPanel>
 
-          <article className="page-card cx-section cx-topic-examples">
-            <div className="cx-section-head"><div><span>КОНТЕКСТ</span><h2>Примеры отзывов</h2><p>Последние совпадения темы</p></div></div>
+          <AnalyticsPanel className="cx-section cx-topic-examples" density="analytics">
+            <PanelHeader eyebrow="Контекст" title="Примеры отзывов" description="Последние совпадения темы." />
             <div><ExampleColumn title="Позитивные" tone="positive" rows={positiveExamples} /><ExampleColumn title="Негативные" tone="negative" rows={negativeExamples} /></div>
-          </article>
+          </AnalyticsPanel>
         </section>
 
-        <section className="page-card cx-section cx-topic-products">
-          <div className="cx-section-head"><div><span>ТОВАРЫ</span><h2>Где тема встречается чаще всего</h2><p>Топ-15 товаров по количеству упоминаний</p></div></div>
+        <AnalyticsPanel className="cx-section cx-topic-products" density="data">
+          <div className="cx-panel-heading"><PanelHeader eyebrow="Товары" title="Где тема встречается чаще всего" description="Топ-15 товаров по количеству упоминаний." /></div>
           <div className="cx-table-wrap"><table><thead><tr><th>Товар</th><th>Кабинет</th><th>Упоминания</th><th>Доля в товаре</th><th>Средняя оценка</th><th>Позитив</th><th>Нейтрально</th><th>Негатив</th></tr></thead><tbody>
             {dashboard.products.map(product => <tr key={product.entityKey}><td><strong>{product.productName || product.sellerSku || product.wbSku || 'Без названия'}</strong><span>SKU {product.sellerSku || '—'} · WB {product.wbSku || '—'}</span></td><td>{product.cabinetName}</td><td><strong>{integer.format(product.mentions)}</strong></td><td>{decimal.format(product.mentionShare)}%</td><td>{decimal.format(product.averageRating)} ★</td><td><span className="cx-positive-pill">{decimal.format(product.positiveShare)}%</span></td><td>{decimal.format(product.neutralShare)}%</td><td><span className="cx-negative-pill">{decimal.format(product.negativeShare)}%</span></td></tr>)}
             {!loading && dashboard.products.length === 0 && <tr><td colSpan={8} className="cx-empty">По выбранной теме пока нет совпадений</td></tr>}
           </tbody></table></div>
-        </section>
+        </AnalyticsPanel>
       </div>
 
       {drilldownSentiment && <TopicDrilldown sentiment={drilldownSentiment} topicName={selectedTopic?.name || 'Выбранная тема'} rows={drilldownRows} total={drilldownTotal} page={drilldownPage} loading={drilldownLoading} error={drilldownError} onClose={() => setDrilldownSentiment(null)} onPage={changeDrilldownPage} />}
@@ -501,5 +501,17 @@ function TopicReviewCard({ review }: { review: CxTopicReviewRow }) {
 function TopicKpi({ title, value, note, tone, trend, delta, deltaValue, inverseDelta = false }: { title: string; value: string; note: string; tone: string; trend: Array<number | null>; delta: string; deltaValue: number; inverseDelta?: boolean }) {
   const positive = inverseDelta ? deltaValue <= 0 : deltaValue >= 0;
   const sparkData = trend.map((point, index) => ({ index, value: point ?? 0 }));
-  return <article className={`page-card cx-topic-kpi cx-tone-${tone}`}><span>{title}</span><div className="cx-topic-kpi-main"><strong>{value}</strong><div className="cx-topic-kpi-spark"><ResponsiveContainer width="100%" height="100%"><LineChart data={sparkData}><Line type="monotone" dataKey="value" stroke="var(--cx-tone)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div></div><div className="cx-topic-kpi-meta"><small>{note}</small><b className={positive ? 'good' : 'bad'}>{delta}</b></div><i /></article>;
+  const unchanged = delta === '—' || deltaValue === 0;
+  return <KpiTile
+    className={`cx-topic-kpi cx-tone-${tone}`}
+    label={title}
+    value={value}
+    delta={delta.replace(/^[+-]/, '')}
+    deltaSuffix=""
+    comparison="к пред. периоду"
+    tone={unchanged ? 'neutral' : positive ? 'positive' : 'negative'}
+    direction={unchanged ? 'flat' : deltaValue > 0 ? 'up' : 'down'}
+    visual={<div className="cx-topic-kpi-spark"><ResponsiveContainer width="100%" height="100%"><LineChart data={sparkData}><Line type="monotone" dataKey="value" stroke="var(--cx-tone)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div>}
+    details={note}
+  />;
 }
