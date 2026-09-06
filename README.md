@@ -9,6 +9,8 @@
 
 Текущая архитектура и статус зафиксированы в [PROJECT_STATE](PROJECT_STATE.md), полный переход — в [плане миграции V5](docs/V5_MIGRATION_PLAN.md), а документы и агентские средства — в [едином реестре](docs/INDEX.md). Перед изменениями прочитайте [AGENTS.md](AGENTS.md) и ближайший локальный `AGENTS.md`.
 
+Технические команды и границы удалённых миграций находятся в [Supabase V5 README](supabase/README.md). Прямой `supabase db push` не используется: только защищённый `npm run db:v5:push` после guard и dry-run.
+
 ## Локальный запуск
 
 ```bash
@@ -27,6 +29,7 @@ npm run test:planning
 npm run test:dashboard
 npm run test:profitability
 npm run test:reporting
+npm run test:v5-infra
 ```
 
 Для V5 скопируйте `.env.example` в локальный `.env.local` и укажите только URL и публичный anon key **отдельного V5 Supabase-проекта**. Service-role ключ запрещён во frontend и Git. До создания такого проекта серверные миграции V5 не запускаются.
