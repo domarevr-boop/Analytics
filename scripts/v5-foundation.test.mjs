@@ -12,6 +12,9 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
   assert.deepEqual(active, [
     '20260906000000_v5_foundation.sql',
     '20260906001000_v5_access_management.sql',
+    '20260906002000_v5_market_pilot.sql',
+    '20260906003000_v5_market_pilot_lint_fixes.sql',
+    '20260906004000_v5_market_version_order.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -61,6 +64,53 @@ test('viewer and importer smoke checks roll back role, cabinet and batch fixture
   assert.match(sql, /set access_role = 'importer'/iu);
   assert.match(sql, /insert into ingest\.import_batches/iu);
   assert.match(sql, /denied_cabinet_hidden/iu);
+  assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
+});
+
+test('market pilot keeps raw lineage, validates server-side and reads through bounded RPC', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260906002000_v5_market_pilot.sql', import.meta.url), 'utf8');
+  const fixes = readFileSync(new URL('../supabase/migrations/20260906003000_v5_market_pilot_lint_fixes.sql', import.meta.url), 'utf8');
+  const ordering = readFileSync(new URL('../supabase/migrations/20260906004000_v5_market_version_order.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'create table analytics.market_daily_versions',
+    'create or replace view analytics.market_daily_current',
+    'public.v5_market_create_batch',
+    'public.v5_market_stage_rows',
+    'public.v5_market_publish_batch',
+    'public.v5_market_rollback_batch',
+    'public.v5_market_series',
+    'duplicate_date',
+    "batch.status = 'published'",
+    "'schema_version', '20260906002000'",
+  ]) {
+    assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing market pilot contract: ${fragment}`);
+  }
+  assert.match(sql, /jsonb_array_length\(p_rows\)\s*>\s*500/iu);
+  assert.match(sql, /v_total_rows\s*>\s*50000/iu);
+  assert.match(sql, /p_size_bytes\s*>\s*10485760/iu);
+  assert.doesNotMatch(sql, /service_role\s*=/iu);
+  assert.match(fixes, /extensions\.digest/iu);
+  assert.match(fixes, /alter function ingest\.is_iso_date\(text\) stable/iu);
+  assert.match(fixes, /'schema_version',\s*'20260906003000'/iu);
+  assert.match(ordering, /version_order bigint generated always as identity/iu);
+  assert.match(ordering, /order by row_data\.version_order desc/iu);
+  assert.match(ordering, /'schema_version',\s*'20260906004000'/iu);
+});
+
+test('market pilot smoke covers publish, replacement, rollback and invalid rows transactionally', () => {
+  const sql = readFileSync(new URL('../supabase/tests/market_pilot_smoke.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'public.v5_market_create_batch',
+    'public.v5_market_stage_rows',
+    'public.v5_market_publish_batch',
+    'public.v5_market_rollback_batch',
+    'Monthly market aggregation assertion failed',
+    'Invalid market row assertion failed',
+    'rollback;',
+  ]) {
+    assert.ok(sql.includes(fragment), `missing market smoke contract: ${fragment}`);
+  }
+  assert.doesNotMatch(sql, /commit;/iu);
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 

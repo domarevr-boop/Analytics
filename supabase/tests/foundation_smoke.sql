@@ -42,5 +42,30 @@ select jsonb_build_object(
       from ingest.import_batches
       where idempotency_key in ('__v5_role_smoke__', '__v5_viewer_must_not_import__')
     )
+  ),
+  'market_metric_definition_count', (
+    select count(*)
+    from analytics.metric_definitions
+    where code in (
+      'market_amount_share',
+      'market_orders_share',
+      'market_average_check',
+      'own_market_average_check'
+    )
+      and is_active
+  ),
+  'market_batch_count', (
+    select count(*)
+    from ingest.import_batches
+    where source_code = 'market_dynamics'
+  ),
+  'market_version_row_count', (
+    select count(*)
+    from analytics.market_daily_versions
+  ),
+  'market_storage_object_count', (
+    select count(*)
+    from storage.objects
+    where bucket_id = 'v5-import-sources'
   )
 ) as foundation_smoke;
