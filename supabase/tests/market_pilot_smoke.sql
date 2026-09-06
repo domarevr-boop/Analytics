@@ -112,6 +112,14 @@ begin
     raise exception 'Market publishing assertion failed: %', v_result;
   end if;
 
+  v_result := public.v5_market_batch_summary(v_batch_id);
+  if v_result ->> 'status' <> 'published'
+    or not (v_result ->> 'source_file_retained')::boolean
+    or (v_result ->> 'accepted_rows')::integer <> 2
+  then
+    raise exception 'Market batch summary assertion failed: %', v_result;
+  end if;
+
   select *
   into strict v_day
   from public.v5_market_series('2026-06-01', '2026-06-01', 'day');

@@ -15,6 +15,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260906002000_v5_market_pilot.sql',
     '20260906003000_v5_market_pilot_lint_fixes.sql',
     '20260906004000_v5_market_version_order.sql',
+    '20260906005000_v5_market_batch_summary.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -71,6 +72,7 @@ test('market pilot keeps raw lineage, validates server-side and reads through bo
   const sql = readFileSync(new URL('../supabase/migrations/20260906002000_v5_market_pilot.sql', import.meta.url), 'utf8');
   const fixes = readFileSync(new URL('../supabase/migrations/20260906003000_v5_market_pilot_lint_fixes.sql', import.meta.url), 'utf8');
   const ordering = readFileSync(new URL('../supabase/migrations/20260906004000_v5_market_version_order.sql', import.meta.url), 'utf8');
+  const summary = readFileSync(new URL('../supabase/migrations/20260906005000_v5_market_batch_summary.sql', import.meta.url), 'utf8');
   for (const fragment of [
     'create table analytics.market_daily_versions',
     'create or replace view analytics.market_daily_current',
@@ -95,6 +97,10 @@ test('market pilot keeps raw lineage, validates server-side and reads through bo
   assert.match(ordering, /version_order bigint generated always as identity/iu);
   assert.match(ordering, /order by row_data\.version_order desc/iu);
   assert.match(ordering, /'schema_version',\s*'20260906004000'/iu);
+  assert.match(summary, /public\.v5_market_batch_summary/iu);
+  assert.match(summary, /not app\.can_import\(\)/iu);
+  assert.match(summary, /'source_file_retained'/iu);
+  assert.match(summary, /'schema_version',\s*'20260906005000'/iu);
 });
 
 test('market pilot smoke covers publish, replacement, rollback and invalid rows transactionally', () => {

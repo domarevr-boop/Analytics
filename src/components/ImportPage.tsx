@@ -11,6 +11,10 @@ import DataCoverage from './DataCoverage';
 import { AnalyticsPageHeader, AnalyticsPanel, PanelHeader } from './AnalyticsPrimitives';
 import { getLatestReviewImport, importReviewsToSupabase } from '../features/clientExperience/reviewImport';
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
+import { parseMarketFileInWorker } from '../features/market/marketImportParser';
+import type { ParsedMarketFile } from '../features/market/marketImportParser';
+import { getLatestMarketImport, importMarketToSupabase } from '../features/market/marketImport';
+import type { MarketImportResult } from '../features/market/marketImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -66,23 +70,36 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
+  const [marketParseContext, setMarketParseContext] = useState<Pick<ParsedMarketFile, 'sourceRowNumbers' | 'sheetName'> | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [competitorPreview, setCompetitorPreview] = useState<CompetitorWorkbookData | null>(null);
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
+  const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
   const importRunningRef = useRef(false);
 
   useEffect(() => {
     void getLatestReviewImport().then(setLatestReviewImport);
+    void getLatestMarketImport().then(setLatestMarketImport);
   }, []);
 
   const handleFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     if (DEV) console.log('[import-ui] file received:', file.name, file.size, 'type:', ext);
     setLoading(true);
+    setMarketParseContext(null);
     setProgress(`Чтение ${file.name}...`);
     try {
       await waitForPaint();
+      if (ext === 'xlsx' || ext === 'csv') {
+        const marketFile = await parseMarketFileInWorker(file);
+        if (marketFile) {
+          setParsed(marketFile);
+          setMarketParseContext({ sourceRowNumbers: marketFile.sourceRowNumbers, sheetName: marketFile.sheetName });
+          setSelectedFile(file);
+          return;
+        }
+      }
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -171,6 +188,34 @@ export default function ImportPage() {
         ].join('\n'));
         return;
       }
+      if (source === 'market_dynamics') {
+        if (!selectedFile) throw new Error('Исходный файл «Рынок» не найден. Выберите файл повторно.');
+        const result = await importMarketToSupabase(selectedFile, remapped, {
+          sourceRowNumbers: marketParseContext?.sourceRowNumbers,
+          sheetName: marketParseContext?.sheetName,
+          dateOverride,
+          fallbackYear: dateYearOverride,
+          onProgress: current => {
+            const stage = current.stage === 'hashing'
+              ? 'Контрольная сумма'
+              : current.stage === 'uploading'
+                ? 'Сохранение исходника'
+                : current.stage === 'staging'
+                  ? 'Передача строк'
+                  : 'Серверная проверка и публикация';
+            setProgress(`${stage}: ${current.processed}/${current.total}`);
+          },
+        });
+        setLatestMarketImport(result);
+        if (result.status === 'failed') {
+          alert(`Импорт «Рынка» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Исходный файл и журнал сохранены в V5.`);
+        } else if (result.duplicate) {
+          alert('Этот файл «Рынка» уже опубликован в V5. Повторная запись не создавалась.');
+        } else {
+          alert(`Импорт «Рынка» опубликован в V5. Строк: ${result.acceptedRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+        }
+        return;
+      }
       const result = await importMappedData(parsed.fileName, source, remapped, dateOverride, dateEndOverride, dateYearOverride);
       if (DEV) console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
       if (result.status === 'error') {
@@ -183,12 +228,14 @@ export default function ImportPage() {
       setLoading(false);
       setProgress('');
       setParsed(null);
+      setMarketParseContext(null);
       setSelectedFile(null);
     }
-  }, [parsed, selectedFile]);
+  }, [parsed, selectedFile, marketParseContext]);
 
   const handleCancelMapping = useCallback(() => {
     setParsed(null);
+    setMarketParseContext(null);
     setSelectedFile(null);
   }, []);
 
@@ -330,6 +377,24 @@ export default function ImportPage() {
             </tr></tbody>
           </table></div>
           {latestReviewImport.errorMessage && <p className="import-mapper-error">{latestReviewImport.errorMessage}</p>}
+        </AnalyticsPanel>
+      )}
+
+      {latestMarketImport && (
+        <AnalyticsPanel className="import-log import-market-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур V5" title="Текущий импорт «Рынка»" description={latestMarketImport.fileName} controls={<span>{latestMarketImport.status === 'published' ? 'Опубликован' : 'Отклонён'}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Дата</th><th>Период</th><th>Всего строк</th><th>Принято</th><th>Отклонено</th><th>Повтор</th><th>Исходный файл</th></tr></thead>
+            <tbody><tr>
+              <td>{formatDate(latestMarketImport.importedAt)}</td>
+              <td>{latestMarketImport.periodStart ? `${latestMarketImport.periodStart} — ${latestMarketImport.periodEnd || latestMarketImport.periodStart}` : '—'}</td>
+              <td>{latestMarketImport.inputRows}</td>
+              <td>{latestMarketImport.acceptedRows}</td>
+              <td>{latestMarketImport.rejectedRows}</td>
+              <td>{latestMarketImport.duplicate ? 'Да' : 'Нет'}</td>
+              <td>Сохранён в private Storage</td>
+            </tr></tbody>
+          </table></div>
         </AnalyticsPanel>
       )}
 
