@@ -23,7 +23,7 @@
 ## `NavBar` analytics menu
 
 - Меню аналитики поддерживает именованные группы и произвольное число ссылок внутри каждой группы.
-- Desktop открытие: hover, focus или click; закрытие: уход указателя/фокуса, внешний click или выбор страницы.
+- Desktop открытие: hover, focus или click; меню выравнивается по левому краю trigger. Закрытие: уход указателя/фокуса, внешний click или выбор страницы.
 - Trigger и все пункты navbar являются настоящими кнопками; dropdown использует `aria-expanded`, `aria-controls`, `aria-haspopup`, `role="menu"`, `role="menuitem"` и `aria-current`.
 - `ArrowUp/ArrowDown`, `Home/End` перемещают фокус между пунктами; `Escape` закрывает dropdown и возвращает фокус trigger.
 - Пункт menu содержит иконку, название и одну строку назначения. Desktop использует четыре колонки, средняя ширина — две, узкая — одну колонку в пределах viewport.
