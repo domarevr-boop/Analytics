@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore, type ChangeEvent } from 'react';
 import { subscribe, getVersion, getMetrics, getImportLog, clearMetricsRange, resetAllData, deleteImportLogEntry, previewDateMigration, migrateDateRange, clearMetricsAndImports, exportV4Backup, importV4Backup } from '../data/store';
 import type { ImportSource, ImportFileLog } from '../types';
+import { AnalyticsPageHeader, AnalyticsPanel, EmptyState, PanelHeader, SegmentedControl } from './AnalyticsPrimitives';
 
 type DevTab = 'data' | 'formulas';
 
@@ -105,9 +106,9 @@ export default function DevPage() {
 
   const renderFormulas = () => (
     <div className="dev-formulas">
-      <section>
-        <h3 className="dev-section-title">Источники данных</h3>
-        <table className="dev-table">
+      <AnalyticsPanel className="dev-panel dev-table-panel" density="data">
+        <div className="dev-panel-heading"><PanelHeader eyebrow="Контракт данных" title="Источники данных" description="Владение полями ежедневных метрик" /></div>
+        <div className="dev-table-wrap"><table className="dev-table">
           <thead>
             <tr>
               <th>Источник</th>
@@ -132,12 +133,12 @@ export default function DevPage() {
               <td>Фактическая прибыль и маржа по товарам</td>
             </tr>
           </tbody>
-        </table>
-      </section>
+        </table></div>
+      </AnalyticsPanel>
 
-      <section>
-        <h3 className="dev-section-title">Формулы метрик</h3>
-        <table className="dev-table">
+      <AnalyticsPanel className="dev-panel dev-table-panel" density="data">
+        <div className="dev-panel-heading"><PanelHeader eyebrow="Расчёты" title="Формулы метрик" description="Технический справочник производных показателей" /></div>
+        <div className="dev-table-wrap"><table className="dev-table">
           <thead>
             <tr>
               <th>Метрика (MetricValues)</th>
@@ -168,11 +169,11 @@ export default function DevPage() {
             <tr><td><code>margin</code></td><td><code>profit / revenue * 100</code></td><td>&nbsp;</td></tr>
             <tr><td><code>stock</code></td><td><code>avg(stock)</code></td><td>DailyMetrics (WB)</td></tr>
           </tbody>
-        </table>
-      </section>
+        </table></div>
+      </AnalyticsPanel>
 
-      <section>
-        <h3 className="dev-section-title">Структура DailyMetrics</h3>
+      <AnalyticsPanel className="dev-panel dev-code-panel">
+        <PanelHeader eyebrow="Схема" title="Структура DailyMetrics" description="Ключевые поля локальной ежедневной записи" />
         <pre className="dev-code">{`interface DailyMetrics {
   date: string;           // YYYY-MM-DD
   product_id: string;     // ссылка на Product.id
@@ -189,40 +190,30 @@ export default function DevPage() {
   stock: number;          plan_orders: number;
   forecast_profit_per_order: number;
 }`}</pre>
-      </section>
+      </AnalyticsPanel>
     </div>
   );
 
   return (
-    <div className="dev-page analytics-page-shell">
-      <header className="analytics-page-header">
-        <div><span>СИСТЕМА</span><h1>Разработка</h1><p>Диагностика данных, резервные копии, миграции и технические операции.</p></div>
-      </header>
-      <div className="dev-tabs">
-        <span className={`dev-tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>
-          Данные
-        </span>
-        <span className={`dev-tab ${tab === 'formulas' ? 'active' : ''}`} onClick={() => setTab('formulas')}>
-          Формулы
-        </span>
-      </div>
+    <div className="dev-page analytics-page-shell ds-page dev-design-page">
+      <AnalyticsPageHeader eyebrow="Система" title="Разработка" description="Диагностика данных, резервные копии, миграции и технические операции." actions={<SegmentedControl value={tab} label="Раздел страницы разработки" options={[{ value: 'data', label: 'Данные' }, { value: 'formulas', label: 'Формулы' }]} onChange={setTab} />} />
 
-      {resultMsg && <div className="dev-toast">{resultMsg}</div>}
+      {resultMsg && <div className="dev-toast" role="status">{resultMsg}</div>}
 
       {tab === 'data' ? (
         <div className="dev-data">
-          <section>
-            <h3 className="dev-section-title">Резервная копия V4</h3>
+          <AnalyticsPanel className="dev-panel dev-backup-panel">
+            <PanelHeader eyebrow="Сохранность" title="Резервная копия V4" />
             <p className="dev-hint">Сохраняет локальные данные, планы, рентабельность, аналитику и постоянные расходы в JSON-файл. Создайте копию до первого запуска V5.</p>
-            <button className="dev-btn" onClick={handleExportBackup}>Скачать резервную копию</button>
-            <label className="dev-btn" style={{ marginLeft: 8 }}>
+            <div className="dev-panel-actions"><button className="dev-btn" onClick={handleExportBackup}>Скачать резервную копию</button>
+            <label className="dev-btn">
               Загрузить снимок V4 в Supabase
               <input type="file" accept="application/json,.json" onChange={handleImportBackup} hidden />
-            </label>
-          </section>
+            </label></div>
+          </AnalyticsPanel>
 
-          <section>
-            <h3 className="dev-section-title">Миграция дат</h3>
+          <AnalyticsPanel className="dev-panel">
+            <PanelHeader eyebrow="Миграция" title="Сдвиг диапазона дат" description="Применяется только после проверки конфликтов" />
             <div className="dev-clear-form">
               <label>С <input type="date" value={migrationStart} onChange={e => setMigrationStart(e.target.value)} /></label>
               <label>по <input type="date" value={migrationEnd} onChange={e => setMigrationEnd(e.target.value)} /></label>
@@ -243,10 +234,10 @@ export default function DevPage() {
             <div className="dev-hint">
               Миграция изменяет DailyMetrics, старые записи рентабельности и границы журналов импорта. При конфликте дат операция не выполняется.
             </div>
-          </section>
+          </AnalyticsPanel>
 
-          <section>
-            <h3 className="dev-section-title">Очистка метрик по источнику и датам</h3>
+          <AnalyticsPanel className="dev-panel">
+            <PanelHeader eyebrow="Обслуживание" title="Очистка метрик по источнику и датам" description={`Всего метрик в БД: ${metricCount.toLocaleString('ru-RU')}`} />
             <div className="dev-clear-form">
               <select value={source} onChange={e => setSource(e.target.value as ImportSource)}>
                 <option value="wb_funnel">WB Воронка</option>
@@ -259,17 +250,14 @@ export default function DevPage() {
                 Очистить
               </button>
             </div>
-            <div className="dev-hint">
-              Всего метрик в БД: <strong>{metricCount.toLocaleString('ru-RU')}</strong>
-            </div>
-          </section>
+          </AnalyticsPanel>
 
-          <section>
-            <h3 className="dev-section-title">История импортов</h3>
+          <AnalyticsPanel className="dev-panel dev-import-history dev-table-panel" density="data">
+            <div className="dev-panel-heading"><PanelHeader eyebrow="Аудит" title="История импортов" description={`${logs.length} записей`} /></div>
             {logs.length === 0 ? (
-              <div className="dev-hint">История пуста</div>
+              <EmptyState title="История пуста" description="Записи появятся после импорта локальных отчётов." />
             ) : (
-              <table className="dev-table">
+              <div className="dev-table-wrap"><table className="dev-table">
                 <thead>
                   <tr>
                     <th>Файл</th>
@@ -300,12 +288,12 @@ export default function DevPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
-          </section>
+          </AnalyticsPanel>
 
-          <section className="dev-danger-zone">
-            <h3 className="dev-section-title">Безопасная очистка</h3>
+          <AnalyticsPanel className="dev-panel dev-danger-zone">
+            <PanelHeader eyebrow="Очистка" title="Очистить метрики" />
             <p className="dev-hint">Удалить только метрики и импорты. Справочники (кабинеты, товары) останутся.</p>
             <button className="dev-btn dev-btn-danger" onClick={() => {
               if (!confirm('Удалить метрики и импорты? Справочники останутся.')) return;
@@ -314,15 +302,15 @@ export default function DevPage() {
             }}>
               Очистить метрики
             </button>
-          </section>
+          </AnalyticsPanel>
 
-          <section className="dev-danger-zone">
-            <h3 className="dev-section-title">Опасная зона</h3>
+          <AnalyticsPanel className="dev-panel dev-danger-zone dev-danger-zone-critical">
+            <PanelHeader eyebrow="Необратимое действие" title="Сбросить все данные" />
             <p className="dev-hint">Полный сброс всех данных: справочники, метрики, планы. После сброса страница перезагрузится.</p>
             <button className="dev-btn dev-btn-danger" onClick={handleResetAll}>
               Сбросить все данные
             </button>
-          </section>
+          </AnalyticsPanel>
         </div>
       ) : (
         renderFormulas()
