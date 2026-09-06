@@ -530,3 +530,49 @@
   .cx-design-page .cx-review-search { width: 100%; }
   .cx-design-page .cx-pagination { align-items: flex-start; flex-direction: column; }
 }
+
+/* CX methodology: long-form reference layout on the shared surface hierarchy. */
+.cx-design-page .cx-methodology-page {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+.cx-design-page .cx-methodology-hero {
+  display: block;
+  padding: 18px 20px;
+  border-color: var(--ds-color-border);
+  box-shadow: var(--ds-shadow-panel);
+}
+.cx-design-page .cx-methodology-hero > .ds-panel-header { width: 100%; align-items: center; margin: 0; }
+.cx-design-page .cx-methodology-hero .ds-panel-header h2 { font-size: 22px; }
+.cx-design-page .cx-methodology-hero .ds-panel-header p { font-size: 11px; }
+.cx-design-page .cx-methodology-version { border-left-color: var(--ds-color-brand); }
+.cx-design-page .cx-methodology-nav {
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-panel);
+}
+.cx-design-page .cx-methodology-nav a:hover,
+.cx-design-page .cx-methodology-nav a:focus-visible { background: var(--ds-color-brand-soft); color: var(--ds-color-ink); }
+.cx-design-page .cx-methodology-section {
+  min-width: 0;
+  border-color: var(--ds-color-border);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-panel);
+}
+.cx-design-page .cx-methodology-section > .ds-panel-header { margin-bottom: var(--ds-space-3); }
+.cx-design-page .cx-methodology-formula-grid { gap: var(--ds-space-3); }
+.cx-design-page .cx-methodology-formula-grid .cx-methodology-section { padding: 14px 16px; }
+.cx-design-page .cx-methodology-formula-grid .ds-panel-header { min-height: 34px; margin-bottom: var(--ds-space-2); }
+.cx-design-page .cx-interpretation-subhead { padding-top: 12px; border-top: 1px solid var(--ds-color-border-soft); }
+.cx-design-page .cx-interpretation-subhead .ds-panel-header { margin-bottom: 0; }
+.cx-design-page .cx-reference-group { border-color: var(--ds-color-border); border-radius: var(--ds-radius-control); }
+.cx-design-page .cx-reference-group > header { background: #f8fafc; }
+.cx-design-page .cx-reference-item summary:focus-visible { outline: none; box-shadow: inset var(--ds-focus-ring); }
+
+@media (max-width: 700px) {
+  .cx-design-page .cx-methodology-hero > .ds-panel-header { align-items: flex-start; flex-direction: column; }
+  .cx-design-page .cx-methodology-hero .ds-panel-controls { width: 100%; }
+  .cx-design-page .cx-methodology-version { width: 100%; padding: 10px 0 0; border-top: 3px solid var(--ds-color-brand); border-left: 0; }
+}

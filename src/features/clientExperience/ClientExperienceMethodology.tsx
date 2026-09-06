@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AnalyticsPanel, PanelHeader } from '../../components/AnalyticsPrimitives';
 import { getCxAnalysisSettings, type CxAnalysisSettings } from './analysisSettingsApi';
 
 const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [], analysisRuns: [] };
@@ -439,17 +440,16 @@ export default function ClientExperienceMethodology() {
 
   return (
     <div className="cx-methodology-page">
-      <section className="page-card cx-methodology-hero">
-        <div><span>РАБОЧАЯ МЕТОДОЛОГИЯ</span><h2>Как устроен анализ клиентского опыта</h2><p>От исходного отзыва до темы, тональности, CXI и приоритета улучшения.</p></div>
-        <div className="cx-methodology-version"><span>Опубликованный словарь</span><strong>v{published?.versionNumber || '—'}</strong><small>{settings.groups.length} групп · {settings.topics.length} тем · {activeRules.length} правил</small></div>
-      </section>
+      <AnalyticsPanel className="cx-methodology-hero" density="overview">
+        <PanelHeader eyebrow="Рабочая методология" title="Как устроен анализ клиентского опыта" description="От исходного отзыва до темы, тональности, CXI и приоритета улучшения." controls={<div className="cx-methodology-version"><span>Опубликованный словарь</span><strong>v{published?.versionNumber || '—'}</strong><small>{settings.groups.length} групп · {settings.topics.length} тем · {activeRules.length} правил</small></div>} />
+      </AnalyticsPanel>
 
-      <nav className="page-card cx-methodology-nav" aria-label="Разделы методологии">
+      <nav className="ds-panel cx-methodology-nav" aria-label="Разделы методологии">
         <a href="#cx-flow">Путь данных</a><a href="#cx-entities">Сущности</a><a href="#cx-formulas">Формулы</a><a href="#cx-interpretation">Интерпретация</a><a href="#cx-rules">Правила</a><a href="#cx-glossary">Словарь</a>
       </nav>
 
-      <section id="cx-flow" className="page-card cx-methodology-section">
-        <div className="cx-section-head"><div><span>КОНВЕЙЕР</span><h2>Путь данных и контроль качества</h2><p>Каждый следующий этап использует результат предыдущего.</p></div></div>
+      <section id="cx-flow" className="ds-panel ds-density-analytics cx-methodology-section">
+        <PanelHeader eyebrow="Конвейер" title="Путь данных и контроль качества" description="Каждый следующий этап использует результат предыдущего." />
         <div className="cx-methodology-flow">
           <article><b>1</b><strong>Импорт</strong><p>Excel разбирается в браузере. На сервер передаются нормализованные строки, исходный файл после сверки удаляется.</p></article>
           <article><b>2</b><strong>Нормализация</strong><p>Хранятся исходный, очищенный и лемматизированный варианты. Этот слой не зависит от словаря тем.</p></article>
@@ -466,8 +466,8 @@ export default function ClientExperienceMethodology() {
         </div>
       </section>
 
-      <section id="cx-entities" className="page-card cx-methodology-section">
-        <div className="cx-section-head"><div><span>МОДЕЛЬ ДАННЫХ</span><h2>Сущности и связи</h2><p>Основные объекты, из которых собирается аналитика.</p></div></div>
+      <section id="cx-entities" className="ds-panel ds-density-analytics cx-methodology-section">
+        <PanelHeader eyebrow="Модель данных" title="Сущности и связи" description="Основные объекты, из которых собирается аналитика." />
         <div className="cx-entity-grid">
           <Entity name="Отзыв" source="reviews" text="Дата, товар, кабинет, оценка, исходный и подготовленный текст." />
           <Entity name="Группа опыта" source="cx_topic_groups" text="Верхний уровень: продукт, сервис или результат опыта." />
@@ -482,33 +482,33 @@ export default function ClientExperienceMethodology() {
       </section>
 
       <section id="cx-formulas" className="cx-methodology-formula-grid">
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>ТОНАЛЬНОСТЬ</span><h2>Тональность темы</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Тональность" title="Тональность темы" />
           <Formula value="Позитив ÷ (Позитив + Негатив) × 100" />
           <p>Нейтральные совпадения не влияют на оценку. Если позитивных и негативных совпадений нет, результат отсутствует и показывается как «—».</p>
         </article>
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>ПОКРЫТИЕ ОЦЕНКОЙ</span><h2>Доля оценочных упоминаний</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Покрытие оценкой" title="Доля оценочных упоминаний" />
           <Formula value="(Позитив + Негатив) ÷ (Позитив + Нейтрально + Негатив) × 100" />
           <p>Показывает, какая часть упоминаний реально влияет на тональность. Нейтральные совпадения остаются в общем объёме темы.</p>
         </article>
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>ОБЩИЙ ИНДЕКС</span><h2>CXI группы</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Общий индекс" title="CXI группы" />
           <Formula value="Σ(Оценочные упоминания × Тональность) ÷ Σ Оценочных упоминаний" />
           <p>В CXI входят только позитивные и негативные совпадения. Нейтральные сохраняются в объёме, но не смещают индекс к 50.</p>
         </article>
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>OVERALL CXI</span><h2>Общий индекс опыта</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Overall CXI" title="Общий индекс опыта" />
           <Formula value="Σ вкладов всех тем" />
           <p>Общая тональность всех оценочных упоминаний. Product, Service и Result CXI рассчитываются по той же формуле внутри своей группы.</p>
         </article>
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>ВКЛАД</span><h2>Вклад темы в CXI</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Вклад" title="Вклад темы в CXI" />
           <Formula value="Вес оценочных упоминаний × Тональность темы" />
           <p>Вес — доля позитивных и негативных совпадений темы среди всех оценочных совпадений текущего среза.</p>
         </article>
-        <article className="page-card cx-methodology-section">
-          <div className="cx-section-head"><div><span>ПРИОРИТЕТ</span><h2>Problem Index</h2></div></div>
+        <article className="ds-panel ds-density-analytics cx-methodology-section">
+          <PanelHeader eyebrow="Приоритет" title="Problem Index" />
           <Formula value="100 × взвешенная сумма факторов" />
           <dl className="cx-formula-weights">
             <div><dt>Распространённость</dt><dd>{percent(thresholds.exposureWeight)}</dd></div><div><dt>Негатив</dt><dd>{percent(thresholds.negativityWeight)}</dd></div>
@@ -518,8 +518,8 @@ export default function ClientExperienceMethodology() {
         </article>
       </section>
 
-      <section id="cx-interpretation" className="page-card cx-methodology-section cx-methodology-interpretation">
-        <div className="cx-section-head"><div><span>ЧТЕНИЕ РЕЗУЛЬТАТОВ</span><h2>Как интерпретировать показатели</h2><p>Средняя оценка описывает отзыв целиком, а тональность — только конкретную тему внутри него.</p></div></div>
+      <section id="cx-interpretation" className="ds-panel ds-density-analytics cx-methodology-section cx-methodology-interpretation">
+        <PanelHeader eyebrow="Чтение результатов" title="Как интерпретировать показатели" description="Средняя оценка описывает отзыв целиком, а тональность — только конкретную тему внутри него." />
         <div className="cx-interpretation-definitions">
           <article><span>ОБЩИЙ УРОВЕНЬ</span><strong>Средняя оценка</strong><b>1–5 ★</b><p>Среднее значение звёзд всех отзывов в выбранном срезе. Показывает итоговое впечатление покупателя от покупки.</p></article>
           <article><span>УРОВЕНЬ ТЕМЫ</span><strong>Тональность темы</strong><b>P ÷ (P + N)</b><p>Доля позитивных среди позитивных и негативных упоминаний конкретной темы.</p></article>
@@ -527,7 +527,7 @@ export default function ClientExperienceMethodology() {
           <article><span>ОБЪЁМ</span><strong>Нейтральные упоминания</strong><b>U входит в объём</b><p>Не участвуют в тональности, но входят в число упоминаний и показывают распространённость темы.</p></article>
         </div>
         <div className="cx-interpretation-note"><strong>Почему линии расходятся</strong><p>Средняя оценка и тональность могут двигаться по-разному: первая относится ко всему отзыву, вторая — к отдельному аспекту опыта. Например, покупатель может поставить пять звёзд товару, но негативно описать доставку.</p></div>
-        <div className="cx-section-head cx-interpretation-subhead"><div><span>МАТРИЦА СИГНАЛОВ</span><h2>Сочетания оценки и тональности</h2></div></div>
+        <div className="cx-interpretation-subhead"><PanelHeader eyebrow="Матрица сигналов" title="Сочетания оценки и тональности" /></div>
         <div className="cx-interpretation-matrix">
           <Interpretation state="Оба показателя растут" meaning="Общее впечатление и выбранная тема улучшаются одновременно." action="Проверить устойчивость роста и закрепить сильную практику." tone="good" />
           <Interpretation state="Оба показателя падают" meaning="Ухудшение темы совпадает с ухудшением общего опыта." action="Высокий приоритет: изучить негативные причины и товары-лидеры проблемы." tone="bad" />
@@ -539,8 +539,8 @@ export default function ClientExperienceMethodology() {
         <div className="cx-interpretation-limits"><strong>Ограничения анализа</strong><ul><li>Нельзя напрямую сравнивать крутизну линий на разных шкалах.</li><li>Тональность нестабильна при малом числе оценочных упоминаний.</li><li>Корреляция не доказывает влияние темы на итоговую оценку.</li><li>Выводы проверяются по числу упоминаний, доле оценочных упоминаний и примерам отзывов.</li></ul></div>
       </section>
 
-      <section id="cx-rules" className="page-card cx-methodology-section">
-        <div className="cx-section-head"><div><span>СЛОВАРЬ</span><h2>Как находятся темы</h2><p>Режимы правил дополняют друг друга и уменьшают ручное перечисление словоформ.</p></div></div>
+      <section id="cx-rules" className="ds-panel ds-density-analytics cx-methodology-section">
+        <PanelHeader eyebrow="Словарь" title="Как находятся темы" description="Режимы правил дополняют друг друга и уменьшают ручное перечисление словоформ." />
         <div className="cx-rule-method-grid">{ruleDescriptions.map(([name, text]) => <article key={name}><strong>{name}</strong><p>{text}</p></article>)}</div>
         <div className="cx-methodology-params">
           <div><span>Уверенная выборка</span><strong>{thresholds.confident} упоминаний</strong></div>
@@ -550,8 +550,8 @@ export default function ClientExperienceMethodology() {
         </div>
       </section>
 
-      <section id="cx-glossary" className="page-card cx-methodology-section cx-metric-reference">
-        <div className="cx-section-head"><div><span>ПОЛНЫЙ СПРАВОЧНИК</span><h2>Сущности и показатели CX</h2><p>Фактические определения, источники, формулы и правила чтения текущей реализации.</p></div></div>
+      <section id="cx-glossary" className="ds-panel ds-density-analytics cx-methodology-section cx-metric-reference">
+        <PanelHeader eyebrow="Полный справочник" title="Сущности и показатели CX" description="Фактические определения, источники, формулы и правила чтения текущей реализации." />
         <div className="cx-reference-key">
           <span><b>Значение</b>что измеряется</span><span><b>Источник</b>откуда берутся данные</span>
           <span><b>Формула</b>как считается</span><span><b>Интерпретация</b>как читать результат</span>
