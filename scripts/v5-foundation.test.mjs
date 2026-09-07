@@ -22,6 +22,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907003000_v5_access_directory.sql',
     '20260907004000_v5_market_batch_history.sql',
     '20260907005000_v5_market_batch_errors.sql',
+    '20260907006000_v5_market_source_download.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -168,6 +169,14 @@ test('market batch error detail is bounded and checks importer plus batch access
   assert.match(sql, /'schema_version',\s*'20260907005000'/iu);
 });
 
+test('market history exposes a source path only after batch access is checked', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260907006000_v5_market_source_download.sql', import.meta.url), 'utf8');
+  assert.match(sql, /file\.object_path/iu);
+  assert.match(sql, /app\.can_read_batch\(batch\.id\)/iu);
+  assert.match(sql, /source_file_retained/iu);
+  assert.match(sql, /'schema_version',\s*'20260907006000'/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
@@ -184,6 +193,7 @@ test('market import UI requests bounded server batch history', () => {
   assert.match(source, /export async function getMarketBatchErrors\(batchId: string, limit = 100\)/iu);
   assert.match(source, /supabase\.rpc\('v5_market_batch_errors'/iu);
   assert.match(source, /Math\.max\(1, Math\.min\(200, Math\.trunc\(limit\)\)\)/iu);
+  assert.match(source, /supabase\.storage\.from\(BUCKET\)\.download\(objectPath\)/iu);
 });
 
 test('foundation migration contains the required isolation and ingestion contracts', () => {

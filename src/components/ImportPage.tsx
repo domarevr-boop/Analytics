@@ -13,7 +13,7 @@ import { getLatestReviewImport, importReviewsToSupabase } from '../features/clie
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
 import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
-import { getLatestMarketImport, getMarketBatchErrors, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
+import { downloadMarketSource, getLatestMarketImport, getMarketBatchErrors, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
 import type { MarketBatchErrorRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -84,6 +84,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [marketErrors, setMarketErrors] = useState<MarketBatchErrorRow[]>([]);
   const [errorBatchId, setErrorBatchId] = useState('');
   const [marketErrorsLoading, setMarketErrorsLoading] = useState(false);
+  const [downloadingBatchId, setDownloadingBatchId] = useState('');
   const importRunningRef = useRef(false);
 
   useEffect(() => {
@@ -306,6 +307,17 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     }
   }, [errorBatchId]);
 
+  const handleMarketSourceDownload = useCallback(async (batch: MarketImportHistoryRow) => {
+    setDownloadingBatchId(batch.batchId);
+    try {
+      await downloadMarketSource(batch.objectPath, batch.fileName);
+    } catch (reason) {
+      alert(reason instanceof Error ? reason.message : 'Не удалось скачать исходный файл');
+    } finally {
+      setDownloadingBatchId('');
+    }
+  }, []);
+
   const formatPeriod = (log: ImportFileLog) => {
     if (!log.dataStart) return '—';
     const d = (s: string) => {
@@ -442,7 +454,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td className="import-filename"><span>{batch.fileName}</span><small>{batch.batchId}</small></td>
               <td>{batch.periodStart ? `${batch.periodStart} — ${batch.periodEnd || batch.periodStart}` : '—'}</td>
               <td><span className={`import-status ${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`}>{batch.status === 'published' ? 'Опубликован' : batch.status === 'failed' ? 'Отклонён' : batch.status === 'cancelled' ? 'Отменён' : 'В обработке'}</span></td>
-              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td><td>{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleMarketErrors(batch.batchId)}>{errorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}</td>
+              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td><td><div className="admin-form-actions">{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleMarketErrors(batch.batchId)}>{errorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}{batch.sourceFileRetained && <button type="button" className="btn-secondary" disabled={downloadingBatchId === batch.batchId} onClick={() => void handleMarketSourceDownload(batch)}>{downloadingBatchId === batch.batchId ? 'Скачивание…' : 'Скачать'}</button>}</div></td>
             </tr>)}</tbody>
           </table></div>
           {errorBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Диагностика" title="Ошибки выбранной партии" description={marketErrorsLoading ? 'Загрузка…' : `${marketErrors.length} записей (не более 100)`} /></div>{!marketErrorsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Лист</th><th>Строка</th><th>Колонка</th><th>Код</th><th>Сообщение</th><th>Исходное значение</th></tr></thead><tbody>{marketErrors.map(error => <tr key={error.errorId}><td>{error.sheetName || '—'}</td><td>{error.rowNumber ?? '—'}</td><td>{error.columnName || '—'}</td><td>{error.errorCode}</td><td>{error.message}</td><td>{error.rawValue || '—'}</td></tr>)}</tbody></table></div>}</div>}

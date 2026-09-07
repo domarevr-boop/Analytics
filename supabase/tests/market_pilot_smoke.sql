@@ -311,6 +311,11 @@ select jsonb_build_object(
     where smoke.label = 'invalid' and batch.status = 'failed' and batch.rejected_rows = 1
   ),
   'history_contains_smoke_batches', jsonb_array_length(public.v5_market_batch_history(20)) >= 3,
+  'history_source_paths_present', not exists (
+    select 1
+    from jsonb_array_elements(public.v5_market_batch_history(20)) history_item
+    where not (history_item ? 'object_path')
+  ),
   'invalid_error_detail_available', jsonb_array_length(public.v5_market_batch_errors((select batch_id from market_smoke_batches where label = 'invalid'), 100)) >= 5,
   'published_day_count', (select day_count from public.v5_market_date_bounds()),
   'transaction_will_rollback', true

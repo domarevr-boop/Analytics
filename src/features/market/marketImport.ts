@@ -40,6 +40,7 @@ export interface MarketImportHistoryRow {
   errorSummary: string | null;
   attemptCount: number;
   sourceFileRetained: boolean;
+  objectPath: string;
 }
 
 export interface MarketBatchErrorRow {
@@ -143,8 +144,24 @@ export async function getMarketImportHistory(limit = 20): Promise<MarketImportHi
       errorSummary: readString(row, 'error_summary') || null,
       attemptCount: readNumber(row, 'attempt_count'),
       sourceFileRetained: row.source_file_retained === true,
+      objectPath: readString(row, 'object_path'),
     };
   });
+}
+
+export async function downloadMarketSource(objectPath: string, fileName: string): Promise<void> {
+  if (!objectPath) throw new Error('У партии отсутствует путь сохранённого исходника');
+  const { data, error } = await supabase.storage.from(BUCKET).download(objectPath);
+  if (error) throw new Error(`Не удалось скачать исходный файл «Рынка»: ${error.message}`);
+
+  const url = URL.createObjectURL(data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = (fileName || 'market-source').replace(/[\\/:*?"<>|]/gu, '_');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function getMarketBatchErrors(batchId: string, limit = 100): Promise<MarketBatchErrorRow[]> {
