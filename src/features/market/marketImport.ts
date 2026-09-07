@@ -42,6 +42,17 @@ export interface MarketImportHistoryRow {
   sourceFileRetained: boolean;
 }
 
+export interface MarketBatchErrorRow {
+  errorId: number;
+  sheetName: string;
+  rowNumber: number | null;
+  columnName: string | null;
+  errorCode: string;
+  message: string;
+  rawValue: string | null;
+  createdAt: string;
+}
+
 interface ImportOptions {
   sourceRowNumbers?: number[];
   sheetName?: string;
@@ -132,6 +143,32 @@ export async function getMarketImportHistory(limit = 20): Promise<MarketImportHi
       errorSummary: readString(row, 'error_summary') || null,
       attemptCount: readNumber(row, 'attempt_count'),
       sourceFileRetained: row.source_file_retained === true,
+    };
+  });
+}
+
+export async function getMarketBatchErrors(batchId: string, limit = 100): Promise<MarketBatchErrorRow[]> {
+  if (!batchId) throw new Error('Для загрузки ошибок требуется идентификатор партии');
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+  const { data, error } = await supabase.rpc('v5_market_batch_errors', {
+    p_batch_id: batchId,
+    p_limit: safeLimit,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
+
+  return data.map(value => {
+    const row = asObject(value, 'Ошибки партии «Рынка»');
+    const rowNumber = Number(row.row_number);
+    return {
+      errorId: readNumber(row, 'error_id'),
+      sheetName: readString(row, 'sheet_name'),
+      rowNumber: Number.isInteger(rowNumber) && rowNumber > 0 ? rowNumber : null,
+      columnName: readString(row, 'column_name') || null,
+      errorCode: readString(row, 'error_code'),
+      message: readString(row, 'message'),
+      rawValue: readString(row, 'raw_value') || null,
+      createdAt: readString(row, 'created_at'),
     };
   });
 }

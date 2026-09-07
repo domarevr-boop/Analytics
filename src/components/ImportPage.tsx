@@ -13,8 +13,8 @@ import { getLatestReviewImport, importReviewsToSupabase } from '../features/clie
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
 import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
-import { getLatestMarketImport, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
-import type { MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
+import { getLatestMarketImport, getMarketBatchErrors, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
+import type { MarketBatchErrorRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -81,6 +81,9 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
   const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
+  const [marketErrors, setMarketErrors] = useState<MarketBatchErrorRow[]>([]);
+  const [errorBatchId, setErrorBatchId] = useState('');
+  const [marketErrorsLoading, setMarketErrorsLoading] = useState(false);
   const importRunningRef = useRef(false);
 
   useEffect(() => {
@@ -284,6 +287,25 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     }
   }, []);
 
+  const toggleMarketErrors = useCallback(async (batchId: string) => {
+    if (errorBatchId === batchId) {
+      setErrorBatchId('');
+      setMarketErrors([]);
+      return;
+    }
+    setErrorBatchId(batchId);
+    setMarketErrors([]);
+    setMarketErrorsLoading(true);
+    try {
+      setMarketErrors(await getMarketBatchErrors(batchId));
+    } catch (reason) {
+      setErrorBatchId('');
+      alert(reason instanceof Error ? reason.message : 'Не удалось загрузить ошибки партии');
+    } finally {
+      setMarketErrorsLoading(false);
+    }
+  }, [errorBatchId]);
+
   const formatPeriod = (log: ImportFileLog) => {
     if (!log.dataStart) return '—';
     const d = (s: string) => {
@@ -414,15 +436,16 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         <AnalyticsPanel className="import-log import-market-history" density="data">
           <div className="import-section-head"><PanelHeader eyebrow="Аудит V5" title="История партий «Рынка»" description="Последние 20 доступных загрузок; исходники и ошибки сохраняются на сервере" controls={<span>{marketImportHistory.length} партий</span>} /></div>
           <div className="import-table-wrap"><table className="import-table">
-            <thead><tr><th>Создана</th><th>Файл</th><th>Период</th><th>Статус</th><th>Строк</th><th>Принято</th><th>Отклонено</th><th>Ошибок</th><th>Попыток</th><th>Исходник</th></tr></thead>
+            <thead><tr><th>Создана</th><th>Файл</th><th>Период</th><th>Статус</th><th>Строк</th><th>Принято</th><th>Отклонено</th><th>Ошибок</th><th>Попыток</th><th>Исходник</th><th></th></tr></thead>
             <tbody>{marketImportHistory.map(batch => <tr key={batch.batchId} className={`import-row-${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`} title={batch.errorSummary || undefined}>
               <td>{formatDate(batch.createdAt)}</td>
               <td className="import-filename"><span>{batch.fileName}</span><small>{batch.batchId}</small></td>
               <td>{batch.periodStart ? `${batch.periodStart} — ${batch.periodEnd || batch.periodStart}` : '—'}</td>
               <td><span className={`import-status ${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`}>{batch.status === 'published' ? 'Опубликован' : batch.status === 'failed' ? 'Отклонён' : batch.status === 'cancelled' ? 'Отменён' : 'В обработке'}</span></td>
-              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td>
+              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td><td>{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleMarketErrors(batch.batchId)}>{errorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}</td>
             </tr>)}</tbody>
           </table></div>
+          {errorBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Диагностика" title="Ошибки выбранной партии" description={marketErrorsLoading ? 'Загрузка…' : `${marketErrors.length} записей (не более 100)`} /></div>{!marketErrorsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Лист</th><th>Строка</th><th>Колонка</th><th>Код</th><th>Сообщение</th><th>Исходное значение</th></tr></thead><tbody>{marketErrors.map(error => <tr key={error.errorId}><td>{error.sheetName || '—'}</td><td>{error.rowNumber ?? '—'}</td><td>{error.columnName || '—'}</td><td>{error.errorCode}</td><td>{error.message}</td><td>{error.rawValue || '—'}</td></tr>)}</tbody></table></div>}</div>}
         </AnalyticsPanel>
       )}
 
