@@ -7,6 +7,9 @@ interface NavBarProps {
   onNavigate: (page: PageName) => void;
   onLogout?: () => void;
   showAdmin?: boolean;
+  showImport?: boolean;
+  showDictionary?: boolean;
+  allowedPages?: PageName[];
 }
 
 type NavIconName = 'report' | 'reviews' | 'funnel' | 'target' | 'search' | 'geo' | 'competitors' | 'market' | 'plan' | 'profit';
@@ -84,11 +87,12 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <svg className="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{content}</svg>;
 }
 
-export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: NavBarProps) {
+export default function NavBar({ activePage, onNavigate, onLogout, showAdmin, showImport = true, showDictionary = true, allowedPages }: NavBarProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [storageUsage, setStorageUsage] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isAllowed = (page: PageName) => !allowedPages || allowedPages.includes(page);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,15 +162,20 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: 
       <div className="navbar-left">
         <span className="navbar-logo">Analytics</span>
         <div className="navbar-tabs" ref={dropdownRef}>
-          <button
-            type="button"
-            className={`nav-tab ${activePage === 'dashboard' ? 'active' : ''}`}
-            onClick={() => navigate('dashboard')}
-            aria-current={activePage === 'dashboard' ? 'page' : undefined}
-          >Главная</button>
+          {isAllowed('dashboard') && (
+            <button
+              type="button"
+              className={`nav-tab ${activePage === 'dashboard' ? 'active' : ''}`}
+              onClick={() => navigate('dashboard')}
+              aria-current={activePage === 'dashboard' ? 'page' : undefined}
+            >Главная</button>
+          )}
 
           {GROUPS.map((g, groupIndex) => {
-            const groupActive = g.matchPages.includes(activePage);
+            const sections = g.sections?.map(section => ({ ...section, items: section.items.filter(item => isAllowed(item.page)) })).filter(section => section.items.length > 0);
+            const items = g.items?.filter(item => isAllowed(item.page));
+            if (!sections?.length && !items?.length) return null;
+            const groupActive = g.matchPages.filter(isAllowed).includes(activePage);
             const isOpen = openDropdown === g.label;
             const menuId = `nav-menu-${groupIndex}`;
             return (
@@ -210,30 +219,34 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin }: 
                     aria-label={g.label}
                     onKeyDown={event => handleMenuKeyDown(event, menuId)}
                   >
-                    {g.sections ? g.sections.map(section => (
+                    {sections ? sections.map(section => (
                       <section className="nav-dropdown-section" key={section.label} aria-label={section.label}>
                         <strong className="nav-dropdown-heading">{section.label}</strong>
                         {section.items.map(renderItem)}
                       </section>
-                    )) : g.items?.map(renderItem)}
+                    )) : items?.map(renderItem)}
                   </div>
                 )}
               </div>
             );
           })}
 
-          <button
-            type="button"
-            className={`nav-tab ${activePage === 'dictionary' ? 'active' : ''}`}
-            onClick={() => navigate('dictionary')}
-            aria-current={activePage === 'dictionary' ? 'page' : undefined}
-          >Справочник</button>
-          <button
-            type="button"
-            className={`nav-tab ${activePage === 'import' ? 'active' : ''}`}
-            onClick={() => navigate('import')}
-            aria-current={activePage === 'import' ? 'page' : undefined}
-          >Импорт</button>
+          {showDictionary && isAllowed('dictionary') && (
+            <button
+              type="button"
+              className={`nav-tab ${activePage === 'dictionary' ? 'active' : ''}`}
+              onClick={() => navigate('dictionary')}
+              aria-current={activePage === 'dictionary' ? 'page' : undefined}
+            >Справочник</button>
+          )}
+          {showImport && isAllowed('import') && (
+            <button
+              type="button"
+              className={`nav-tab ${activePage === 'import' ? 'active' : ''}`}
+              onClick={() => navigate('import')}
+              aria-current={activePage === 'import' ? 'page' : undefined}
+            >Импорт</button>
+          )}
           {showAdmin && (
             <>
               <button

@@ -26,6 +26,9 @@ with current_access as (
     true,
     true
   ) as result
+), directory as (
+  select count(*) as user_count
+  from public.v5_admin_user_directory()
 )
 select jsonb_build_object(
   'access_role', (select access_role from current_access),
@@ -34,6 +37,7 @@ select jsonb_build_object(
   'can_import', app.can_import(),
   'is_admin', app.is_admin(),
   'admin_rpc_role', (select result ->> 'access_role' from admin_rpc),
+  'directory_has_current_user', (select user_count > 0 from directory),
   'audit_visible', (select count(*) > 0 from app.access_audit)
 ) as admin_access_smoke;
 

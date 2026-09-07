@@ -53,11 +53,15 @@ const FILE_TYPE_LABELS: Record<string, string> = {
 };
 const DEV = import.meta.env.DEV;
 
+interface ImportPageProps {
+  serverOnly?: boolean;
+}
+
 function waitForPaint() {
   return new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 }
 
-export default function ImportPage() {
+export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   useSyncExternalStore(subscribe, getVersion);
   const logs = getImportLog();
   const latestLogs = useMemo(() => {
@@ -79,9 +83,9 @@ export default function ImportPage() {
   const importRunningRef = useRef(false);
 
   useEffect(() => {
-    void getLatestReviewImport().then(setLatestReviewImport);
+    if (!serverOnly) void getLatestReviewImport().then(setLatestReviewImport);
     void getLatestMarketImport().then(setLatestMarketImport);
-  }, []);
+  }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -100,6 +104,7 @@ export default function ImportPage() {
           return;
         }
       }
+      if (serverOnly) throw new Error('Для роли importer в V5 разрешён только серверный отчёт «Рынок» (.xlsx или .csv).');
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -122,7 +127,7 @@ export default function ImportPage() {
       setLoading(false);
       setProgress('');
     }
-  }, []);
+  }, [serverOnly]);
 
   const handleCompetitorImport = useCallback(async () => {
     if (!selectedFile || !competitorPreview || importRunningRef.current) return;
@@ -155,6 +160,10 @@ export default function ImportPage() {
     dateYearOverride?: number,
   ) => {
     if (!parsed || importRunningRef.current) return;
+    if (serverOnly && source !== 'market_dynamics') {
+      alert('Для роли importer в V5 разрешён только серверный отчёт «Рынок».');
+      return;
+    }
     importRunningRef.current = true;
     if (DEV) console.log('[import-ui] source:', source, 'remapped rows:', remapped.length, 'dateOverride:', dateOverride);
     if (DEV && remapped.length > 0) console.log('[import-ui] first remapped row:', remapped[0], 'keys:', Object.keys(remapped[0]));
@@ -231,7 +240,7 @@ export default function ImportPage() {
       setMarketParseContext(null);
       setSelectedFile(null);
     }
-  }, [parsed, selectedFile, marketParseContext]);
+  }, [parsed, selectedFile, marketParseContext, serverOnly]);
 
   const handleCancelMapping = useCallback(() => {
     setParsed(null);
@@ -290,7 +299,7 @@ export default function ImportPage() {
 
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
-      <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description="Единая точка загрузки, проверки покрытия и обновления аналитических источников." />
+      <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly ? 'Безопасная загрузка серверного отчёта «Рынок» в V5.' : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {parsed && (
         <div className="import-mapper-wrapper">
           {loading && (
@@ -306,7 +315,7 @@ export default function ImportPage() {
           />
         </div>
       )}
-      {competitorPreview && (
+      {!serverOnly && competitorPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
             <div className="import-mapper competitor-import-preview">
@@ -357,11 +366,11 @@ export default function ImportPage() {
           {loading ? progress || 'Загрузка...' : 'Перетащите файлы сюда или нажмите для выбора'}
         </div>
         <div className="dropzone-hint">
-          Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB
+          {serverOnly ? 'Поддерживаются: отчёт «Рынок» в CSV или Excel (.xlsx)' : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
 
-      {latestReviewImport && (
+      {!serverOnly && latestReviewImport && (
         <AnalyticsPanel className="import-log import-review-latest" density="data">
           <div className="import-section-head"><PanelHeader eyebrow="Серверный контур" title="Последний импорт отзывов WB" description={latestReviewImport.fileName} controls={<span>{latestReviewImport.status === 'completed' ? 'Проверен' : latestReviewImport.status}</span>} /></div>
           <div className="import-table-wrap"><table className="import-table">
@@ -398,7 +407,7 @@ export default function ImportPage() {
         </AnalyticsPanel>
       )}
 
-      {latestLogs.length > 0 && (
+      {!serverOnly && latestLogs.length > 0 && (
         <AnalyticsPanel className="import-log import-latest-files" density="data">
           <div className="import-section-head"><PanelHeader eyebrow="Локальные данные" title="Последние файлы" description="По одному последнему импорту для каждого типа отчёта" controls={<span>{latestLogs.length} источников</span>} /></div>
           <div className="import-table-wrap"><table className="import-table">
@@ -459,7 +468,7 @@ export default function ImportPage() {
         </AnalyticsPanel>
       )}
 
-      <DataCoverage />
+      {!serverOnly && <DataCoverage />}
     </div>
   );
 }

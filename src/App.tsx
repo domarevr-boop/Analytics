@@ -4,6 +4,8 @@ import './styles/design-system.css';
 import type { DatePeriod } from './data/mock';
 import { getDefaultPeriods } from './data/mock';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
+import { fetchV5Access, getV5Capabilities, isV5PageAllowed, type V5Access } from './auth/v5Access';
+import { isV5MarketBackendEnabled } from './features/market/marketData';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
@@ -19,6 +21,7 @@ import DictionaryPage from './components/DictionaryPage';
 import ProfitabilityPage from './components/ProfitabilityPage';
 import AuthPage from './components/AuthPage';
 import AdminPage from './components/AdminPage';
+import V5AccessAdminPage from './components/V5AccessAdminPage';
 import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
@@ -37,6 +40,7 @@ import './styles/overview-pages.css';
 
 const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
 const LAST_PAGE_KEY = 'analytics_last_page_v1';
+const IS_V5_ENVIRONMENT = import.meta.env.VITE_APP_ENV === 'v5-development';
 const ALL_TABLE_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
 const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'market', 'geography', 'client-experience', 'competitors', 'reporting', 'product'];
 
@@ -217,9 +221,22 @@ function App() {
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState('');
   const [adminMeta, setAdminMeta] = useState<{ isAdmin: boolean; adminCount: number; bootstrapAllowed: boolean; email: string | null } | null>(null);
+  const [v5Access, setV5Access] = useState<V5Access | null>(null);
+  const [accessChecked, setAccessChecked] = useState(false);
 
   const [adminRefreshKey, setAdminRefreshKey] = useState(0);
-  const isAdmin = isConfiguredAdminEmail(auth.user?.email) || !!adminMeta?.isAdmin;
+  const legacyIsAdmin = isConfiguredAdminEmail(auth.user?.email) || !!adminMeta?.isAdmin;
+  const v5Capabilities = getV5Capabilities(v5Access);
+  const isAdmin = IS_V5_ENVIRONMENT ? v5Capabilities.canManage : legacyIsAdmin;
+  const canBootstrap = !IS_V5_ENVIRONMENT && (!!adminMeta?.bootstrapAllowed || isConfiguredAdminEmail(auth.user?.email));
+  const v5SafeScenarioReady = v5Capabilities.canManage || isV5MarketBackendEnabled;
+  const canUseApp = IS_V5_ENVIRONMENT ? v5Capabilities.canRead && v5SafeScenarioReady : isAdmin || canBootstrap;
+  const canImport = IS_V5_ENVIRONMENT ? v5Capabilities.canImport : canUseApp;
+  const canManage = IS_V5_ENVIRONMENT ? v5Capabilities.canManage : isAdmin;
+  const allowedPages: PageName[] | undefined = IS_V5_ENVIRONMENT && !canManage
+    ? PAGE_NAMES.filter(candidate => isV5PageAllowed(v5Access, candidate))
+    : undefined;
+  const displayPage = allowedPages && !allowedPages.includes(page) ? 'market' : page;
   const storeVersion = useSyncExternalStore(subscribe, getVersion);
 
   useEffect(() => {
@@ -271,23 +288,47 @@ function App() {
   useEffect(() => {
     if (!auth.user) {
       setAdminMeta(null);
+      setV5Access(null);
+      setAccessChecked(true);
       return;
     }
     let cancelled = false;
+    setAccessChecked(false);
     (async () => {
       try {
-        const me = await adminMe();
-        if (!cancelled) setAdminMeta(me);
+        if (IS_V5_ENVIRONMENT) {
+          const access = await fetchV5Access();
+          if (!cancelled) {
+            setV5Access(access);
+            setAdminMeta(null);
+          }
+        } else {
+          const me = await adminMe();
+          if (!cancelled) {
+            setAdminMeta(me);
+            setV5Access(null);
+          }
+        }
       } catch {
-        if (!cancelled) setAdminMeta(null);
+        if (!cancelled) {
+          setAdminMeta(null);
+          setV5Access(null);
+        }
+      } finally {
+        if (!cancelled) setAccessChecked(true);
       }
     })();
     return () => { cancelled = true; };
   }, [auth.user, authTick, adminRefreshKey]);
 
   useEffect(() => {
-    if (!auth.initialized || !auth.user || !isAdmin) {
+    if (!auth.initialized || !auth.user || !accessChecked || !canUseApp) {
       setDataReady(false);
+      return;
+    }
+    if (IS_V5_ENVIRONMENT && !canManage) {
+      setDataError('');
+      setDataReady(true);
       return;
     }
     let cancelled = false;
@@ -311,7 +352,7 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [auth.initialized, auth.user, isAdmin, authTick]);
+  }, [auth.initialized, auth.user, accessChecked, canUseApp, canManage, authTick]);
 
   useEffect(() => {
     if (!dataReady || page !== 'dashboard') return;
@@ -330,7 +371,7 @@ function App() {
     setPeriodB(p);
   };
 
-  if (!auth.initialized || auth.loading) {
+  if (!auth.initialized || auth.loading || (!!auth.user && !accessChecked)) {
     return <div className="dashboard"><div style={{padding: 24}}>Загрузка...</div></div>;
   }
 
@@ -338,26 +379,28 @@ function App() {
     return <AuthPage />;
   }
 
-  const canBootstrap = !!adminMeta?.bootstrapAllowed || isConfiguredAdminEmail(auth.user.email);
-
-  if (!isAdmin && !canBootstrap) {
+  if (!canUseApp) {
     return (
       <div className="dashboard">
-        <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={false} />
-        <div style={{padding: 24}}>Доступ только для админа.</div>
+        <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={false} showImport={false} showDictionary={false} allowedPages={[]} />
+        <div style={{padding: 24}}>{IS_V5_ENVIRONMENT
+          ? v5Capabilities.canRead && !v5SafeScenarioReady
+            ? 'Безопасный серверный сценарий V5 не включён в конфигурации.'
+            : 'Для пользователя не назначен активный доступ V5.'
+          : 'Доступ только для админа.'}</div>
       </div>
     );
   }
 
   return (
     <div className="dashboard">
-      <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={isAdmin} />
+      <NavBar activePage={displayPage} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={canManage} showImport={canImport} showDictionary={canManage} allowedPages={allowedPages} />
 
       {!dataReady ? (
         <div className="page-content"><div className="page-card" style={{ padding: 24 }}>
           {dataError ? <><strong>Не удалось загрузить локальные данные</strong><p>{dataError}</p></> : 'Загрузка локальных данных...'}
         </div></div>
-      ) : page === 'dashboard' ? (
+      ) : displayPage === 'dashboard' ? (
         <DashboardContent
           cabinetFilter={cabinetFilter}
           categoryFilter={categoryFilter}
@@ -378,33 +421,35 @@ function App() {
           onPeriodBChange={handlePeriodBChange}
           onProductOpen={openProduct}
         />
-      ) : page === 'product' && selectedProductId ? (
+      ) : displayPage === 'product' && selectedProductId ? (
         <div className="page-content"><ProductOverviewPage productId={selectedProductId} onBack={closeProduct} /></div>
-      ) : page === 'funnel' ? (
+      ) : displayPage === 'funnel' ? (
         <div className="page-content"><FunnelPage /></div>
-      ) : page === 'entry-points' ? (
+      ) : displayPage === 'entry-points' ? (
         <div className="page-content"><EntryPointsPage /></div>
-      ) : page === 'search-phrases' ? (
+      ) : displayPage === 'search-phrases' ? (
         <div className="page-content"><SearchPhrasesPage /></div>
-      ) : page === 'market' ? (
+      ) : displayPage === 'market' ? (
         <div className="page-content"><MarketPage /></div>
-      ) : page === 'geography' ? (
+      ) : displayPage === 'geography' ? (
         <div className="page-content"><GeographyPage /></div>
-      ) : page === 'client-experience' ? (
+      ) : displayPage === 'client-experience' ? (
         <div className="page-content"><ClientExperiencePage /></div>
-      ) : page === 'competitors' ? (
+      ) : displayPage === 'competitors' ? (
         <div className="page-content"><CompetitorsPage /></div>
-      ) : page === 'reporting' ? (
+      ) : displayPage === 'reporting' ? (
         <div className="page-content"><ReportingPage /></div>
-      ) : page === 'planning' ? (
+      ) : displayPage === 'planning' ? (
         <PlanningPage />
-      ) : page === 'import' ? (
-        <div className="page-content"><ImportPage /></div>
-      ) : page === 'profitability' ? (
+      ) : displayPage === 'import' ? (
+        <div className="page-content"><ImportPage serverOnly={IS_V5_ENVIRONMENT && !canManage} /></div>
+      ) : displayPage === 'profitability' ? (
         <div className="page-content"><ProfitabilityPage {...filterBarProps} /></div>
-      ) : page === 'admin' ? (
-        <AdminPage onAdminChanged={() => setAdminRefreshKey(v => v + 1)} />
-      ) : page === 'dev' ? (
+      ) : displayPage === 'admin' ? (
+        IS_V5_ENVIRONMENT
+          ? <V5AccessAdminPage onAccessChanged={() => setAdminRefreshKey(v => v + 1)} />
+          : <AdminPage onAdminChanged={() => setAdminRefreshKey(v => v + 1)} />
+      ) : displayPage === 'dev' ? (
         <DevPage />
       ) : (
         <DictionaryPage />

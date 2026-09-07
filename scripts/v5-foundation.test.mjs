@@ -19,6 +19,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907000000_v5_market_retry_reset.sql',
     '20260907001000_v5_market_retry_reset_lint_fix.sql',
     '20260907002000_v5_market_retry_upload_timestamp.sql',
+    '20260907003000_v5_access_directory.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -42,6 +43,16 @@ test('access management requires an existing administrator and keeps bootstrap p
     /revoke all on function app\.bootstrap_first_admin\(uuid\) from public, anon, authenticated, service_role/iu,
   );
   assert.doesNotMatch(sql, /insert\s+into\s+auth\.users/iu);
+});
+
+test('V5 user directory exposes Auth identities only through an admin RPC', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260907003000_v5_access_directory.sql', import.meta.url), 'utf8');
+  assert.match(sql, /public\.v5_admin_user_directory\(\)/iu);
+  assert.match(sql, /if not app\.is_admin\(\)/iu);
+  assert.match(sql, /from auth\.users users/iu);
+  assert.match(sql, /revoke all on function public\.v5_admin_user_directory\(\) from public, anon/iu);
+  assert.match(sql, /grant execute on function public\.v5_admin_user_directory\(\) to authenticated/iu);
+  assert.match(sql, /'schema_version',\s*'20260907003000'/iu);
 });
 
 test('first-admin command refuses ambiguous Auth state', () => {
