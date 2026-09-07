@@ -13,8 +13,8 @@ import { getLatestReviewImport, importReviewsToSupabase } from '../features/clie
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
 import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
-import { downloadMarketSource, getLatestMarketImport, getMarketBatchErrors, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
-import type { MarketBatchErrorRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
+import { downloadMarketSource, getLatestMarketImport, getMarketBatchErrors, getMarketBatchEvents, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
+import type { MarketBatchErrorRow, MarketBatchEventRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -84,6 +84,9 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [marketErrors, setMarketErrors] = useState<MarketBatchErrorRow[]>([]);
   const [errorBatchId, setErrorBatchId] = useState('');
   const [marketErrorsLoading, setMarketErrorsLoading] = useState(false);
+  const [marketEvents, setMarketEvents] = useState<MarketBatchEventRow[]>([]);
+  const [eventBatchId, setEventBatchId] = useState('');
+  const [marketEventsLoading, setMarketEventsLoading] = useState(false);
   const [downloadingBatchId, setDownloadingBatchId] = useState('');
   const importRunningRef = useRef(false);
 
@@ -318,6 +321,31 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     }
   }, []);
 
+  const toggleMarketEvents = useCallback(async (batchId: string) => {
+    if (eventBatchId === batchId) {
+      setEventBatchId('');
+      setMarketEvents([]);
+      return;
+    }
+    setEventBatchId(batchId);
+    setMarketEvents([]);
+    setMarketEventsLoading(true);
+    try {
+      setMarketEvents(await getMarketBatchEvents(batchId, 100));
+    } catch (reason) {
+      alert(reason instanceof Error ? reason.message : 'Не удалось загрузить хронологию партии');
+      setEventBatchId('');
+    } finally {
+      setMarketEventsLoading(false);
+    }
+  }, [eventBatchId]);
+
+  const formatEventDetails = (details: Record<string, unknown>) => {
+    const entries = Object.entries(details);
+    if (entries.length === 0) return '—';
+    return entries.map(([key, value]) => `${key}: ${value === null ? '—' : String(value)}`).join(' · ');
+  };
+
   const formatPeriod = (log: ImportFileLog) => {
     if (!log.dataStart) return '—';
     const d = (s: string) => {
@@ -454,9 +482,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td className="import-filename"><span>{batch.fileName}</span><small>{batch.batchId}</small></td>
               <td>{batch.periodStart ? `${batch.periodStart} — ${batch.periodEnd || batch.periodStart}` : '—'}</td>
               <td><span className={`import-status ${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`}>{batch.status === 'published' ? 'Опубликован' : batch.status === 'failed' ? 'Отклонён' : batch.status === 'cancelled' ? 'Отменён' : 'В обработке'}</span></td>
-              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td><td><div className="admin-form-actions">{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleMarketErrors(batch.batchId)}>{errorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}{batch.sourceFileRetained && <button type="button" className="btn-secondary" disabled={downloadingBatchId === batch.batchId} onClick={() => void handleMarketSourceDownload(batch)}>{downloadingBatchId === batch.batchId ? 'Скачивание…' : 'Скачать'}</button>}</div></td>
+              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td><td><div className="admin-form-actions"><button type="button" className="btn-secondary" onClick={() => void toggleMarketEvents(batch.batchId)}>{eventBatchId === batch.batchId ? 'Скрыть этапы' : 'Этапы'}</button>{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleMarketErrors(batch.batchId)}>{errorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}{batch.sourceFileRetained && <button type="button" className="btn-secondary" disabled={downloadingBatchId === batch.batchId} onClick={() => void handleMarketSourceDownload(batch)}>{downloadingBatchId === batch.batchId ? 'Скачивание…' : 'Скачать'}</button>}</div></td>
             </tr>)}</tbody>
           </table></div>
+          {eventBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Аудит" title="Этапы выбранной партии" description={marketEventsLoading ? 'Загрузка…' : `${marketEvents.length} событий (не более 100)`} /></div>{!marketEventsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Время</th><th>Статус</th><th>Событие</th><th>Параметры</th></tr></thead><tbody>{marketEvents.map(event => <tr key={event.eventId}><td>{formatDate(event.createdAt)}</td><td>{event.status}</td><td>{event.message || '—'}</td><td>{formatEventDetails(event.details)}</td></tr>)}</tbody></table></div>}</div>}
           {errorBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Диагностика" title="Ошибки выбранной партии" description={marketErrorsLoading ? 'Загрузка…' : `${marketErrors.length} записей (не более 100)`} /></div>{!marketErrorsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Лист</th><th>Строка</th><th>Колонка</th><th>Код</th><th>Сообщение</th><th>Исходное значение</th></tr></thead><tbody>{marketErrors.map(error => <tr key={error.errorId}><td>{error.sheetName || '—'}</td><td>{error.rowNumber ?? '—'}</td><td>{error.columnName || '—'}</td><td>{error.errorCode}</td><td>{error.message}</td><td>{error.rawValue || '—'}</td></tr>)}</tbody></table></div>}</div>}
         </AnalyticsPanel>
       )}

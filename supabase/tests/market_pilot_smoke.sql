@@ -317,6 +317,8 @@ select jsonb_build_object(
     where not (history_item ? 'object_path')
   ),
   'invalid_error_detail_available', jsonb_array_length(public.v5_market_batch_errors((select batch_id from market_smoke_batches where label = 'invalid'), 100)) >= 5,
+  'published_event_timeline_available', jsonb_array_length(public.v5_market_batch_events((select batch_id from market_smoke_batches where label = 'initial'), 100)) >= 3,
+  'failed_event_timeline_available', jsonb_array_length(public.v5_market_batch_events((select batch_id from market_smoke_batches where label = 'invalid'), 100)) >= 3,
   'published_day_count', (select day_count from public.v5_market_date_bounds()),
   'transaction_will_rollback', true
 ) as market_pilot_smoke;

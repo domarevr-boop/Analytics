@@ -54,6 +54,14 @@ export interface MarketBatchErrorRow {
   createdAt: string;
 }
 
+export interface MarketBatchEventRow {
+  eventId: number;
+  status: MarketImportHistoryRow['status'];
+  message: string | null;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
 interface ImportOptions {
   sourceRowNumbers?: number[];
   sheetName?: string;
@@ -185,6 +193,32 @@ export async function getMarketBatchErrors(batchId: string, limit = 100): Promis
       errorCode: readString(row, 'error_code'),
       message: readString(row, 'message'),
       rawValue: readString(row, 'raw_value') || null,
+      createdAt: readString(row, 'created_at'),
+    };
+  });
+}
+
+export async function getMarketBatchEvents(batchId: string, limit = 100): Promise<MarketBatchEventRow[]> {
+  if (!batchId) throw new Error('Для загрузки хронологии требуется идентификатор партии');
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+  const { data, error } = await supabase.rpc('v5_market_batch_events', {
+    p_batch_id: batchId,
+    p_limit: safeLimit,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
+
+  const statuses = new Set<MarketImportHistoryRow['status']>(['created', 'uploaded', 'validating', 'published', 'failed', 'cancelled']);
+  return data.map(value => {
+    const row = asObject(value, 'Хронология партии «Рынка»');
+    const status = readString(row, 'status') as MarketImportHistoryRow['status'];
+    if (!statuses.has(status)) throw new Error(`Хронология партии «Рынка»: неизвестный статус ${status || 'пусто'}`);
+    const details = row.details;
+    return {
+      eventId: readNumber(row, 'event_id'),
+      status,
+      message: readString(row, 'message') || null,
+      details: details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : {},
       createdAt: readString(row, 'created_at'),
     };
   });

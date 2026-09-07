@@ -23,6 +23,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907004000_v5_market_batch_history.sql',
     '20260907005000_v5_market_batch_errors.sql',
     '20260907006000_v5_market_source_download.sql',
+    '20260907007000_v5_market_batch_events.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -177,6 +178,17 @@ test('market history exposes a source path only after batch access is checked', 
   assert.match(sql, /'schema_version',\s*'20260907006000'/iu);
 });
 
+test('market batch event timeline is bounded and checks importer plus batch access', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260907007000_v5_market_batch_events.sql', import.meta.url), 'utf8');
+  assert.match(sql, /public\.v5_market_batch_events/iu);
+  assert.match(sql, /not app\.can_import\(\)/iu);
+  assert.match(sql, /not app\.can_read_batch\(p_batch_id\)/iu);
+  assert.match(sql, /p_limit > 200/iu);
+  assert.match(sql, /from ingest\.import_events event/iu);
+  assert.doesNotMatch(sql, /event\.created_by/iu);
+  assert.match(sql, /'schema_version',\s*'20260907007000'/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
@@ -194,6 +206,8 @@ test('market import UI requests bounded server batch history', () => {
   assert.match(source, /supabase\.rpc\('v5_market_batch_errors'/iu);
   assert.match(source, /Math\.max\(1, Math\.min\(200, Math\.trunc\(limit\)\)\)/iu);
   assert.match(source, /supabase\.storage\.from\(BUCKET\)\.download\(objectPath\)/iu);
+  assert.match(source, /export async function getMarketBatchEvents\(batchId: string, limit = 100\)/iu);
+  assert.match(source, /supabase\.rpc\('v5_market_batch_events'/iu);
 });
 
 test('foundation migration contains the required isolation and ingestion contracts', () => {
