@@ -13,8 +13,8 @@ import { getLatestReviewImport, importReviewsToSupabase } from '../features/clie
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
 import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
-import { getLatestMarketImport, importMarketToSupabase } from '../features/market/marketImport';
-import type { MarketImportResult } from '../features/market/marketImport';
+import { getLatestMarketImport, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
+import type { MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -80,11 +80,13 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
+  const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
   const importRunningRef = useRef(false);
 
   useEffect(() => {
     if (!serverOnly) void getLatestReviewImport().then(setLatestReviewImport);
     void getLatestMarketImport().then(setLatestMarketImport);
+    void getMarketImportHistory().then(setMarketImportHistory).catch(() => setMarketImportHistory([]));
   }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -216,6 +218,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           },
         });
         setLatestMarketImport(result);
+        void getMarketImportHistory().then(setMarketImportHistory).catch(() => undefined);
         if (result.status === 'failed') {
           alert(`Импорт «Рынка» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Исходный файл и журнал сохранены в V5.`);
         } else if (result.duplicate) {
@@ -403,6 +406,22 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td>{latestMarketImport.duplicate ? 'Да' : 'Нет'}</td>
               <td>Сохранён в private Storage</td>
             </tr></tbody>
+          </table></div>
+        </AnalyticsPanel>
+      )}
+
+      {marketImportHistory.length > 0 && (
+        <AnalyticsPanel className="import-log import-market-history" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Аудит V5" title="История партий «Рынка»" description="Последние 20 доступных загрузок; исходники и ошибки сохраняются на сервере" controls={<span>{marketImportHistory.length} партий</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Создана</th><th>Файл</th><th>Период</th><th>Статус</th><th>Строк</th><th>Принято</th><th>Отклонено</th><th>Ошибок</th><th>Попыток</th><th>Исходник</th></tr></thead>
+            <tbody>{marketImportHistory.map(batch => <tr key={batch.batchId} className={`import-row-${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`} title={batch.errorSummary || undefined}>
+              <td>{formatDate(batch.createdAt)}</td>
+              <td className="import-filename"><span>{batch.fileName}</span><small>{batch.batchId}</small></td>
+              <td>{batch.periodStart ? `${batch.periodStart} — ${batch.periodEnd || batch.periodStart}` : '—'}</td>
+              <td><span className={`import-status ${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`}>{batch.status === 'published' ? 'Опубликован' : batch.status === 'failed' ? 'Отклонён' : batch.status === 'cancelled' ? 'Отменён' : 'В обработке'}</span></td>
+              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td>
+            </tr>)}</tbody>
           </table></div>
         </AnalyticsPanel>
       )}

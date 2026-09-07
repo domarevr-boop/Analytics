@@ -310,6 +310,7 @@ select jsonb_build_object(
     join market_smoke_batches smoke on smoke.batch_id = batch.id
     where smoke.label = 'invalid' and batch.status = 'failed' and batch.rejected_rows = 1
   ),
+  'history_contains_smoke_batches', jsonb_array_length(public.v5_market_batch_history(20)) >= 3,
   'published_day_count', (select day_count from public.v5_market_date_bounds()),
   'transaction_will_rollback', true
 ) as market_pilot_smoke;

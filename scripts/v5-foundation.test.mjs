@@ -20,6 +20,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907001000_v5_market_retry_reset_lint_fix.sql',
     '20260907002000_v5_market_retry_upload_timestamp.sql',
     '20260907003000_v5_access_directory.sql',
+    '20260907004000_v5_market_batch_history.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -146,12 +147,29 @@ test('market pilot smoke covers publish, replacement, rollback and invalid rows 
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
+test('market batch history is bounded and respects batch visibility', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260907004000_v5_market_batch_history.sql', import.meta.url), 'utf8');
+  assert.match(sql, /public\.v5_market_batch_history\(p_limit integer default 20\)/iu);
+  assert.match(sql, /p_limit > 50/iu);
+  assert.match(sql, /app\.can_read_batch\(batch\.id\)/iu);
+  assert.match(sql, /source_file_retained/iu);
+  assert.match(sql, /revoke all on function public\.v5_market_batch_history\(integer\) from public, anon/iu);
+  assert.match(sql, /'schema_version',\s*'20260907004000'/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
   const stageIndex = source.indexOf("supabase.rpc('v5_market_stage_rows'");
   assert.ok(resetIndex >= 0, 'market retry-reset RPC is missing');
   assert.ok(stageIndex > resetIndex, 'market rows must be staged only after retry-reset');
+});
+
+test('market import UI requests bounded server batch history', () => {
+  const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
+  assert.match(source, /export async function getMarketImportHistory\(limit = 20\)/iu);
+  assert.match(source, /supabase\.rpc\('v5_market_batch_history', \{ p_limit: safeLimit \}\)/iu);
+  assert.match(source, /Math\.max\(1, Math\.min\(50, Math\.trunc\(limit\)\)\)/iu);
 });
 
 test('foundation migration contains the required isolation and ingestion contracts', () => {

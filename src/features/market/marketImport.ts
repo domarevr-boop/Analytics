@@ -25,6 +25,23 @@ export interface MarketImportResult {
   importedAt: string;
 }
 
+export interface MarketImportHistoryRow {
+  batchId: string;
+  status: 'created' | 'uploaded' | 'validating' | 'published' | 'failed' | 'cancelled';
+  inputRows: number;
+  acceptedRows: number;
+  rejectedRows: number;
+  errorCount: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  fileName: string;
+  createdAt: string;
+  publishedAt: string | null;
+  errorSummary: string | null;
+  attemptCount: number;
+  sourceFileRetained: boolean;
+}
+
 interface ImportOptions {
   sourceRowNumbers?: number[];
   sheetName?: string;
@@ -87,6 +104,36 @@ export async function getLatestMarketImport(): Promise<MarketImportResult | null
   const status = readString(summary, 'status');
   if (status !== 'published' && status !== 'failed') return null;
   return resultFromSummary(summary);
+}
+
+export async function getMarketImportHistory(limit = 20): Promise<MarketImportHistoryRow[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const { data, error } = await supabase.rpc('v5_market_batch_history', { p_limit: safeLimit });
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
+
+  const statuses = new Set<MarketImportHistoryRow['status']>(['created', 'uploaded', 'validating', 'published', 'failed', 'cancelled']);
+  return data.map(value => {
+    const row = asObject(value, 'История партий «Рынка»');
+    const status = readString(row, 'status') as MarketImportHistoryRow['status'];
+    if (!statuses.has(status)) throw new Error(`История партий «Рынка»: неизвестный статус ${status || 'пусто'}`);
+    return {
+      batchId: readString(row, 'batch_id'),
+      status,
+      inputRows: readNumber(row, 'input_rows'),
+      acceptedRows: readNumber(row, 'accepted_rows'),
+      rejectedRows: readNumber(row, 'rejected_rows'),
+      errorCount: readNumber(row, 'error_count'),
+      periodStart: readString(row, 'period_start') || null,
+      periodEnd: readString(row, 'period_end') || null,
+      fileName: readString(row, 'file_name'),
+      createdAt: readString(row, 'created_at'),
+      publishedAt: readString(row, 'published_at') || null,
+      errorSummary: readString(row, 'error_summary') || null,
+      attemptCount: readNumber(row, 'attempt_count'),
+      sourceFileRetained: row.source_file_retained === true,
+    };
+  });
 }
 
 export async function importMarketToSupabase(
