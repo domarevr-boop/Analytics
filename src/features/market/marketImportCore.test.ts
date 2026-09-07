@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMarketStagedRows, extractMarketTable, splitMarketRows } from './marketImportCore.ts';
+import { buildMarketStagedRows, extractMarketTable, mapMarketSourceRows, splitMarketRows } from './marketImportCore.ts';
 
 test('detects the market header below report metadata and preserves source rows', () => {
   const result = extractMarketTable([
@@ -50,6 +50,22 @@ test('normalizes localized market values while preserving invalid values for ser
   assert.equal(invalid.payload.market_ordered_amount, 'ошибка');
   assert.equal(invalid.payload.own_ordered_amount, -1);
   assert.equal(invalid.payload.market_orders, 1.5);
+});
+
+test('maps real market headers and restores Excel percentage fractions to percentage points', () => {
+  const [mapped] = mapMarketSourceRows([{
+    'дата': '2026-06-01',
+    'заказы рынок': '49526859.15270157',
+    'наши заказы': '3904149',
+    'наша доля': '0.07882892367',
+    'заказы, шт, рынок': '15248',
+    'заказы, шт, мы': '2101',
+    'наша доля в заказах': '0.1377885624',
+  }]);
+  const [row] = buildMarketStagedRows([mapped], [2], 'Лист1');
+
+  assert.ok(Math.abs(Number(row.payload.amount_share) - 7.882892367) < 1e-9);
+  assert.ok(Math.abs(Number(row.payload.orders_share) - 13.77885624) < 1e-9);
 });
 
 test('splits staging rows into bounded chunks', () => {

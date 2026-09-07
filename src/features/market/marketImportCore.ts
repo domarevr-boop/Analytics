@@ -8,6 +8,18 @@ const MARKET_MARKER_HEADERS = new Set([
   'заказы, шт, рынок',
 ]);
 
+const MARKET_FIELD_BY_HEADER: Record<string, string> = {
+  'дата': 'date',
+  'заказы рынок': 'market_ordered_amount',
+  'наши заказы': 'market_own_ordered_amount',
+  'наша доля': 'market_amount_share',
+  'заказы, шт, рынок': 'market_orders',
+  'заказы, шт, мы': 'market_own_orders',
+  'наша доля в заказах': 'market_orders_share',
+  'средний чек, мы': 'market_own_avg_check',
+  'средний чек рынок': 'market_avg_check',
+};
+
 export interface MarketParsedCandidate {
   headers: string[];
   rawHeaders: string[];
@@ -92,6 +104,14 @@ export function extractMarketTable(grid: unknown[][], sheetName = 'Рынок'):
   return { headers, rawHeaders, rows, sourceRowNumbers, sheetName };
 }
 
+export function mapMarketSourceRows(rows: Record<string, string>[]): Record<string, string>[] {
+  return rows.map(row => Object.fromEntries(
+    Object.entries(row)
+      .map(([header, value]) => [MARKET_FIELD_BY_HEADER[normalizeMarketHeader(header)], value] as const)
+      .filter((entry): entry is readonly [string, string] => Boolean(entry[0])),
+  ));
+}
+
 function parseDate(value: string, fallbackYear?: number): string {
   const source = value.trim();
   let match = source.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -127,6 +147,17 @@ function parseNumericOrRaw(value: string): number | string {
   return Number.isFinite(parsed) ? parsed : source;
 }
 
+function parseShareOrRaw(value: string, ownValue: number | string, totalValue: number | string): number | string {
+  const parsed = parseNumericOrRaw(value);
+  if (typeof parsed !== 'number' || String(value).includes('%')) return parsed;
+  if (typeof ownValue !== 'number' || typeof totalValue !== 'number' || totalValue <= 0) return parsed;
+
+  const expectedPercentagePoints = ownValue / totalValue * 100;
+  const directDistance = Math.abs(parsed - expectedPercentagePoints);
+  const fractionDistance = Math.abs(parsed * 100 - expectedPercentagePoints);
+  return fractionDistance < directDistance ? parsed * 100 : parsed;
+}
+
 export function buildMarketStagedRows(
   rows: Record<string, string>[],
   sourceRowNumbers: number[] | undefined,
@@ -135,22 +166,29 @@ export function buildMarketStagedRows(
   fallbackYear?: number,
 ): MarketStagedRow[] {
   return rows.map((row, index) => {
+    const marketOrderedAmount = parseNumericOrRaw(row.market_ordered_amount);
+    const ownOrderedAmount = parseNumericOrRaw(row.market_own_ordered_amount);
+    const marketOrders = parseNumericOrRaw(row.market_orders);
+    const ownOrders = parseNumericOrRaw(row.market_own_orders);
     const payload: Record<string, string | number> = {
       date: parseDate(dateOverride || row.date || '', fallbackYear),
-      market_ordered_amount: parseNumericOrRaw(row.market_ordered_amount),
-      own_ordered_amount: parseNumericOrRaw(row.market_own_ordered_amount),
-      market_orders: parseNumericOrRaw(row.market_orders),
-      own_orders: parseNumericOrRaw(row.market_own_orders),
+      market_ordered_amount: marketOrderedAmount,
+      own_ordered_amount: ownOrderedAmount,
+      market_orders: marketOrders,
+      own_orders: ownOrders,
     };
 
-    const optionalFields: Array<[string, string | undefined]> = [
-      ['amount_share', row.market_amount_share],
-      ['orders_share', row.market_orders_share],
-      ['own_avg_check', row.market_own_avg_check],
-      ['market_avg_check', row.market_avg_check],
-    ];
-    for (const [field, value] of optionalFields) {
-      if (String(value ?? '').trim() !== '') payload[field] = parseNumericOrRaw(String(value));
+    if (String(row.market_amount_share ?? '').trim() !== '') {
+      payload.amount_share = parseShareOrRaw(row.market_amount_share, ownOrderedAmount, marketOrderedAmount);
+    }
+    if (String(row.market_orders_share ?? '').trim() !== '') {
+      payload.orders_share = parseShareOrRaw(row.market_orders_share, ownOrders, marketOrders);
+    }
+    if (String(row.market_own_avg_check ?? '').trim() !== '') {
+      payload.own_avg_check = parseNumericOrRaw(row.market_own_avg_check);
+    }
+    if (String(row.market_avg_check ?? '').trim() !== '') {
+      payload.market_avg_check = parseNumericOrRaw(row.market_avg_check);
     }
 
     return {
