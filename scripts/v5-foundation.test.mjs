@@ -24,6 +24,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907005000_v5_market_batch_errors.sql',
     '20260907006000_v5_market_source_download.sql',
     '20260907007000_v5_market_batch_events.sql',
+    '20260907008000_v5_product_directory.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -187,6 +188,36 @@ test('market batch event timeline is bounded and checks importer plus batch acce
   assert.match(sql, /from ingest\.import_events event/iu);
   assert.doesNotMatch(sql, /event\.created_by/iu);
   assert.match(sql, /'schema_version',\s*'20260907007000'/iu);
+});
+
+test('V5 product directory keeps identities cabinet-scoped and group membership dated', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260907008000_v5_product_directory.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'create table core.brands',
+    'create table core.categories',
+    'create table core.products',
+    'create table core.product_aliases',
+    'create table core.product_groups',
+    'create table core.group_membership_versions',
+    'unique (cabinet_id, external_key)',
+    'unique (cabinet_id, alias_value)',
+    'unique (product_id, effective_date)',
+    'public.v5_group_membership_at',
+    "'schema_version', '20260907008000'",
+  ]) assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing directory contract: ${fragment}`);
+  assert.match(sql, /app\.can_access_cabinet\(v_cabinet_id\)/iu);
+  assert.match(sql, /membership\.effective_date\s*<=\s*p_date/iu);
+  assert.match(sql, /order by membership\.effective_date desc/iu);
+});
+
+test('product directory smoke proves dated transitions and rolls back fixtures', () => {
+  const sql = readFileSync(new URL('../supabase/tests/product_directory_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^begin;/iu);
+  assert.match(sql, /unknown_before_first_membership/iu);
+  assert.match(sql, /last_known_membership_applied/iu);
+  assert.match(sql, /explicit_ungrouped_distinct/iu);
+  assert.match(sql, /rollback;/iu);
+  assert.doesNotMatch(sql, /commit;/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {
