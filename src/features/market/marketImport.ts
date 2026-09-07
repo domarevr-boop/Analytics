@@ -134,6 +134,9 @@ export async function importMarketToSupabase(
     if (uploadError) throw new Error(`Не удалось сохранить исходный файл «Рынка»: ${uploadError.message}`);
   }
 
+  const { error: resetError } = await supabase.rpc('v5_market_reset_staging', { p_batch_id: batchId });
+  if (resetError) throw new Error(`Не удалось подготовить V5-партию «Рынка» к загрузке: ${resetError.message}`);
+
   const stagedRows = buildMarketStagedRows(
     rows,
     options.sourceRowNumbers,

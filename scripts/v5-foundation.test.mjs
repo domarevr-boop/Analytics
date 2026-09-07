@@ -16,6 +16,9 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260906003000_v5_market_pilot_lint_fixes.sql',
     '20260906004000_v5_market_version_order.sql',
     '20260906005000_v5_market_batch_summary.sql',
+    '20260907000000_v5_market_retry_reset.sql',
+    '20260907001000_v5_market_retry_reset_lint_fix.sql',
+    '20260907002000_v5_market_retry_upload_timestamp.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -73,6 +76,9 @@ test('market pilot keeps raw lineage, validates server-side and reads through bo
   const fixes = readFileSync(new URL('../supabase/migrations/20260906003000_v5_market_pilot_lint_fixes.sql', import.meta.url), 'utf8');
   const ordering = readFileSync(new URL('../supabase/migrations/20260906004000_v5_market_version_order.sql', import.meta.url), 'utf8');
   const summary = readFileSync(new URL('../supabase/migrations/20260906005000_v5_market_batch_summary.sql', import.meta.url), 'utf8');
+  const retryReset = readFileSync(new URL('../supabase/migrations/20260907000000_v5_market_retry_reset.sql', import.meta.url), 'utf8');
+  const retryResetFix = readFileSync(new URL('../supabase/migrations/20260907001000_v5_market_retry_reset_lint_fix.sql', import.meta.url), 'utf8');
+  const retryUploadTimestamp = readFileSync(new URL('../supabase/migrations/20260907002000_v5_market_retry_upload_timestamp.sql', import.meta.url), 'utf8');
   for (const fragment of [
     'create table analytics.market_daily_versions',
     'create or replace view analytics.market_daily_current',
@@ -101,6 +107,15 @@ test('market pilot keeps raw lineage, validates server-side and reads through bo
   assert.match(summary, /not app\.can_import\(\)/iu);
   assert.match(summary, /'source_file_retained'/iu);
   assert.match(summary, /'schema_version',\s*'20260906005000'/iu);
+  assert.match(retryReset, /public\.v5_market_reset_staging/iu);
+  assert.match(retryReset, /v_batch\.status not in \('created', 'uploaded', 'validating', 'failed'\)/iu);
+  assert.match(retryReset, /delete from ingest\.import_rows where batch_id = p_batch_id/iu);
+  assert.match(retryReset, /'schema_version',\s*'20260907000000'/iu);
+  assert.match(retryResetFix, /'uploaded'::ingest\.batch_status/iu);
+  assert.match(retryResetFix, /'created'::ingest\.batch_status/iu);
+  assert.match(retryResetFix, /'schema_version',\s*'20260907001000'/iu);
+  assert.match(retryUploadTimestamp, /when v_source_exists then coalesce\(uploaded_at, timezone\('utc', now\(\)\)\)/iu);
+  assert.match(retryUploadTimestamp, /'schema_version',\s*'20260907002000'/iu);
 });
 
 test('market pilot smoke covers publish, replacement, rollback and invalid rows transactionally', () => {
@@ -118,6 +133,14 @@ test('market pilot smoke covers publish, replacement, rollback and invalid rows 
   }
   assert.doesNotMatch(sql, /commit;/iu);
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
+});
+
+test('market client clears stale retry staging before sending normalized chunks', () => {
+  const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
+  const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
+  const stageIndex = source.indexOf("supabase.rpc('v5_market_stage_rows'");
+  assert.ok(resetIndex >= 0, 'market retry-reset RPC is missing');
+  assert.ok(stageIndex > resetIndex, 'market rows must be staged only after retry-reset');
 });
 
 test('foundation migration contains the required isolation and ingestion contracts', () => {

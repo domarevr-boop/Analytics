@@ -63,6 +63,37 @@ begin
   insert into storage.objects (bucket_id, name, owner_id)
   values ('v5-import-sources', v_object_path, auth.uid()::text);
 
+  perform public.v5_market_stage_rows(
+    v_batch_id,
+    jsonb_build_array(
+      jsonb_build_object(
+        'sheet_name', 'Рынок',
+        'row_number', 999,
+        'payload', jsonb_build_object(
+          'date', '2025-01-01',
+          'market_ordered_amount', 1,
+          'own_ordered_amount', 1,
+          'market_orders', 1,
+          'own_orders', 1
+        )
+      )
+    )
+  );
+
+  v_result := public.v5_market_reset_staging(v_batch_id);
+  if v_result ->> 'status' <> 'uploaded'
+    or (v_result ->> 'cleared_rows')::integer <> 1
+    or exists (select 1 from ingest.import_rows row_data where row_data.batch_id = v_batch_id)
+    or not exists (
+      select 1
+      from ingest.import_batches batch
+      where batch.id = v_batch_id
+        and batch.uploaded_at is not null
+    )
+  then
+    raise exception 'Market staging reset assertion failed: %', v_result;
+  end if;
+
   v_result := public.v5_market_stage_rows(
     v_batch_id,
     jsonb_build_array(
