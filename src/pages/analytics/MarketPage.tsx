@@ -1,4 +1,4 @@
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import AnalyticsHelp from '../../components/AnalyticsHelp';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../../components/AnalyticsPrimitives';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { getMarketDynamics, getVersion, subscribe } from '../../data/store';
+import { isV5MarketBackendEnabled, loadV5MarketData } from '../../features/market/marketData';
 import type { MarketDynamicsRecord } from '../../types';
 import { marketHelp } from './analyticsHelpContent';
 import MarketDeepDive from './MarketDeepDive';
@@ -64,12 +65,40 @@ const metricMeta: Record<MetricKey, { title: string; color: string; percent?: bo
 
 export default function MarketPage() {
   useSyncExternalStore(subscribe, getVersion);
-  const records = getMarketDynamics();
+  const localRecords = getMarketDynamics();
+  const [serverRecords, setServerRecords] = useState<MarketDynamicsRecord[]>([]);
+  const [serverLoading, setServerLoading] = useState(isV5MarketBackendEnabled);
+  const [serverError, setServerError] = useState('');
+  const [serverRequest, setServerRequest] = useState(0);
+  const records = isV5MarketBackendEnabled ? serverRecords : localRecords;
   const dates = useMemo(() => [...new Set(records.map(row => row.date))].sort(), [records]);
   const maxDate = dates.at(-1) || new Date().toISOString().slice(0, 10);
   const [period, setPeriod] = useState(() => ({ start: dates.at(0) || maxDate, end: maxDate }));
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [showHelp, setShowHelp] = useState(false);
+
+  useEffect(() => {
+    if (!isV5MarketBackendEnabled) return;
+    let cancelled = false;
+    void loadV5MarketData()
+      .then(result => {
+        if (cancelled) return;
+        setServerRecords(result.records);
+        if (result.bounds.minDate && result.bounds.maxDate) {
+          setPeriod({ start: result.bounds.minDate, end: result.bounds.maxDate });
+        }
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setServerRecords([]);
+        setServerError(error instanceof Error ? error.message : 'Не удалось загрузить V5 «Рынок»');
+      })
+      .finally(() => {
+        if (!cancelled) setServerLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [serverRequest]);
+
   const currentRows = useMemo(() => records.filter(row => row.date >= period.start && row.date <= period.end), [records, period]);
   const comparison = useMemo(() => previousPeriod(period.start, period.end), [period]);
   const previousRows = useMemo(() => records.filter(row => row.date >= comparison.start && row.date <= comparison.end), [records, comparison]);
@@ -110,11 +139,11 @@ export default function MarketPage() {
   if (showHelp) return <AnalyticsHelp data={marketHelp} onClose={() => setShowHelp(false)} />;
 
   return <div className="market-page-pilot analytics-page-shell ds-page">
-    <AnalyticsPageHeader eyebrow="Аналитика › Рынок" title="Рынок" description="Сравнение объёма рынка и наших результатов по сумме заказов, штукам, доле и среднему чеку." meta={<span>Данные по {shortDate(maxDate)}</span>} actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
+    <AnalyticsPageHeader eyebrow="Аналитика › Рынок" title="Рынок" description="Сравнение объёма рынка и наших результатов по сумме заказов, штукам, доле и среднему чеку." meta={<span>{isV5MarketBackendEnabled ? 'V5 · Supabase' : 'V4 · локально'}{dates.length ? ` · данные по ${shortDate(maxDate)}` : ''}</span>} actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
     <AnalyticsToolbar trailing={<><SegmentedControl value={granularity} label="Гранулярность графиков" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button" onClick={() => setPeriod({ start: dates.at(0) || maxDate, end: maxDate })}>Сбросить</button></>}>
       <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} />
     </AnalyticsToolbar>
-    {!currentRows.length ? <EmptyState title="Нет данных рынка в выбранном периоде" description="Импортируйте файл с колонками «Дата», «Заказы рынок», «Наши заказы» и показателями в штуках." /> : <>
+    {serverLoading ? <EmptyState title="Загрузка данных V5" description="Получаем ограниченный дневной ряд «Рынка» из Supabase." /> : serverError ? <EmptyState title="Не удалось загрузить данные V5" description={serverError} action={<button type="button" className="ds-button" onClick={() => { setServerLoading(true); setServerError(''); setServerRequest(value => value + 1); }}>Повторить</button>} /> : !currentRows.length ? <EmptyState title="Нет данных рынка в выбранном периоде" description="Импортируйте файл с колонками «Дата», «Заказы рынок», «Наши заказы» и показателями в штуках." /> : <>
       <section className="ds-kpi-grid market-pilot-kpis" aria-label="Ключевые показатели рынка">{kpis.map(item => { const meta = metricMeta[item.key]; return <KpiTile key={item.key} label={meta.title} value={meta.percent ? `${fmt(item.value, 2)}%` : meta.money ? `${fmt(item.value)} ₽` : fmt(item.value)} delta={fmt(Math.abs(item.change), item.points ? 2 : 1)} deltaSuffix={item.points ? ' п.п.' : '%'} comparison="к пред. периоду" tone={item.change > 0 ? 'positive' : item.change < 0 ? 'negative' : 'neutral'} visual={<Sparkline values={points.map(point => Number(point[item.key]))} color={meta.color} />} />; })}</section>
       <section className="market-pilot-chart-grid">{chartPairs.map(chart => <AnalyticsPanel key={chart.title} className="market-pilot-chart" density="analytics">
         <PanelHeader title={chart.title} description={chart.description} controls={<span className="market-pilot-period-label">{granularity === 'day' ? 'По дням' : granularity === 'week' ? 'По неделям' : 'По месяцам'}</span>} />
