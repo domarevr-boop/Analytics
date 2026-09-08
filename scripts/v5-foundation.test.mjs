@@ -252,6 +252,20 @@ test('directory bootstrap smoke rolls back data, lineage and review fixtures', (
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
+test('directory bootstrap UI is V5-only and stays behind an explicit release gate', () => {
+  const client = readFileSync(new URL('../src/features/directory/directoryBootstrapImport.ts', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/components/ImportPage.tsx', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(client, /VITE_APP_ENV === 'v5-development'/iu);
+  assert.match(client, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED === 'true'/iu);
+  assert.match(client, /v5_directory_create_batch/iu);
+  assert.match(client, /v5_directory_publish_bootstrap/iu);
+  assert.match(client, /contentType: 'application\/json'/iu);
+  assert.match(page, /isV5DirectoryBootstrapEnvironment && !serverOnly/iu);
+  assert.match(page, /disabled=\{!isV5DirectoryBootstrapEnabled \|\| loading\}/iu);
+  assert.match(exampleEnv, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED=false/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");

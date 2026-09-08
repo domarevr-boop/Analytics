@@ -15,6 +15,13 @@ import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
 import { downloadMarketSource, getLatestMarketImport, getMarketBatchErrors, getMarketBatchEvents, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
 import type { MarketBatchErrorRow, MarketBatchEventRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
+import {
+  isV5DirectoryBootstrapEnabled,
+  isV5DirectoryBootstrapEnvironment,
+  prepareDirectoryBootstrap,
+  publishDirectoryBootstrap,
+  type DirectoryBootstrapResult,
+} from '../features/directory/directoryBootstrapImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -80,6 +87,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
+  const [latestDirectoryBootstrap, setLatestDirectoryBootstrap] = useState<DirectoryBootstrapResult | null>(null);
   const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
   const [marketErrors, setMarketErrors] = useState<MarketBatchErrorRow[]>([]);
   const [errorBatchId, setErrorBatchId] = useState('');
@@ -282,6 +290,39 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     e.target.value = '';
   }, [handleFile]);
 
+  const handleDirectoryBootstrapInput = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || importRunningRef.current) return;
+    importRunningRef.current = true;
+    setLoading(true);
+    setProgress('Проверка bootstrap-манифеста справочника...');
+    try {
+      const prepared = await prepareDirectoryBootstrap(file);
+      const summary = prepared.manifest.summary;
+      const approved = confirm([
+        'Опубликовать справочник в изолированной БД V5?',
+        `Товаров: ${summary.acceptedProducts.toLocaleString('ru-RU')}`,
+        `Состояний склеек: ${summary.acceptedHistoryRows.toLocaleString('ru-RU')}`,
+        `Неоднозначных компонент: ${summary.queuedProductComponents.toLocaleString('ru-RU')}`,
+        'Операция не затрагивает V4, но создаёт постоянную серверную партию V5.',
+      ].join('\n'));
+      if (!approved) return;
+      setProgress('Сохранение манифеста и атомарная публикация справочника V5...');
+      const result = await publishDirectoryBootstrap(prepared);
+      setLatestDirectoryBootstrap(result);
+      alert(result.duplicate
+        ? 'Этот bootstrap-манифест уже опубликован в V5. Повторная запись не создавалась.'
+        : `Справочник V5 опубликован. Принято строк манифеста: ${result.acceptedRows.toLocaleString('ru-RU')}; требуют разбора: ${result.rejectedRows.toLocaleString('ru-RU')}.`);
+    } catch (reason) {
+      alert(reason instanceof Error ? reason.message : 'Не удалось опубликовать справочник V5');
+    } finally {
+      importRunningRef.current = false;
+      setLoading(false);
+      setProgress('');
+    }
+  }, []);
+
   const handleDelete = useCallback(async (log: ImportFileLog) => {
     const msg = log.dataStart
       ? `Удалить импорт "${log.fileName}" и очистить ${log.rowCount} метрик за период ${log.dataStart}—${log.dataEnd || log.dataStart}?`
@@ -365,6 +406,31 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
       <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly ? 'Безопасная загрузка серверного отчёта «Рынок» в V5.' : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
+      {isV5DirectoryBootstrapEnvironment && !serverOnly && (
+        <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">
+          <div className="import-section-head">
+            <PanelHeader
+              eyebrow="Миграция V4 → V5"
+              title="Первичная загрузка справочника"
+              description="Только подготовленный и локально проверенный JSON-манифест"
+              controls={<span>{isV5DirectoryBootstrapEnabled ? 'Разрешена' : 'Заблокирована до проверки restore'}</span>}
+            />
+          </div>
+          <p className="dev-hint">Манифест сохраняется в private Storage, затем одной транзакцией публикует товары, алиасы и историю склеек. Конфликты не перезаписываются, неоднозначности остаются в очереди администратора.</p>
+          <div className="admin-form-actions">
+            <input id="directory-bootstrap-input" type="file" accept=".json,application/json" hidden onChange={handleDirectoryBootstrapInput} />
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!isV5DirectoryBootstrapEnabled || loading}
+              onClick={() => document.getElementById('directory-bootstrap-input')?.click()}
+            >
+              {isV5DirectoryBootstrapEnabled ? 'Выбрать bootstrap-манифест' : 'Ожидается проверка восстановления'}
+            </button>
+            {latestDirectoryBootstrap && <span>Партия {latestDirectoryBootstrap.batchId} · принято {latestDirectoryBootstrap.acceptedRows} · разбор {latestDirectoryBootstrap.rejectedRows}</span>}
+          </div>
+        </AnalyticsPanel>
+      )}
       {parsed && (
         <div className="import-mapper-wrapper">
           {loading && (
