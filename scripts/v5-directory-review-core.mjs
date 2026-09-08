@@ -26,6 +26,11 @@ function reviewKey(item) {
   return `${clean(item.type) || 'unknown'}:${ids.join('+')}`;
 }
 
+export function fingerprintDirectoryReview(reviewQueue) {
+  if (!Array.isArray(reviewQueue)) throw new Error('Directory review: reviewQueue must be an array');
+  return createHash('sha256').update(JSON.stringify(reviewQueue)).digest('hex');
+}
+
 export function buildDirectoryReviewArtifacts(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Directory review: invalid manifest');
   if (!manifest.source || typeof manifest.source.sha256 !== 'string' || !/^[a-f0-9]{64}$/iu.test(manifest.source.sha256)) {
@@ -33,7 +38,7 @@ export function buildDirectoryReviewArtifacts(manifest) {
   }
   if (!Array.isArray(manifest.reviewQueue)) throw new Error('Directory review: reviewQueue must be an array');
 
-  const reviewFingerprint = createHash('sha256').update(JSON.stringify(manifest.reviewQueue)).digest('hex');
+  const reviewFingerprint = fingerprintDirectoryReview(manifest.reviewQueue);
   const decisions = manifest.reviewQueue.map((item, index) => ({
     reviewKey: reviewKey(item),
     reviewIndex: index + 1,
@@ -53,6 +58,8 @@ export function buildDirectoryReviewArtifacts(manifest) {
     `Всего решений: **${decisions.length}**. Этот отчёт локальный и не публикует данные в Supabase.`,
     '',
     'Для каждой компоненты нужно выбрать одно действие: `merge` — это один товар; `split` — несколько товаров с явным распределением legacy ID; `exclude` — осознанно не переносить. Пустое решение нельзя публиковать.',
+    '',
+    'Для `merge` и `split` поле `resolution` в JSON имеет вид `{ "products": [...] }`. Каждый товар обязан содержать `legacyProductIds`, `cabinetExternalKey`, `sellerSku`, `wbSku`, `name`, `category`, `brandExternalKey`, `brandName`, `aliases` и `status` (`active`/`archived`). `brandName` нужен только для нового brand ID. При `exclude` поле `resolution` остаётся `null`, а комментарий `note` обязателен.',
     '',
   ];
 
