@@ -63,6 +63,17 @@ select jsonb_build_object(
     select count(*)
     from analytics.market_daily_versions
   ),
+  'competitor_batch_count', (
+    select count(*)
+    from ingest.import_batches
+    where source_code = 'competitors'
+  ),
+  'competitor_version_row_count', (
+    (select count(*) from analytics.competitor_funnel_versions)
+    + (select count(*) from analytics.competitor_search_versions)
+    + (select count(*) from analytics.competitor_stock_versions)
+    + (select count(*) from analytics.competitor_position_versions)
+  ),
   'market_storage_object_count', (
     select count(*)
     from storage.objects

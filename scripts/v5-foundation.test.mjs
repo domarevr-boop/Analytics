@@ -28,6 +28,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260908009000_v5_directory_bootstrap.sql',
     '20260908010000_v5_directory_read_api.sql',
     '20260908011000_v5_competitors_storage.sql',
+    '20260908012000_v5_competitors_import.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -320,6 +321,26 @@ test('competitor storage smoke proves whole-batch replacement and rollback', () 
   assert.match(sql, /search_percent_above_100_preserved/iu);
   assert.match(sql, /rollback;/iu);
   assert.doesNotMatch(sql, /commit;/iu);
+});
+
+test('competitor import requires retained source and publishes four sections atomically', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260908012000_v5_competitors_import.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/competitors_import_smoke.sql', import.meta.url), 'utf8');
+
+  assert.match(sql, /v5_competitor_create_batch/iu);
+  assert.match(sql, /v5_competitor_reset_staging/iu);
+  assert.match(sql, /v5_competitor_stage_rows/iu);
+  assert.match(sql, /v5_competitor_publish_batch/iu);
+  assert.match(sql, /v5_competitor_rollback_batch/iu);
+  assert.match(sql, /v5-import-sources/iu);
+  assert.match(sql, /missing_section/iu);
+  assert.match(sql, /\('funnel'\), \('search'\), \('stocks'\), \('positions'\)/iu);
+  assert.match(sql, /jsonb_array_length\(p_rows\) > 500/iu);
+  assert.match(sql, /v_total_rows > 50000/iu);
+  assert.match(sql, /'schema_version', '20260908012000'/iu);
+  assert.match(smoke, /invalid_batch_did_not_replace_snapshot/iu);
+  assert.match(smoke, /search_percent_above_100_preserved/iu);
+  assert.match(smoke, /rollback;/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {
