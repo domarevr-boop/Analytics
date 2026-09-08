@@ -1289,6 +1289,10 @@ export async function importMappedData(
       const cabinetsBefore = _cabinets.map(item => ({ ...item }));
       const productsBefore = _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
       const membershipsBefore = _memberships.map(item => ({ ...item }));
+      // Membership history is authoritative and can only come from the import.
+      // Remove records created by the old dictionary editor so they cannot
+      // survive indefinitely when a later file does not contain that date.
+      _groupHistory = _groupHistory.filter(record => record.source !== 'manual');
       const recordsByKey = new Map(_groupHistory.map(record => [`${record.date}|${record.product_id}`, record]));
       const incomingKeys = new Set<string>();
       const duplicateKeys = new Set<string>();
