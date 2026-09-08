@@ -25,6 +25,29 @@ function articleSet(rows) {
   return new Set(rows.map(row => clean(row.wb_article)).filter(Boolean));
 }
 
+function number(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function countFractional(rows, fields) {
+  return rows.reduce((count, row) => count + fields.filter(field => {
+    const value = number(row[field]);
+    return value !== null && !Number.isInteger(value);
+  }).length, 0);
+}
+
+function countNegative(rows, fields) {
+  return rows.reduce((count, row) => count + fields.filter(field => (number(row[field]) ?? 0) < 0).length, 0);
+}
+
+function countOutsidePercent(rows, fields) {
+  return rows.reduce((count, row) => count + fields.filter(field => {
+    const value = number(row[field]);
+    return value !== null && (value < 0 || value > 100);
+  }).length, 0);
+}
+
 export function auditV4Competitors(competitors) {
   if (!competitors || typeof competitors !== 'object') throw new Error('Competitor audit: sections are required');
   for (const section of SECTIONS) if (!Array.isArray(competitors[section])) throw new Error(`Competitor audit: ${section} must be an array`);
@@ -50,5 +73,26 @@ export function auditV4Competitors(competitors) {
       missingFromPositions: [...articles[section]].filter(article => !articles.positions.has(article)).length,
     }])),
     topDepth: positions.reduce((max, row) => Math.max(max, Number(row.position) || 0), 0),
+    numericDiagnostics: {
+      funnel: {
+        fractionalCountFields: countFractional(funnel, ['position', 'impressions', 'clicks', 'carts', 'orders', 'buyouts']),
+        negativeValues: countNegative(funnel, ['position', 'ordered_amount', 'discounted_price', 'buyer_median_price', 'avg_search_position', 'impressions', 'clicks', 'carts', 'orders', 'buyouts']),
+        percentagesOutsideRange: countOutsidePercent(funnel, ['ctr', 'cart_conversion', 'order_conversion', 'buyout_rate']),
+        numeratorAboveImpressions: funnel.filter(row => ['clicks', 'carts', 'orders'].some(field => (number(row[field]) ?? 0) > (number(row.impressions) ?? 0))).length,
+      },
+      search: {
+        fractionalRequestFields: countFractional(search, ['requests', 'requests_previous']),
+        negativeValues: countNegative(search, ['requests', 'requests_previous']),
+        percentagesOutsideRange: countOutsidePercent(search, ['cart_conversion', 'cart_conversion_previous', 'order_conversion', 'order_conversion_previous']),
+      },
+      stocks: {
+        fractionalUnitFields: countFractional(stocks, ['stock', 'in_transit_to_customer', 'in_transit_from_customer']),
+        negativeValues: countNegative(stocks, ['stock', 'in_transit_to_customer', 'in_transit_from_customer', 'avg_daily_orders']),
+      },
+      positions: {
+        fractionalPositions: countFractional(positions, ['position']),
+        outsideTop50: positions.filter(row => (number(row.position) ?? 0) < 1 || (number(row.position) ?? 0) > 50).length,
+      },
+    },
   };
 }

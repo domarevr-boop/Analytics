@@ -13,5 +13,8 @@ test('audits competitor keys, ranges and cross-sheet coverage without returning 
   assert.equal(result.ranges.stocks.minDate, '2026-08-10');
   assert.equal(result.crossSheetCoverage.search.missingFromFunnel, 1);
   assert.equal(result.topDepth, 50);
+  assert.equal(result.numericDiagnostics.funnel.fractionalCountFields, 0);
+  assert.equal(result.numericDiagnostics.funnel.numeratorAboveImpressions, 0);
+  assert.equal(result.numericDiagnostics.positions.outsideTop50, 0);
   assert.equal('rows' in result, false);
 });

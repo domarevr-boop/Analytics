@@ -27,6 +27,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907008000_v5_product_directory.sql',
     '20260908009000_v5_directory_bootstrap.sql',
     '20260908010000_v5_directory_read_api.sql',
+    '20260908011000_v5_competitors_storage.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -297,6 +298,28 @@ test('directory frontend adapter is V5-only and stays behind an explicit release
   assert.match(client, /v5_directory_snapshot/iu);
   assert.match(client, /v5_directory_filters/iu);
   assert.match(exampleEnv, /VITE_V5_DIRECTORY_BACKEND_ENABLED=false/iu);
+});
+
+test('competitor storage versions all four sheets as one replaceable batch', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260908011000_v5_competitors_storage.sql', import.meta.url), 'utf8');
+  for (const table of ['competitor_funnel_versions', 'competitor_search_versions', 'competitor_stock_versions', 'competitor_position_versions']) {
+    assert.match(sql, new RegExp(`create table analytics\\.${table}`, 'iu'));
+    assert.match(sql, new RegExp(`alter table analytics\\.${table} enable row level security`, 'iu'));
+  }
+  assert.match(sql, /public\.v5_competitor_snapshot_bounds/iu);
+  assert.match(sql, /order by batch\.published_at desc nulls last, batch\.id desc/iu);
+  assert.match(sql, /reported_order_conversion numeric\(12, 6\) not null/iu);
+  assert.doesNotMatch(sql, /reported_order_conversion between 0 and 100/iu);
+  assert.match(sql, /'schema_version', '20260908011000'/iu);
+});
+
+test('competitor storage smoke proves whole-batch replacement and rollback', () => {
+  const sql = readFileSync(new URL('../supabase/tests/competitors_storage_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^begin;/iu);
+  assert.match(sql, /batches were mixed instead of replaced as one snapshot/iu);
+  assert.match(sql, /search_percent_above_100_preserved/iu);
+  assert.match(sql, /rollback;/iu);
+  assert.doesNotMatch(sql, /commit;/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {
