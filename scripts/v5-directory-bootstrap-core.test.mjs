@@ -20,6 +20,7 @@ test('merges exact cabinet identities and preserves dated group transitions', ()
   assert.equal(result.summary.acceptedProducts, 1);
   assert.equal(result.summary.queuedProductComponents, 0);
   assert.equal(result.legacyProductMap.length, 2);
+  assert.equal(result.legacyProductMap[0].cabinetExternalKey, 'cab-1');
   assert.equal(result.groupHistory.length, 2);
   assert.equal(result.groupHistory[1].groupExternalKey, '__ungrouped__');
   assert.equal(result.products[0].dataSource, 'seed');
@@ -41,6 +42,7 @@ test('queues ambiguous identity components instead of guessing', () => {
   assert.equal(result.summary.acceptedProducts, 0);
   assert.equal(result.summary.queuedProductComponents, 1);
   assert.deepEqual(result.reviewQueue[0].reasons.slice(0, 2), ['multiple_wb_sku', 'multiple_seller_sku']);
+  assert.equal(result.reviewQueue[0].candidates.length, 2);
 });
 
 test('queues unknown and cross-cabinet groups instead of treating them as ungrouped', () => {

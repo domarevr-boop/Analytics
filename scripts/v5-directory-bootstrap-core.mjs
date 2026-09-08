@@ -77,7 +77,7 @@ export function validateDirectoryBootstrap(bootstrap) {
   const brandKeys = new Set(bootstrap.brands.map(row => row.externalKey));
   const categoryKeys = new Set(bootstrap.categories.map(row => row.externalKey));
   const productKeys = new Set(bootstrap.products.map(row => `${row.cabinetExternalKey}|${row.externalKey}`));
-  const productByExternalKey = new Map(bootstrap.products.map(row => [row.externalKey, row]));
+  const productByExternalKey = new Map(bootstrap.products.map(row => [`${row.cabinetExternalKey}|${row.externalKey}`, row]));
   const groupKeys = new Set(bootstrap.groups.map(row => `${row.cabinetExternalKey}|${row.externalKey}`));
 
   const addDuplicate = (code, rows, keyOf) => {
@@ -120,12 +120,12 @@ export function validateDirectoryBootstrap(bootstrap) {
     aliasUnknownProduct: bootstrap.aliases.filter(row => !productKeys.has(`${row.cabinetExternalKey}|${row.productExternalKey}`)).length,
     groupUnknownCabinet: bootstrap.groups.filter(row => !cabinetKeys.has(row.cabinetExternalKey)).length,
     historyUnknownProduct: bootstrap.groupHistory.filter(row => {
-      const product = productByExternalKey.get(row.productExternalKey);
+      const product = productByExternalKey.get(`${row.cabinetExternalKey}|${row.productExternalKey}`);
       return !product || product.cabinetExternalKey !== row.cabinetExternalKey;
     }).length,
     historyUnknownGroup: bootstrap.groupHistory.filter(row => !groupKeys.has(`${row.cabinetExternalKey}|${row.groupExternalKey}`)).length,
     historyInvalidDate: bootstrap.groupHistory.filter(row => !/^\d{4}-\d{2}-\d{2}$/u.test(row.effectiveDate)).length,
-    mapUnknownProduct: bootstrap.legacyProductMap.filter(row => !productByExternalKey.has(row.productExternalKey)).length,
+    mapUnknownProduct: bootstrap.legacyProductMap.filter(row => !productByExternalKey.has(`${row.cabinetExternalKey}|${row.productExternalKey}`)).length,
   };
   for (const [code, count] of Object.entries(counts)) {
     if (count > 0) errors.push({ code, count });
@@ -160,7 +160,22 @@ export function buildDirectoryBootstrap(catalog) {
     if (brandIds.length === 1 && !brandByLegacyId.has(brandIds[0])) reasons.push('unknown_brand');
     if (sellerSkus.length === 0 && wbSkus.length === 0) reasons.push('missing_identity');
     if (reasons.length > 0) {
-      reviewQueue.push({ type: 'product_identity', legacyProductIds, reasons });
+      reviewQueue.push({
+        type: 'product_identity',
+        legacyProductIds,
+        reasons,
+        candidates: rows.map(row => ({
+          legacyProductId: clean(row.id),
+          cabinetExternalKey: clean(row.cabinet_id) || null,
+          sellerSku: clean(row.sku) || null,
+          wbSku: clean(row.wb_sku) || null,
+          name: clean(row.name) || null,
+          category: clean(row.category) || null,
+          brandExternalKey: clean(row.brand_id) || null,
+          aliases: distinct(Array.isArray(row.aliases) ? row.aliases : []),
+          status: row.status === 'archived' ? 'archived' : 'active',
+        })),
+      });
       continue;
     }
 
@@ -188,7 +203,7 @@ export function buildDirectoryBootstrap(catalog) {
     for (const value of allIdentities.filter(item => item !== sellerSku && item !== wbSku)) {
       aliases.push({ productExternalKey, cabinetExternalKey, value, type: 'historical' });
     }
-    for (const legacyProductId of legacyProductIds) legacyProductMap.push({ legacyProductId, productExternalKey });
+    for (const legacyProductId of legacyProductIds) legacyProductMap.push({ legacyProductId, productExternalKey, cabinetExternalKey });
   }
 
   const categories = [...categoryNamesByExternalKey]
@@ -217,20 +232,21 @@ export function buildDirectoryBootstrap(catalog) {
     groupByLegacyId.set(legacyId, group);
   }
 
-  const productMap = new Map(legacyProductMap.map(row => [row.legacyProductId, row.productExternalKey]));
-  const productByExternalKey = new Map(products.map(row => [row.externalKey, row]));
+  const productMap = new Map(legacyProductMap.map(row => [row.legacyProductId, row]));
+  const productByExternalKey = new Map(products.map(row => [`${row.cabinetExternalKey}|${row.externalKey}`, row]));
   const historyByKey = new Map();
   const conflictedHistoryKeys = new Set();
   let skippedHistoryForQueuedProducts = 0;
   let skippedHistoryForInvalidGroupReference = 0;
   for (const row of catalog.groupHistory) {
     const legacyProductId = clean(row.product_id);
-    const productExternalKey = productMap.get(legacyProductId);
-    if (!productExternalKey) {
+    const mappedProduct = productMap.get(legacyProductId);
+    if (!mappedProduct) {
       skippedHistoryForQueuedProducts += 1;
       continue;
     }
-    const product = productByExternalKey.get(productExternalKey);
+    const productExternalKey = mappedProduct.productExternalKey;
+    const product = productByExternalKey.get(`${mappedProduct.cabinetExternalKey}|${productExternalKey}`);
     const legacyGroupId = clean(row.group_id);
     const sourceGroup = groupByLegacyId.get(legacyGroupId);
     const key = `${productExternalKey}|${clean(row.date)}`;

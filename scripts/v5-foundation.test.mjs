@@ -25,6 +25,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907006000_v5_market_source_download.sql',
     '20260907007000_v5_market_batch_events.sql',
     '20260907008000_v5_product_directory.sql',
+    '20260908009000_v5_directory_bootstrap.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -218,6 +219,37 @@ test('product directory smoke proves dated transitions and rolls back fixtures',
   assert.match(sql, /explicit_ungrouped_distinct/iu);
   assert.match(sql, /rollback;/iu);
   assert.doesNotMatch(sql, /commit;/iu);
+});
+
+test('directory bootstrap requires a retained manifest and publishes atomically', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260908009000_v5_directory_bootstrap.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    "'product_registry'",
+    'create table ingest.legacy_product_map',
+    'create table ingest.directory_review_items',
+    'public.v5_directory_create_batch',
+    'public.v5_directory_publish_bootstrap',
+    "object.bucket_id = 'v5-import-sources'",
+    'Directory bootstrap source hash does not match its batch',
+    'Directory bootstrap product conflicts with existing data',
+    "'schema_version', '20260908009000'",
+  ]) assert.ok(sql.includes(fragment), `missing directory bootstrap contract: ${fragment}`);
+  assert.match(sql, /if v_user_id is null or not app\.is_admin\(\)/iu);
+  assert.match(sql, /p_size_bytes > 5242880/iu);
+  assert.match(sql, /jsonb_array_length\(p_manifest -> 'products'\) > 100000/iu);
+  assert.doesNotMatch(sql, /service_role\s*=/iu);
+});
+
+test('directory bootstrap smoke rolls back data, lineage and review fixtures', () => {
+  const sql = readFileSync(new URL('../supabase/tests/directory_bootstrap_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^begin;/iu);
+  assert.match(sql, /public\.v5_directory_create_batch/iu);
+  assert.match(sql, /public\.v5_directory_publish_bootstrap/iu);
+  assert.match(sql, /legacy_mapping_retained/iu);
+  assert.match(sql, /review_queue_isolated/iu);
+  assert.match(sql, /rollback;/iu);
+  assert.doesNotMatch(sql, /commit;/iu);
+  assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {
