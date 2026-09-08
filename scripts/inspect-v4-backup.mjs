@@ -10,7 +10,10 @@ const DATA_ARRAYS = new Set([
   'competitorStocks', 'competitorPositions', 'importLogs',
 ]);
 
-const CATALOG_ARRAYS = new Set(['cabinets', 'brands', 'groups', 'products', 'memberships', 'groupHistory']);
+const CATALOG_ARRAYS = new Set([
+  'cabinets', 'brands', 'groups', 'products', 'memberships', 'groupHistory',
+  'competitorFunnel', 'competitorSearch', 'competitorStocks', 'competitorPositions',
+]);
 
 function normalizeIdentity(value) {
   return String(value ?? '').replace(/\u00a0/gu, ' ').trim().replace(/\.0+$/u, '');
@@ -291,6 +294,21 @@ export async function inspectV4Backup(filePath) {
 
 export async function readV4BackupCatalog(filePath) {
   return scanV4Backup(filePath, true);
+}
+
+export async function readV4BackupCompetitors(filePath) {
+  const result = await scanV4Backup(filePath, true);
+  return {
+    version: result.version,
+    exportedAt: result.exportedAt,
+    sizeBytes: result.sizeBytes,
+    competitors: {
+      funnel: result.catalog.competitorFunnel,
+      search: result.catalog.competitorSearch,
+      stocks: result.catalog.competitorStocks,
+      positions: result.catalog.competitorPositions,
+    },
+  };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
