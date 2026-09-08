@@ -29,6 +29,7 @@
     "db:v5:smoke-market": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/market_pilot_smoke.sql",
     "db:v5:smoke-directory": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/product_directory_smoke.sql",
     "db:v5:smoke-directory-bootstrap": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/directory_bootstrap_smoke.sql",
+    "db:v5:smoke-directory-read": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/directory_read_smoke.sql",
     "db:v5:smoke-market-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-market-file-smoke.mjs",
     "db:v5:bootstrap-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/scripts/bootstrap_only_auth_user.sql",
     "preview": "vite preview",

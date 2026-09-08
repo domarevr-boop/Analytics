@@ -26,6 +26,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260907007000_v5_market_batch_events.sql',
     '20260907008000_v5_product_directory.sql',
     '20260908009000_v5_directory_bootstrap.sql',
+    '20260908010000_v5_directory_read_api.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -264,6 +265,28 @@ test('directory bootstrap UI is V5-only and stays behind an explicit release gat
   assert.match(page, /isV5DirectoryBootstrapEnvironment && !serverOnly/iu);
   assert.match(page, /disabled=\{!isV5DirectoryBootstrapEnabled \|\| loading\}/iu);
   assert.match(exampleEnv, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED=false/iu);
+});
+
+test('directory read API is bounded, cabinet-authorized and resolves groups by date', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260908010000_v5_directory_read_api.sql', import.meta.url), 'utf8');
+  assert.match(sql, /public\.v5_directory_snapshot/iu);
+  assert.match(sql, /p_limit > 500/iu);
+  assert.match(sql, /p_offset > 100000/iu);
+  assert.match(sql, /app\.can_access_cabinet\(product\.cabinet_id\)/iu);
+  assert.match(sql, /version\.effective_date <= p_as_of/iu);
+  assert.match(sql, /order by version\.effective_date desc/iu);
+  assert.match(sql, /public\.v5_directory_filters/iu);
+  assert.match(sql, /'schema_version', '20260908010000'/iu);
+});
+
+test('directory read smoke verifies snapshot, alias search and filters with rollback', () => {
+  const sql = readFileSync(new URL('../supabase/tests/directory_read_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^begin;/iu);
+  assert.match(sql, /READ-SKU-OLD/iu);
+  assert.match(sql, /public\.v5_directory_snapshot/iu);
+  assert.match(sql, /public\.v5_directory_filters/iu);
+  assert.match(sql, /rollback;/iu);
+  assert.doesNotMatch(sql, /commit;/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {
