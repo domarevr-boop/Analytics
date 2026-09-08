@@ -31,5 +31,6 @@ dist-ssr
 .env.local
 .env.*.local
 supabase/.temp/
+.v5-local/
 
 .vercel

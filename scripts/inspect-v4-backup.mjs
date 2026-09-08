@@ -165,7 +165,7 @@ function inspectCatalog(catalog) {
   };
 }
 
-export async function inspectV4Backup(filePath) {
+async function scanV4Backup(filePath, includeCatalog = false) {
   const file = await stat(filePath);
   if (!file.isFile()) throw new Error('V4 backup path is not a file');
 
@@ -281,7 +281,16 @@ export async function inspectV4Backup(filePath) {
   if (inString || stack.length !== 0) throw new Error('V4 backup is incomplete or malformed');
   if (metadata.version !== 'v4.0' || !metadata.exportedAt) throw new Error('File is not a supported V4 backup');
 
-  return { ...metadata, sizeBytes: file.size, counts, catalogDiagnostics: inspectCatalog(catalog) };
+  const result = { ...metadata, sizeBytes: file.size, counts, catalogDiagnostics: inspectCatalog(catalog) };
+  return includeCatalog ? { ...result, catalog } : result;
+}
+
+export async function inspectV4Backup(filePath) {
+  return scanV4Backup(filePath, false);
+}
+
+export async function readV4BackupCatalog(filePath) {
+  return scanV4Backup(filePath, true);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
