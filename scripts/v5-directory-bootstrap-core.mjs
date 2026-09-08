@@ -233,6 +233,10 @@ export function buildDirectoryBootstrap(catalog) {
   }
 
   const productMap = new Map(legacyProductMap.map(row => [row.legacyProductId, row]));
+  const queuedReviewByLegacyProductId = new Map();
+  for (const item of reviewQueue.filter(row => row.type === 'product_identity')) {
+    for (const legacyProductId of item.legacyProductIds) queuedReviewByLegacyProductId.set(legacyProductId, item);
+  }
   const productByExternalKey = new Map(products.map(row => [`${row.cabinetExternalKey}|${row.externalKey}`, row]));
   const historyByKey = new Map();
   const conflictedHistoryKeys = new Set();
@@ -243,6 +247,16 @@ export function buildDirectoryBootstrap(catalog) {
     const mappedProduct = productMap.get(legacyProductId);
     if (!mappedProduct) {
       skippedHistoryForQueuedProducts += 1;
+      const reviewItem = queuedReviewByLegacyProductId.get(legacyProductId);
+      if (reviewItem) {
+        if (!Array.isArray(reviewItem.groupHistoryCandidates)) reviewItem.groupHistoryCandidates = [];
+        reviewItem.groupHistoryCandidates.push({
+          legacyProductId,
+          date: clean(row.date),
+          legacyGroupId: clean(row.group_id),
+          source: ['import', 'manual', 'legacy'].includes(row.source) ? row.source : 'legacy',
+        });
+      }
       continue;
     }
     const productExternalKey = mappedProduct.productExternalKey;
@@ -292,6 +306,11 @@ export function buildDirectoryBootstrap(catalog) {
   }
 
   const groupHistory = [...historyByKey.values()].sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate) || left.productExternalKey.localeCompare(right.productExternalKey));
+  for (const item of reviewQueue) {
+    if (Array.isArray(item.groupHistoryCandidates)) {
+      item.groupHistoryCandidates.sort((left, right) => left.date.localeCompare(right.date) || left.legacyProductId.localeCompare(right.legacyProductId));
+    }
+  }
   const productsWithHistory = new Set(groupHistory.map(row => row.productExternalKey));
   return {
     schemaVersion: 1,

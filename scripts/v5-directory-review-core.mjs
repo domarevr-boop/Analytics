@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const REASON_LABELS = {
   missing_or_ambiguous_cabinet: 'кабинет отсутствует или неоднозначен',
   multiple_wb_sku: 'несколько WB ID',
@@ -31,6 +33,7 @@ export function buildDirectoryReviewArtifacts(manifest) {
   }
   if (!Array.isArray(manifest.reviewQueue)) throw new Error('Directory review: reviewQueue must be an array');
 
+  const reviewFingerprint = createHash('sha256').update(JSON.stringify(manifest.reviewQueue)).digest('hex');
   const decisions = manifest.reviewQueue.map((item, index) => ({
     reviewKey: reviewKey(item),
     reviewIndex: index + 1,
@@ -66,6 +69,12 @@ export function buildDirectoryReviewArtifacts(manifest) {
       }
       lines.push('');
     }
+    const history = Array.isArray(item.groupHistoryCandidates) ? item.groupHistoryCandidates : [];
+    if (history.length) {
+      lines.push('| История: Legacy ID | Дата | Код склейки | Источник |', '|---|---|---|---|');
+      for (const row of history) lines.push(`| ${markdown(row.legacyProductId)} | ${markdown(row.date)} | ${markdown(row.legacyGroupId)} | ${markdown(row.source)} |`);
+      lines.push('');
+    }
     lines.push('- Действие (`merge` / `split` / `exclude`):', '- Комментарий:', '- Итоговый кабинет и identity либо состав разделения:', '');
   });
 
@@ -73,7 +82,8 @@ export function buildDirectoryReviewArtifacts(manifest) {
     report: `${lines.join('\n')}\n`,
     decisions: {
       schemaVersion: 1,
-      sourceManifestSha256: manifest.source.sha256,
+      sourceBackupSha256: manifest.source.sha256,
+      reviewFingerprint,
       decisions,
     },
   };

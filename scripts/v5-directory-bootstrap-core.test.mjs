@@ -37,12 +37,16 @@ test('queues ambiguous identity components instead of guessing', () => {
       { id: 'p2', cabinet_id: 'cab-1', sku: '200', wb_sku: '901', aliases: ['shared'], name: 'B', category: '', brand_id: '' },
     ],
     memberships: [],
-    groupHistory: [],
+    groupHistory: [{ date: '2026-08-25', product_id: 'p2', group_id: 'grp-ungrouped', source: 'import' }],
   });
   assert.equal(result.summary.acceptedProducts, 0);
   assert.equal(result.summary.queuedProductComponents, 1);
   assert.deepEqual(result.reviewQueue[0].reasons.slice(0, 2), ['multiple_wb_sku', 'multiple_seller_sku']);
   assert.equal(result.reviewQueue[0].candidates.length, 2);
+  assert.deepEqual(result.reviewQueue[0].groupHistoryCandidates, [{
+    legacyProductId: 'p2', date: '2026-08-25', legacyGroupId: 'grp-ungrouped', source: 'import',
+  }]);
+  assert.equal(result.summary.skippedHistoryForQueuedProducts, 1);
 });
 
 test('queues unknown and cross-cabinet groups instead of treating them as ungrouped', () => {
