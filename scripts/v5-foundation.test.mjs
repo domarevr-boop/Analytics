@@ -289,6 +289,16 @@ test('directory read smoke verifies snapshot, alias search and filters with roll
   assert.doesNotMatch(sql, /commit;/iu);
 });
 
+test('directory frontend adapter is V5-only and stays behind an explicit release gate', () => {
+  const client = readFileSync(new URL('../src/features/directory/directoryData.ts', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(client, /VITE_APP_ENV === 'v5-development'/u);
+  assert.match(client, /VITE_V5_DIRECTORY_BACKEND_ENABLED === 'true'/u);
+  assert.match(client, /v5_directory_snapshot/iu);
+  assert.match(client, /v5_directory_filters/iu);
+  assert.match(exampleEnv, /VITE_V5_DIRECTORY_BACKEND_ENABLED=false/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
