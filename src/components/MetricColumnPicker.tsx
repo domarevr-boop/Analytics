@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  TABLE_METRIC_GROUPS,
-  TABLE_METRIC_LABELS,
-  type TableMetricKey,
-} from './AnalyticsTable';
+import { TABLE_METRIC_GROUPS, TABLE_METRIC_LABELS, type TableMetricKey } from '../data/dashboardTableMetrics';
 
 interface Props {
   selected: TableMetricKey[];

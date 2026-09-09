@@ -9,16 +9,10 @@ import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { getEffectivePlanMetrics } from '../data/planningStore';
-import { sortDashboardSiblingsByOrders } from '../data/dashboardTableCalculations';
+import { aggregateDashboardMetrics, dashboardFactPerDay, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
+import { TABLE_METRIC_GROUPS, TABLE_METRIC_LABELS, type TableMetricKey } from '../data/dashboardTableMetrics';
 
-const emptyMetrics = (): MetricValues => ({ impressions: 0, clicks: 0, ctr: 0, carts: 0, cr_cart: 0, orders: 0, avg_price: 0, cr_order: 0, ad_spend: 0, ad_clicks: 0, ad_orders: 0, cpc: 0, cpo: 0, drr: 0, drrForecast: 0, drrActual: 0, plan_orders: 0, plan_orders_qty: 0, plan_sum: 0, plan_price: 0, plan_net_profit: 0, plan_profitability: 0, plan_revenue: 0, fact_orders: 0, plan_pct: 0, revenue: 0, effectiveRevenue: 0, buyout_amount: 0, profit: 0, margin: 0, stock: 0 });
-const addTo = (a: MetricValues, b: MetricValues) => {
-  a.impressions += b.impressions; a.clicks += b.clicks;
-  a.carts += b.carts; a.orders += b.orders;
-  a.ad_spend += b.ad_spend; a.plan_orders += b.plan_orders; a.plan_orders_qty += b.plan_orders_qty; a.plan_sum += b.plan_sum; a.plan_net_profit += b.plan_net_profit; a.plan_revenue += b.plan_revenue;
-  a.fact_orders += b.fact_orders; a.revenue += b.revenue;
-  a.effectiveRevenue += b.effectiveRevenue; a.buyout_amount += b.buyout_amount; a.profit += b.profit; a.stock += b.stock;
-};
+const emptyMetrics = emptyDashboardMetrics;
 
 const f = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const f1 = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
@@ -37,24 +31,6 @@ function pctChange(curr: number, prev: number): number | null {
   if (prev === 0) return curr > 0 ? null : 0;
   return ((curr - prev) / prev) * 100;
 }
-
-export const TABLE_METRIC_GROUPS = [
-  { label: 'Бизнес метрики', keys: ['fact_orders', 'orders', 'avg_price', 'profit', 'margin'] as const },
-  { label: 'Реклама', keys: ['ad_spend', 'drr'] as const },
-  { label: 'Воронка', keys: ['impressions', 'clicks', 'ctr', 'carts', 'cr_cart', 'cr_order'] as const },
-  { label: 'Финансы', keys: ['revenue'] as const },
-];
-
-export type TableMetricKey = typeof TABLE_METRIC_GROUPS[number]['keys'][number];
-
-export const TABLE_METRIC_LABELS: Record<TableMetricKey, string> = {
-  impressions: 'Показы', clicks: 'Клики', ctr: 'CTR',
-  carts: 'Корзины', cr_cart: 'CR корз', orders: 'Заказы, шт', cr_order: 'CR зак',
-  fact_orders: 'Факт заказов', avg_price: 'Средняя цена',
-  ad_spend: 'Расход', drr: 'ДРР',
-  profit: 'Прибыль', margin: 'Рент-сть',
-  revenue: 'Выручка',
-};
 
 const PLAN_KEYS = new Set(['orders', 'fact_orders', 'avg_price', 'profit', 'margin', 'revenue']);
 
@@ -94,10 +70,10 @@ function metricFromDay(day: AggDay, key: string): number {
     case 'ctr': return day.impressions ? (day.clicks / day.impressions) * 100 : 0;
     case 'carts': return day.carts;
     case 'cr_cart': return day.impressions ? (day.carts / day.impressions) * 100 : 0;
-    case 'cr_order': return day.carts ? (day.orders / day.carts) * 100 : 0;
+    case 'cr_order': return day.impressions ? (day.orders / day.impressions) * 100 : 0;
     case 'ad_spend': return day.ad_spend;
     case 'drr': return day.ordered_amount ? (day.ad_spend / day.ordered_amount) * 100 : 0;
-    case 'revenue': return day.buyout_amount;
+    case 'revenue': return day.profit_revenue;
     default: return 0;
   }
 }
@@ -373,11 +349,11 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     if (!visible.length) return null;
     const rootRows = allRows.filter(r => r.parent === null);
     if (rootRows.length === 1) return rootRows[0];
-    const total = emptyMetrics();
-    for (const r of rootRows) {
-      addTo(total, r.current);
-    }
-    return { id: 'total', type: 'cabinet' as const, name: 'Итого', parent: null, depth: 0, current: total, previous: total };
+    return {
+      id: 'total', type: 'cabinet' as const, name: 'Итого', parent: null, depth: 0,
+      current: aggregateDashboardMetrics(rootRows.map(row => row.current)),
+      previous: aggregateDashboardMetrics(rootRows.map(row => row.previous)),
+    };
   }, [allRows, visible]);
 
   // Raw daily data per product (last 7 days of periodA)
@@ -502,10 +478,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
         cache.set(rowId, r);
         return r;
       }
-      const acc = emptyMetrics();
-      for (const child of children) {
-        addTo(acc, getMM(child.id, child.type));
-      }
+      const acc = aggregateDashboardMetrics(children.map(child => getMM(child.id, child.type)));
       cache.set(rowId, acc);
       return acc;
     }
@@ -524,11 +497,16 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
 
   function planCell(row: TableRow, key: string) {
     if (row.type === 'group' || row.type === 'product') return <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">—</td>;
-    const curr = rowMonthCache.get(row.id) || row.current;
-    const isTotal = row.id === 'total' || row.name === 'Итого';
-    const scope = isTotal ? {} : row.type === 'category'
-      ? { cabinetId: row.parent || '', category: row.name }
-      : { cabinetId: row.id };
+    const isTotal = row.id === 'total';
+    const rootRows = allRows.filter(candidate => candidate.parent === null);
+    const curr = isTotal
+      ? aggregateDashboardMetrics(rootRows.map(root => rowMonthCache.get(root.id) || root.current))
+      : rowMonthCache.get(row.id) || row.current;
+    const scope = isTotal
+      ? { cabinetId: cabinetFilter || undefined, category: categoryFilter || undefined, brandId: brandFilter || undefined }
+      : row.type === 'category'
+        ? { cabinetId: row.parent || '', category: row.name, brandId: brandFilter || undefined }
+        : { cabinetId: row.id, category: categoryFilter || undefined, brandId: brandFilter || undefined };
     const effectivePlan = getEffectivePlanMetrics(monthStart.slice(0, 7), scope);
     const plan = key === 'orders' ? effectivePlan.ordersQty
       : key === 'fact_orders' ? effectivePlan.ordersSum
@@ -537,7 +515,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       : key === 'avg_price' ? effectivePlan.avgCheck
       : key === 'margin' ? effectivePlan.profitability
       : null;
-    const fact = (curr as any)[key] as number;
+    const fact = curr[key as keyof MetricValues];
 
     if (!effectivePlan.hasData || plan === null) return <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">—</td>;
 
@@ -554,12 +532,19 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     }
 
     const pct = plan ? (fact / plan) * 100 : 0;
-    const rowDays = row.id === 'total' ? [] : getRowDays(row.id, row.type).filter(day => day.date >= monthStart && day.date <= periodA.end);
-    const last7 = rowDays.slice(-7);
-    const last7Average = last7.length ? last7.reduce((sum, day) => sum + metricFromDay(day, key), 0) / last7.length : 0;
     const days = daysInPeriod(monthStart, periodA.end);
     const monthDays = daysInMonth(monthStart);
-    const factPerDay = last7Average || (days ? fact / days : 0);
+    const factPerDayForRow = (target: TableRow) => {
+      const recentValues = getRowDays(target.id, target.type)
+        .filter(day => day.date >= monthStart && day.date <= periodA.end)
+        .slice(-7)
+        .map(day => metricFromDay(day, key));
+      const targetFact = ((rowMonthCache.get(target.id) || target.current) as unknown as Record<string, number>)[key] || 0;
+      return dashboardFactPerDay(targetFact, days, recentValues);
+    };
+    const factPerDay = isTotal
+      ? totalDashboardFactPerDay(rootRows.map(factPerDayForRow))
+      : factPerDayForRow(row);
     const forecast = fact + factPerDay * Math.max(0, monthDays - days);
     const forecastPct = plan ? (forecast / plan - 1) * 100 : 0;
     const barW = Math.min(pct, 100);
@@ -578,8 +563,8 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
   }
 
   function cell(row: TableRow, key: string) {
-    const curr = (row.current as any)[key] as number;
-    const prev = (row.previous as any)[key] as number;
+    const curr = row.current[key as keyof MetricValues];
+    const prev = row.previous[key as keyof MetricValues];
     const change = pctChange(curr, prev);
     const cfg = METRIC_CFG[key];
     const v = formatMetricValue(curr, key, cfg.decimals);
