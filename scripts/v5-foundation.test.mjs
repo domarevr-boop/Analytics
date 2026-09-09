@@ -30,6 +30,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260908011000_v5_competitors_storage.sql',
     '20260908012000_v5_competitors_import.sql',
     '20260909013000_v5_competitors_read_api.sql',
+    '20260909014000_v5_competitors_import_ui.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -368,6 +369,22 @@ test('competitor read API aggregates every page block behind explicit bounds', (
   assert.match(smoke, /overview_and_brand_formulas_verified/iu);
   assert.match(smoke, /stock_snapshot_precedence_verified/iu);
   assert.match(smoke, /top_summary_and_movement_verified/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+});
+
+test('competitor Import UI contracts are bounded and batch-authorized', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260909014000_v5_competitors_import_ui.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/competitors_import_ui_smoke.sql', import.meta.url), 'utf8');
+  for (const rpc of ['v5_competitor_batch_summary', 'v5_competitor_batch_history', 'v5_competitor_batch_errors', 'v5_competitor_batch_events']) {
+    assert.match(sql, new RegExp(rpc, 'iu'));
+  }
+  assert.match(sql, /app\.can_read_batch\(batch\.id\)/iu);
+  assert.match(sql, /not app\.can_read_batch\(p_batch_id\)/iu);
+  assert.match(sql, /p_limit > 50/iu);
+  assert.match(sql, /p_limit > 200/iu);
+  assert.match(sql, /'schema_version',\s*'20260909014000'/iu);
+  assert.match(smoke, /^begin;/iu);
   assert.match(smoke, /rollback;/iu);
   assert.doesNotMatch(smoke, /commit;/iu);
 });

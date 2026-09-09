@@ -15,6 +15,23 @@ import { parseMarketFileInWorker } from '../features/market/marketImportParser';
 import type { ParsedMarketFile } from '../features/market/marketImportParser';
 import { downloadMarketSource, getLatestMarketImport, getMarketBatchErrors, getMarketBatchEvents, getMarketImportHistory, importMarketToSupabase } from '../features/market/marketImport';
 import type { MarketBatchErrorRow, MarketBatchEventRow, MarketImportHistoryRow, MarketImportResult } from '../features/market/marketImport';
+import { parseCompetitorFileInWorker } from '../features/competitors/competitorImportParser';
+import type { ParsedCompetitorFile } from '../features/competitors/competitorImportParser';
+import {
+  downloadCompetitorSource,
+  getCompetitorBatchErrors,
+  getCompetitorBatchEvents,
+  getCompetitorImportHistory,
+  getLatestCompetitorImport,
+  importCompetitorsToSupabase,
+  isV5CompetitorImportEnabled,
+} from '../features/competitors/competitorImport';
+import type {
+  CompetitorBatchErrorRow,
+  CompetitorBatchEventRow,
+  CompetitorImportHistoryRow,
+  CompetitorImportResult,
+} from '../features/competitors/competitorImport';
 import {
   isV5DirectoryBootstrapEnabled,
   isV5DirectoryBootstrapEnvironment,
@@ -84,11 +101,21 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [marketParseContext, setMarketParseContext] = useState<Pick<ParsedMarketFile, 'sourceRowNumbers' | 'sheetName'> | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [competitorPreview, setCompetitorPreview] = useState<CompetitorWorkbookData | null>(null);
+  const [competitorServerPreview, setCompetitorServerPreview] = useState<ParsedCompetitorFile | null>(null);
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
   const [latestDirectoryBootstrap, setLatestDirectoryBootstrap] = useState<DirectoryBootstrapResult | null>(null);
   const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
+  const [latestCompetitorImport, setLatestCompetitorImport] = useState<CompetitorImportResult | null>(null);
+  const [competitorImportHistory, setCompetitorImportHistory] = useState<CompetitorImportHistoryRow[]>([]);
+  const [competitorErrors, setCompetitorErrors] = useState<CompetitorBatchErrorRow[]>([]);
+  const [competitorErrorBatchId, setCompetitorErrorBatchId] = useState('');
+  const [competitorErrorsLoading, setCompetitorErrorsLoading] = useState(false);
+  const [competitorEvents, setCompetitorEvents] = useState<CompetitorBatchEventRow[]>([]);
+  const [competitorEventBatchId, setCompetitorEventBatchId] = useState('');
+  const [competitorEventsLoading, setCompetitorEventsLoading] = useState(false);
+  const [downloadingCompetitorBatchId, setDownloadingCompetitorBatchId] = useState('');
   const [marketErrors, setMarketErrors] = useState<MarketBatchErrorRow[]>([]);
   const [errorBatchId, setErrorBatchId] = useState('');
   const [marketErrorsLoading, setMarketErrorsLoading] = useState(false);
@@ -102,6 +129,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     if (!serverOnly) void getLatestReviewImport().then(setLatestReviewImport);
     void getLatestMarketImport().then(setLatestMarketImport);
     void getMarketImportHistory().then(setMarketImportHistory).catch(() => setMarketImportHistory([]));
+    if (isV5CompetitorImportEnabled) {
+      void getLatestCompetitorImport().then(setLatestCompetitorImport);
+      void getCompetitorImportHistory().then(setCompetitorImportHistory).catch(() => setCompetitorImportHistory([]));
+    }
   }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -109,19 +140,34 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     if (DEV) console.log('[import-ui] file received:', file.name, file.size, 'type:', ext);
     setLoading(true);
     setMarketParseContext(null);
+    setCompetitorServerPreview(null);
     setProgress(`Чтение ${file.name}...`);
     try {
       await waitForPaint();
       if (ext === 'xlsx' || ext === 'csv') {
-        const marketFile = await parseMarketFileInWorker(file);
-        if (marketFile) {
-          setParsed(marketFile);
-          setMarketParseContext({ sourceRowNumbers: marketFile.sourceRowNumbers, sheetName: marketFile.sheetName });
-          setSelectedFile(file);
-          return;
+        try {
+          const marketFile = await parseMarketFileInWorker(file);
+          if (marketFile) {
+            setParsed(marketFile);
+            setMarketParseContext({ sourceRowNumbers: marketFile.sourceRowNumbers, sheetName: marketFile.sheetName });
+            setSelectedFile(file);
+            return;
+          }
+        } catch (error) {
+          if (ext === 'csv') throw error;
+          if (DEV) console.debug('[import-ui] not a market workbook:', error);
         }
       }
-      if (serverOnly) throw new Error('Для роли importer в V5 разрешён только серверный отчёт «Рынок» (.xlsx или .csv).');
+      if (ext === 'xlsx' && isV5CompetitorImportEnabled) {
+        const competitorData = await parseCompetitorFileInWorker(file);
+        setCompetitorServerPreview(competitorData);
+        setCompetitorYear(competitorData.inferredYear || new Date().getFullYear());
+        setSelectedFile(file);
+        return;
+      }
+      if (serverOnly) throw new Error(isV5CompetitorImportEnabled
+        ? 'Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv) и «Конкуренты» (.xlsx).'
+        : 'Для роли importer в V5 разрешён только серверный отчёт «Рынок» (.xlsx или .csv).');
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -145,6 +191,43 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setProgress('');
     }
   }, [serverOnly]);
+
+  const handleV5CompetitorImport = useCallback(async () => {
+    if (!selectedFile || !competitorServerPreview || importRunningRef.current) return;
+    importRunningRef.current = true;
+    setLoading(true);
+    setProgress('Повторная проверка четырёх листов...');
+    try {
+      const parsedWorkbook = await parseCompetitorFileInWorker(selectedFile, competitorYear);
+      const result = await importCompetitorsToSupabase(selectedFile, parsedWorkbook, current => {
+        const stage = current.stage === 'hashing'
+          ? 'Контрольная сумма'
+          : current.stage === 'uploading'
+            ? 'Сохранение исходника'
+            : current.stage === 'staging'
+              ? 'Передача четырёх разделов'
+              : 'Серверная проверка и публикация';
+        setProgress(`${stage}: ${current.processed}/${current.total}`);
+      });
+      setLatestCompetitorImport(result);
+      void getCompetitorImportHistory().then(setCompetitorImportHistory).catch(() => undefined);
+      if (result.status === 'failed') {
+        alert(`Импорт «Конкурентов» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Исходник и журнал сохранены в V5.`);
+      } else if (result.duplicate) {
+        alert('Этот файл «Конкурентов» уже опубликован в V5. Повторная запись не создавалась.');
+      } else {
+        alert(`Импорт «Конкурентов» опубликован в V5. Строк: ${result.acceptedRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Конкурентов»');
+    } finally {
+      importRunningRef.current = false;
+      setLoading(false);
+      setProgress('');
+      setCompetitorServerPreview(null);
+      setSelectedFile(null);
+    }
+  }, [selectedFile, competitorServerPreview, competitorYear]);
 
   const handleCompetitorImport = useCallback(async () => {
     if (!selectedFile || !competitorPreview || importRunningRef.current) return;
@@ -381,6 +464,55 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     }
   }, [eventBatchId]);
 
+  const toggleCompetitorErrors = useCallback(async (batchId: string) => {
+    if (competitorErrorBatchId === batchId) {
+      setCompetitorErrorBatchId('');
+      setCompetitorErrors([]);
+      return;
+    }
+    setCompetitorErrorBatchId(batchId);
+    setCompetitorErrors([]);
+    setCompetitorErrorsLoading(true);
+    try {
+      setCompetitorErrors(await getCompetitorBatchErrors(batchId));
+    } catch (reason) {
+      setCompetitorErrorBatchId('');
+      alert(reason instanceof Error ? reason.message : 'Не удалось загрузить ошибки партии «Конкурентов»');
+    } finally {
+      setCompetitorErrorsLoading(false);
+    }
+  }, [competitorErrorBatchId]);
+
+  const toggleCompetitorEvents = useCallback(async (batchId: string) => {
+    if (competitorEventBatchId === batchId) {
+      setCompetitorEventBatchId('');
+      setCompetitorEvents([]);
+      return;
+    }
+    setCompetitorEventBatchId(batchId);
+    setCompetitorEvents([]);
+    setCompetitorEventsLoading(true);
+    try {
+      setCompetitorEvents(await getCompetitorBatchEvents(batchId));
+    } catch (reason) {
+      setCompetitorEventBatchId('');
+      alert(reason instanceof Error ? reason.message : 'Не удалось загрузить этапы партии «Конкурентов»');
+    } finally {
+      setCompetitorEventsLoading(false);
+    }
+  }, [competitorEventBatchId]);
+
+  const handleCompetitorSourceDownload = useCallback(async (batch: CompetitorImportHistoryRow) => {
+    setDownloadingCompetitorBatchId(batch.batchId);
+    try {
+      await downloadCompetitorSource(batch.objectPath, batch.fileName);
+    } catch (reason) {
+      alert(reason instanceof Error ? reason.message : 'Не удалось скачать исходный файл «Конкурентов»');
+    } finally {
+      setDownloadingCompetitorBatchId('');
+    }
+  }, []);
+
   const formatEventDetails = (details: Record<string, unknown>) => {
     const entries = Object.entries(details);
     if (entries.length === 0) return '—';
@@ -405,7 +537,9 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
 
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
-      <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly ? 'Безопасная загрузка серверного отчёта «Рынок» в V5.' : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
+      <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly
+        ? (isV5CompetitorImportEnabled ? 'Безопасная загрузка серверных отчётов «Рынок» и «Конкуренты» в V5.' : 'Безопасная загрузка серверного отчёта «Рынок» в V5.')
+        : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {isV5DirectoryBootstrapEnvironment && !serverOnly && (
         <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">
           <div className="import-section-head">
@@ -446,7 +580,30 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           />
         </div>
       )}
-      {!serverOnly && competitorPreview && (
+      {competitorServerPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header">
+                <div className="import-mapper-header-info"><h3>Серверный импорт конкурентов: {selectedFile?.name}</h3><span className="import-mapper-summary">Все 4 листа распознаны безопасным parser V5</span></div>
+                <span className="import-mapper-date"><label>Год отчёта:</label><input type="number" className="daterange-input" min="2000" max="2100" value={competitorYear} onChange={event => setCompetitorYear(Number(event.target.value))} /></span>
+              </div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{competitorServerPreview.dateStart || 'требует проверки'} — {competitorServerPreview.dateEnd || 'требует проверки'}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Заказы и воронка</span><strong>{competitorServerPreview.sections.funnel.rows.length}</strong><small>{competitorServerPreview.sections.funnel.sheetName}</small></article>
+                  <article><span>Поисковые запросы</span><strong>{competitorServerPreview.sections.search.rows.length}</strong><small>{competitorServerPreview.sections.search.sheetName}</small></article>
+                  <article><span>Склады и остатки</span><strong>{competitorServerPreview.sections.stocks.rows.length}</strong><small>{competitorServerPreview.sections.stocks.sheetName}</small></article>
+                  <article><span>Позиции ТОП-50</span><strong>{competitorServerPreview.sections.positions.rows.length}</strong><small>{competitorServerPreview.sections.positions.sheetName}</small></article>
+                </div>
+                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер повторно проверит все строки и опубликует только одну полную версию четырёх разделов; ошибка любого раздела не изменит текущий срез.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setCompetitorServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading} onClick={() => void handleV5CompetitorImport()}>Опубликовать 4 раздела в V5</button></div>
+            </div>
+          </div>
+        </div>
+      )}
+      {!serverOnly && competitorPreview && !competitorServerPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
             <div className="import-mapper competitor-import-preview">
@@ -497,7 +654,9 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           {loading ? progress || 'Загрузка...' : 'Перетащите файлы сюда или нажмите для выбора'}
         </div>
         <div className="dropzone-hint">
-          {serverOnly ? 'Поддерживаются: отчёт «Рынок» в CSV или Excel (.xlsx)' : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
+          {serverOnly
+            ? (isV5CompetitorImportEnabled ? 'Поддерживаются: «Рынок» (.csv/.xlsx) и «Конкуренты» (.xlsx)' : 'Поддерживаются: отчёт «Рынок» в CSV или Excel (.xlsx)')
+            : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
 
@@ -538,6 +697,24 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         </AnalyticsPanel>
       )}
 
+      {latestCompetitorImport && (
+        <AnalyticsPanel className="import-log import-market-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур V5" title="Текущий импорт «Конкурентов»" description={latestCompetitorImport.fileName} controls={<span>{latestCompetitorImport.status === 'published' ? 'Опубликован' : 'Отклонён'}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Дата</th><th>Период</th><th>Всего строк</th><th>Принято</th><th>Отклонено</th><th>Разделы</th><th>Исходный файл</th></tr></thead>
+            <tbody><tr>
+              <td>{formatDate(latestCompetitorImport.importedAt)}</td>
+              <td>{latestCompetitorImport.periodStart ? `${latestCompetitorImport.periodStart} — ${latestCompetitorImport.periodEnd || latestCompetitorImport.periodStart}` : '—'}</td>
+              <td>{latestCompetitorImport.inputRows}</td>
+              <td>{latestCompetitorImport.acceptedRows}</td>
+              <td>{latestCompetitorImport.rejectedRows}</td>
+              <td>{Object.values(latestCompetitorImport.sectionCounts).reduce((sum, value) => sum + Number(value || 0), 0) || '—'}</td>
+              <td>Сохранён в private Storage</td>
+            </tr></tbody>
+          </table></div>
+        </AnalyticsPanel>
+      )}
+
       {marketImportHistory.length > 0 && (
         <AnalyticsPanel className="import-log import-market-history" density="data">
           <div className="import-section-head"><PanelHeader eyebrow="Аудит V5" title="История партий «Рынка»" description="Последние 20 доступных загрузок; исходники и ошибки сохраняются на сервере" controls={<span>{marketImportHistory.length} партий</span>} /></div>
@@ -553,6 +730,25 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           </table></div>
           {eventBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Аудит" title="Этапы выбранной партии" description={marketEventsLoading ? 'Загрузка…' : `${marketEvents.length} событий (не более 100)`} /></div>{!marketEventsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Время</th><th>Статус</th><th>Событие</th><th>Параметры</th></tr></thead><tbody>{marketEvents.map(event => <tr key={event.eventId}><td>{formatDate(event.createdAt)}</td><td>{event.status}</td><td>{event.message || '—'}</td><td>{formatEventDetails(event.details)}</td></tr>)}</tbody></table></div>}</div>}
           {errorBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Диагностика" title="Ошибки выбранной партии" description={marketErrorsLoading ? 'Загрузка…' : `${marketErrors.length} записей (не более 100)`} /></div>{!marketErrorsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Лист</th><th>Строка</th><th>Колонка</th><th>Код</th><th>Сообщение</th><th>Исходное значение</th></tr></thead><tbody>{marketErrors.map(error => <tr key={error.errorId}><td>{error.sheetName || '—'}</td><td>{error.rowNumber ?? '—'}</td><td>{error.columnName || '—'}</td><td>{error.errorCode}</td><td>{error.message}</td><td>{error.rawValue || '—'}</td></tr>)}</tbody></table></div>}</div>}
+        </AnalyticsPanel>
+      )}
+
+      {competitorImportHistory.length > 0 && (
+        <AnalyticsPanel className="import-log import-market-history" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Аудит V5" title="История партий «Конкурентов»" description="Последние 20 доступных четырёхсекционных загрузок; исходники, ошибки и этапы сохраняются" controls={<span>{competitorImportHistory.length} партий</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Создана</th><th>Файл</th><th>Период</th><th>Статус</th><th>Строк</th><th>Принято</th><th>Отклонено</th><th>Ошибок</th><th>Попыток</th><th>Исходник</th><th></th></tr></thead>
+            <tbody>{competitorImportHistory.map(batch => <tr key={batch.batchId} className={`import-row-${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`} title={batch.errorSummary || undefined}>
+              <td>{formatDate(batch.createdAt)}</td>
+              <td className="import-filename"><span>{batch.fileName}</span><small>{batch.batchId}</small></td>
+              <td>{batch.periodStart ? `${batch.periodStart} — ${batch.periodEnd || batch.periodStart}` : '—'}</td>
+              <td><span className={`import-status ${batch.status === 'published' ? 'success' : batch.status === 'failed' ? 'error' : 'processing'}`}>{batch.status === 'published' ? 'Опубликован' : batch.status === 'failed' ? 'Отклонён' : batch.status === 'cancelled' ? 'Отменён' : 'В обработке'}</span></td>
+              <td>{batch.inputRows}</td><td>{batch.acceptedRows}</td><td>{batch.rejectedRows}</td><td>{batch.errorCount}</td><td>{batch.attemptCount}</td><td>{batch.sourceFileRetained ? 'Сохранён' : 'Не найден'}</td>
+              <td><div className="admin-form-actions"><button type="button" className="btn-secondary" onClick={() => void toggleCompetitorEvents(batch.batchId)}>{competitorEventBatchId === batch.batchId ? 'Скрыть этапы' : 'Этапы'}</button>{batch.errorCount > 0 && <button type="button" className="btn-secondary" onClick={() => void toggleCompetitorErrors(batch.batchId)}>{competitorErrorBatchId === batch.batchId ? 'Скрыть' : 'Ошибки'}</button>}{batch.sourceFileRetained && <button type="button" className="btn-secondary" disabled={downloadingCompetitorBatchId === batch.batchId} onClick={() => void handleCompetitorSourceDownload(batch)}>{downloadingCompetitorBatchId === batch.batchId ? 'Скачивание…' : 'Скачать'}</button>}</div></td>
+            </tr>)}</tbody>
+          </table></div>
+          {competitorEventBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Аудит" title="Этапы партии «Конкурентов»" description={competitorEventsLoading ? 'Загрузка…' : `${competitorEvents.length} событий (не более 100)`} /></div>{!competitorEventsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Время</th><th>Статус</th><th>Событие</th><th>Параметры</th></tr></thead><tbody>{competitorEvents.map(event => <tr key={event.eventId}><td>{formatDate(event.createdAt)}</td><td>{event.status}</td><td>{event.message || '—'}</td><td>{formatEventDetails(event.details)}</td></tr>)}</tbody></table></div>}</div>}
+          {competitorErrorBatchId && <div className="import-market-errors"><div className="import-section-head"><PanelHeader eyebrow="Диагностика" title="Ошибки партии «Конкурентов»" description={competitorErrorsLoading ? 'Загрузка…' : `${competitorErrors.length} записей (не более 100)`} /></div>{!competitorErrorsLoading && <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Раздел</th><th>Строка</th><th>Колонка</th><th>Код</th><th>Сообщение</th><th>Исходное значение</th></tr></thead><tbody>{competitorErrors.map(error => <tr key={error.errorId}><td>{error.sheetName || '—'}</td><td>{error.rowNumber ?? '—'}</td><td>{error.columnName || '—'}</td><td>{error.errorCode}</td><td>{error.message}</td><td>{error.rawValue || '—'}</td></tr>)}</tbody></table></div>}</div>}
         </AnalyticsPanel>
       )}
 
