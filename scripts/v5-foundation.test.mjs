@@ -29,6 +29,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260908010000_v5_directory_read_api.sql',
     '20260908011000_v5_competitors_storage.sql',
     '20260908012000_v5_competitors_import.sql',
+    '20260909013000_v5_competitors_read_api.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -341,6 +342,34 @@ test('competitor import requires retained source and publishes four sections ato
   assert.match(smoke, /invalid_batch_did_not_replace_snapshot/iu);
   assert.match(smoke, /search_percent_above_100_preserved/iu);
   assert.match(smoke, /rollback;/iu);
+});
+
+test('competitor read API aggregates every page block behind explicit bounds', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260909013000_v5_competitors_read_api.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/competitors_read_smoke.sql', import.meta.url), 'utf8');
+  for (const rpc of [
+    'v5_competitor_filters',
+    'v5_competitor_overview_series',
+    'v5_competitor_brand_summary',
+    'v5_competitor_article_page',
+    'v5_competitor_query_leaders',
+    'v5_competitor_stock_slice',
+    'v5_competitor_top_summary',
+    'v5_competitor_top_movements',
+  ]) assert.match(sql, new RegExp(`public\\.${rpc}`, 'iu'));
+  assert.match(sql, /p_limit > 100/iu);
+  assert.match(sql, /p_offset > 100000/iu);
+  assert.match(sql, /p_end - p_start > p_max_days/iu);
+  assert.match(sql, /app\.can_access_cabinet\(product\.cabinet_id\)/iu);
+  assert.match(sql, /max\(row_data\.requests\)/iu);
+  assert.match(sql, /normalized_warehouse <> 'маркетплейс'/iu);
+  assert.match(sql, /'schema_version', '20260909013000'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /overview_and_brand_formulas_verified/iu);
+  assert.match(smoke, /stock_snapshot_precedence_verified/iu);
+  assert.match(smoke, /top_summary_and_movement_verified/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {

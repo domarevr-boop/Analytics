@@ -9,6 +9,7 @@
    - текущее состояние и ограничения — `PROJECT_STATE.md`;
    - активные задачи — `docs/ROADMAP.md`;
    - границы релизов — `docs/VERSIONS.md` и документ активной версии;
+   - целевая граница V5/V6/V7, инфраструктура и методология — `docs/V5_TARGET_ARCHITECTURE.md`;
    - переход V4 → V5 — `docs/V5_MIGRATION_PLAN.md`;
    - дизайн — `docs/DESIGN_SYSTEM.md`, `docs/UI_COMPONENTS.md`; текущий этап общей миграции — `docs/DESIGN_SYSTEM_MIGRATION.md`;
    - импорт — `docs/IMPORTS.md`;
