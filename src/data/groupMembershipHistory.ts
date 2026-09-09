@@ -58,8 +58,15 @@ function createResolver(history: GroupMembershipHistory[], legacyMemberships: Gr
         return { groupId: latest.group_id, known: true, effectiveDate: latest.date };
       }
 
-      // Before the first historical import, preserve the old current-only behavior
-      // only when no historical data exists at all. This avoids inventing history.
+      // Backfill dates before the first observation with the earliest known
+      // membership so older analytics remain attributable to a group.
+      if (rows.length > 0) {
+        const earliest = rows[0];
+        return { groupId: earliest.group_id, known: true, effectiveDate: earliest.date };
+      }
+
+      // Preserve the legacy current-only behavior only when no historical data
+      // has been imported at all. A product absent from non-empty history stays unknown.
       if (history.length === 0) {
         const legacy = legacyMemberships.find(row => row.product_id === productId);
         if (legacy) return { groupId: legacy.group_id, known: true };

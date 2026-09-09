@@ -13,8 +13,12 @@ test('uses the last known membership until the next change', () => {
   assert.equal(resolveGroupAtDate('p1', '2026-08-31', history).groupId, 'g8');
 });
 
-test('does not invent a state before the first historical row', () => {
-  assert.deepEqual(resolveGroupAtDate('p1', '2026-08-24', history), { groupId: null, known: false });
+test('backfills dates before the first historical row from the earliest known membership', () => {
+  assert.deepEqual(resolveGroupAtDate('p1', '2026-08-24', history), { groupId: 'g3', known: true, effectiveDate: '2026-08-25' });
+});
+
+test('keeps a product unknown when it has no history at all', () => {
+  assert.deepEqual(resolveGroupAtDate('missing', '2026-08-24', history), { groupId: null, known: false });
 });
 
 test('matches a selected group only for its actual dates', () => {
