@@ -7,7 +7,7 @@ import { isCloudStorage } from '../database/db';
 import { createDataChanges, DATA_STORE_NAMES, hasDataChanges } from '../database/snapshotDelta';
 import type { DataSnapshot } from '../types';
 import { normalizeImportDate, addDays } from './dateUtils';
-import { UNGROUPED_GROUP_ID } from './groupMembershipHistory';
+import { currentMembershipsFromHistory, importedGroupHistoryOnly, UNGROUPED_GROUP_ID } from './groupMembershipHistory';
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
 import { getReportNetProfit } from './profitabilityCalculations';
 import { normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from './geographyHierarchy';
@@ -455,26 +455,12 @@ export function addProduct(sku: string, name: string, brand_id: string, category
   };
   _products.push(p); notify(true, ['products']); return p;
 }
-export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>> & { group_id?: string }) {
+export function updateProduct(id: string, data: Partial<Omit<Product, 'id'>>) {
   const p = _products.find(x => x.id === id);
   if (!p) return;
-  const { group_id, ...productData } = data;
-  Object.assign(p, productData, { updated_at: new Date().toISOString() });
-  if (group_id !== undefined) {
-    _memberships = _memberships.filter(m => m.product_id !== id);
-    if (group_id) _memberships.push({ product_id: id, group_id });
-  }
+  Object.assign(p, data, { updated_at: new Date().toISOString() });
   buildAliasMap();
-  notify(true, ['products', 'memberships']);
-}
-
-export function upsertGroupMembershipHistory(product_id: string, date: string, group_id: string, source: GroupMembershipHistory['source'] = 'manual') {
-  const record: GroupMembershipHistory = { product_id, date, group_id: group_id || UNGROUPED_GROUP_ID, source };
-  const index = _groupHistory.findIndex(item => item.product_id === product_id && item.date === date);
-  if (index >= 0) _groupHistory[index] = record;
-  else _groupHistory.push(record);
-  _groupHistory.sort((left, right) => left.date.localeCompare(right.date) || left.product_id.localeCompare(right.product_id));
-  notify(true, ['groupHistory']);
+  notify(true, ['products']);
 }
 export function removeProduct(id: string) {
   _products = _products.filter(x => x.id !== id);
@@ -1292,7 +1278,7 @@ export async function importMappedData(
       // Membership history is authoritative and can only come from the import.
       // Remove records created by the old dictionary editor so they cannot
       // survive indefinitely when a later file does not contain that date.
-      _groupHistory = _groupHistory.filter(record => record.source !== 'manual');
+      _groupHistory = importedGroupHistoryOnly(_groupHistory);
       const recordsByKey = new Map(_groupHistory.map(record => [`${record.date}|${record.product_id}`, record]));
       const incomingKeys = new Set<string>();
       const duplicateKeys = new Set<string>();
@@ -1329,6 +1315,9 @@ export async function importMappedData(
         if (!maxDate || item.date > maxDate) maxDate = item.date;
         productIds.add(item.product.id);
       }
+      // Keep the legacy current-membership index aligned for the remaining
+      // consumers that do not resolve membership by an analytics date.
+      _memberships = currentMembershipsFromHistory(_groupHistory);
     } else if (source === 'geography') {
       _geography = selectDetailedGeographyRows(_geography);
       const recordsByKey = new Map(_geography.map(record => [`${record.date}|${record.product_id}|${record.region}|${normalizeGeoArea(record.area)}|${normalizeGeoCity(record.city)}`, record]));

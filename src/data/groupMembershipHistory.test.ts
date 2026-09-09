@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupMatchesAtDate, groupsActiveInPeriod, resolveGroupAtDate } from './groupMembershipHistory.ts';
+import { currentMembershipsFromHistory, groupMatchesAtDate, groupsActiveInPeriod, importedGroupHistoryOnly, resolveGroupAtDate } from './groupMembershipHistory.ts';
 
 const history = [
   { date: '2026-08-25', product_id: 'p1', group_id: 'g3', source: 'import' as const },
@@ -26,4 +26,27 @@ test('matches a selected group only for its actual dates', () => {
 test('lists groups active in a selected period', () => {
   const products = [{ id: 'p1', sku: '1', wb_sku: '', name: '', category: '', brand_id: '', cabinet_id: '' }];
   assert.deepEqual(groupsActiveInPeriod(products, '2026-08-25', '2026-08-31', history), new Set(['g3', 'g8']));
+});
+
+test('rebuilds current memberships from the latest imported state', () => {
+  const importedOnly = [
+    ...history,
+    { date: '2026-08-26', product_id: 'p2', group_id: 'g4', source: 'import' as const },
+    { date: '2026-08-30', product_id: 'p2', group_id: 'g9', source: 'import' as const },
+  ];
+  assert.deepEqual(currentMembershipsFromHistory(importedOnly), [
+    { product_id: 'p1', group_id: 'g8' },
+    { product_id: 'p2', group_id: 'g9' },
+  ]);
+});
+
+test('drops obsolete manual history before rebuilding imported membership state', () => {
+  const corrupted = [
+    ...history,
+    { date: '2026-08-29', product_id: 'p1', group_id: 'wrong-group', source: 'manual' as const },
+  ];
+  const cleaned = importedGroupHistoryOnly(corrupted);
+  assert.equal(cleaned.some(row => row.source === 'manual'), false);
+  assert.deepEqual(currentMembershipsFromHistory(cleaned), [{ product_id: 'p1', group_id: 'g8' }]);
+  assert.equal(resolveGroupAtDate('p1', '2026-08-31', cleaned).groupId, 'g8');
 });

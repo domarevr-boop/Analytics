@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Cabinet, ProductGroup, Product } from '../types';
 import {
   updateCabinet, updateGroup, updateProduct, removeCabinet, removeGroup, removeProduct,
-  getBrands, getGroups, getCabinets, getMemberships,
+  getBrands, getCabinets,
 } from '../data/store';
 
 interface Props {
@@ -16,13 +16,6 @@ export default function EntityEditPanel({ type, entity, onClose }: Props) {
   const [sku, setSku] = useState('sku' in entity ? entity.sku : '');
   const [category, setCategory] = useState('category' in entity ? entity.category : '');
   const [selectedBrandId, setSelectedBrandId] = useState('brand_id' in entity ? entity.brand_id : '');
-  const [selectedGroupId, setSelectedGroupId] = useState(() => {
-    if ('id' in entity) {
-      const m = getMemberships().find(m => m.product_id === (entity as Product).id);
-      return m ? m.group_id : '';
-    }
-    return '';
-  });
   const [selectedCabinetId, setSelectedCabinetId] = useState('cabinet_id' in entity ? entity.cabinet_id : '');
 
   const isProduct = type === 'product';
@@ -31,7 +24,6 @@ export default function EntityEditPanel({ type, entity, onClose }: Props) {
 
   const brands = getBrands();
   const cabinets = getCabinets();
-  const groups = getGroups();
 
   const handleSave = () => {
     if (isCabinet) updateCabinet(entity.id, name);
@@ -69,13 +61,6 @@ export default function EntityEditPanel({ type, entity, onClose }: Props) {
               <span className="dict-field-label">Бренд</span>
               <select value={selectedBrandId} onChange={e => setSelectedBrandId(e.target.value)}>
                 {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </label>
-            <label className="dict-field">
-              <span className="dict-field-label">Группа</span>
-              <select value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
-                <option value="">Без группы</option>
-                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
           </>

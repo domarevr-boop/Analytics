@@ -38,7 +38,7 @@ function ProductThumb({ product }: { product: Product }) {
   );
 }
 
-function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClose: () => void; asOfDate: string }) {
+function ProductEditor({ product, onClose }: { product: Product; onClose: () => void }) {
   const brands = getBrands();
   const cabinets = getCabinets();
   const [form, setForm] = useState({
@@ -54,7 +54,6 @@ function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClo
 
   const setField = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
   const save = () => {
-    const selectedGroupId = form.group_id || UNGROUPED_GROUP_ID;
     updateProduct(product.id, {
       sku: form.sku.trim(),
       wb_sku: form.wb_sku.trim(),
@@ -193,7 +192,7 @@ export default function DictionaryPage() {
           {!visibleProducts.length && <EmptyState title="Товары не найдены" description="Измените поиск, кабинет, дату состава или фильтр качества карточек." />}
         </div>
       </AnalyticsPanel>
-      {selectedProduct && <ProductEditor key={`${selectedProduct.id}:${asOfDate}`} product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
+      {selectedProduct && <ProductEditor key={selectedProduct.id} product={selectedProduct} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

@@ -8,6 +8,21 @@ export interface GroupResolution {
   effectiveDate?: string;
 }
 
+export function importedGroupHistoryOnly(history: GroupMembershipHistory[]): GroupMembershipHistory[] {
+  return history.filter(row => row.source !== 'manual');
+}
+
+export function currentMembershipsFromHistory(history: GroupMembershipHistory[]): GroupMembership[] {
+  const latestByProduct = new Map<string, GroupMembershipHistory>();
+  for (const row of history) {
+    const latest = latestByProduct.get(row.product_id);
+    if (!latest || row.date >= latest.date) latestByProduct.set(row.product_id, row);
+  }
+  return [...latestByProduct.values()]
+    .sort((left, right) => left.product_id.localeCompare(right.product_id))
+    .map(row => ({ product_id: row.product_id, group_id: row.group_id }));
+}
+
 interface GroupHistoryResolver {
   resolve(productId: string, date: string): GroupResolution;
 }
