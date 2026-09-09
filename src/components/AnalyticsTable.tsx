@@ -8,6 +8,7 @@ import { getWbImageUrls, rememberWbImageUrl } from '../data/images';
 import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
+import { canonicalizeDashboardGroupData } from '../data/dashboardGroupAttribution';
 import { getEffectivePlanMetrics } from '../data/planningStore';
 import { aggregateDashboardMetrics, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
 import { TABLE_METRIC_GROUPS, TABLE_METRIC_LABELS, type TableMetricKey } from '../data/dashboardTableMetrics';
@@ -360,6 +361,15 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
   const rawMetrics = useMemo(() => getMetrics(), [version]);
   const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
   const memberships = useMemo(() => getMemberships(), [version]);
+  const canonicalGroupData = useMemo(() => {
+    const canonicalIds = new Map<string, string>();
+    for (const row of allRows) {
+      if (row.type !== 'product' || !row.groupProductId) continue;
+      canonicalIds.set(row.groupProductId, row.groupProductId);
+      for (const productId of row.relatedProductIds || [row.productId || row.groupProductId]) canonicalIds.set(productId, row.groupProductId);
+    }
+    return canonicalizeDashboardGroupData(groupHistory, memberships, canonicalIds);
+  }, [allRows, groupHistory, memberships]);
   const productDays = useMemo(() => {
     const map = new Map<string, AggDay[]>();
     for (const m of rawMetrics) {
@@ -395,10 +405,16 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     if (rowType === 'product') {
       const row = allRows.find(item => item.id === rowId);
       const productId = row?.productId || rowId;
-      const days = productDays.get(productId) || [];
+      const merged = new Map<string, AggDay>();
+      for (const relatedProductId of row?.relatedProductIds || [productId]) {
+        for (const day of productDays.get(relatedProductId) || []) {
+          merged.set(day.date, merged.has(day.date) ? addAggDay(merged.get(day.date)!, day) : { ...day });
+        }
+      }
+      const days = [...merged.values()].sort((left, right) => left.date.localeCompare(right.date));
       if (!row?.groupId) return days;
       return days.filter(day => {
-        const resolution = resolveGroupAtDate(productId, day.date, groupHistory, memberships);
+        const resolution = resolveGroupAtDate(row.groupProductId || productId, day.date, canonicalGroupData.history, canonicalGroupData.memberships);
         return resolution.known && resolution.groupId === row.groupId;
       });
     }
@@ -431,7 +447,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       cache.set(row.id, perMetric);
     }
     return cache;
-  }, [visible, productDays, chartMetrics, groupHistory, memberships]);
+  }, [visible, productDays, chartMetrics, canonicalGroupData]);
 
   const rowDateCache = useMemo(() => {
     const cache = new Map<string, string[]>();
@@ -439,18 +455,21 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       cache.set(row.id, getRowDays(row.id, row.type).map(d => d.date));
     }
     return cache;
-  }, [visible, productDays, groupHistory, memberships]);
+  }, [visible, productDays, canonicalGroupData]);
 
   // Per-product month metrics (monthStart – periodA.end)
   const productMonthMetrics = useMemo(() => {
     const planMap = getPlanMap(monthStart);
     const map = new Map<string, MetricValues>();
-    for (const p of products) {
-      const s = sumForProduct(p.id, monthStart, periodA.end, planMap, p.sku);
-      if (s) map.set(p.id, mockToMetrics(s));
+    for (const row of allRows) {
+      if (row.type !== 'product' || !row.productId || map.has(row.productId)) continue;
+      const product = products.find(item => item.id === row.productId);
+      if (!product) continue;
+      const s = sumForProduct(product.id, monthStart, periodA.end, planMap, product.sku, row.relatedProductIds, undefined, canonicalGroupData.history, canonicalGroupData.memberships, row.groupProductId);
+      if (s) map.set(product.id, mockToMetrics(s));
     }
     return map;
-  }, [version, monthStart, periodA]);
+  }, [version, monthStart, periodA, allRows, products, canonicalGroupData]);
 
   // Month metrics for each visible row (product: direct, group/cabinet: aggregate children)
   const rowMonthCache = useMemo(() => {
@@ -464,7 +483,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
         const m = row?.groupId
           ? (() => {
             const product = products.find(item => item.id === productId);
-            const sum = product ? sumForProduct(productId, monthStart, periodA.end, getPlanMap(monthStart), product.sku, undefined, row.groupId, groupHistory, memberships) : null;
+            const sum = product ? sumForProduct(productId, monthStart, periodA.end, getPlanMap(monthStart), product.sku, row.relatedProductIds, row.groupId, canonicalGroupData.history, canonicalGroupData.memberships, row.groupProductId) : null;
             return sum ? mockToMetrics(sum) : undefined;
           })()
           : productMonthMetrics.get(productId);
@@ -484,7 +503,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     }
     for (const row of visible) getMM(row.id, row.type);
     return cache;
-  }, [productMonthMetrics, allRows, visible, products, monthStart, periodA, groupHistory, memberships]);
+  }, [productMonthMetrics, allRows, visible, products, monthStart, periodA, canonicalGroupData]);
 
   const daysInMonth = (dateStr: string) => {
     const [year, month] = dateStr.slice(0, 7).split('-').map(Number);

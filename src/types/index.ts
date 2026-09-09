@@ -112,6 +112,8 @@ export interface TableRow {
   sku?: string;
   productId?: string;
   groupId?: string;
+  relatedProductIds?: string[];
+  groupProductId?: string;
   depth: number;
   parent: string | null;
   current: MetricValues;

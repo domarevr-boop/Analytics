@@ -5,6 +5,7 @@ import { getReportGrossProfit } from './profitabilityCalculations';
 import { addDays, formatDate } from './dateUtils';
 import { getFilteredProductIds } from './productFilters';
 import { resolveGroupAtDate } from './groupMembershipHistory';
+import { canonicalizeDashboardGroupData, getDashboardGroupIdsForLinkedProduct } from './dashboardGroupAttribution';
 const DEV = import.meta.env.DEV;
 const _zeroLogged = new Set<string>();
 
@@ -78,7 +79,7 @@ export function getPlanMap(periodStart: string): Map<string, PlanData> {
   return map;
 }
 
-export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string, relatedProductIds?: Iterable<string>, groupId?: string, groupHistory = getGroupMembershipHistory(), legacyMemberships = getMemberships()) {
+export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string, relatedProductIds?: Iterable<string>, groupId?: string, groupHistory = getGroupMembershipHistory(), legacyMemberships = getMemberships(), groupProductId?: string) {
   const allMetrics = getMetrics();
   const products = getProducts();
   const product = products.find(p => p.id === productId);
@@ -88,13 +89,13 @@ export function sumForProduct(productId: string, start: string, end: string, pla
 
   const productIds = new Set(relatedProductIds || [productId]);
   productIds.add(productId);
-  const rows = allMetrics.filter(m => productIds.has(m.product_id) && m.date >= start && m.date <= end && (!groupId || (() => { const resolution = resolveGroupAtDate(m.product_id, m.date, groupHistory, legacyMemberships); return resolution.known && resolution.groupId === groupId; })()));
+  const rows = allMetrics.filter(m => productIds.has(m.product_id) && m.date >= start && m.date <= end && (!groupId || (() => { const resolution = resolveGroupAtDate(groupProductId || m.product_id, m.date, groupHistory, legacyMemberships); return resolution.known && resolution.groupId === groupId; })()));
   const profitabilityRows = getProfitabilityRecords().filter(record =>
     productIds.has(record.product_id)
     && record.period_end >= start
     && record.period_start <= end
     && (!groupId || (() => {
-      const resolution = resolveGroupAtDate(record.product_id, record.period_start, groupHistory, legacyMemberships);
+      const resolution = resolveGroupAtDate(groupProductId || record.product_id, record.period_start, groupHistory, legacyMemberships);
       return resolution.known && resolution.groupId === groupId;
     })())
   );
@@ -274,35 +275,29 @@ function getCategoryTableData(periodA: DatePeriod, periodB: DatePeriod, filters?
       })[0] || product;
   };
   for (const product of products) canonicalProduct(product);
+  const canonicalProductIdByProductId = new Map(products.map(product => [product.id, canonicalProduct(product).id]));
   const canonicalProducts = products.filter(product => canonicalProduct(product).id === product.id && product.cabinet_id);
-  const canonicalMemberships = memberships.reduce<typeof memberships>((result, membership) => {
-    const product = productById.get(membership.product_id);
-    if (!product) return result;
-    const canonical = canonicalProduct(product);
-    if (!result.some(item => item.product_id === canonical.id && item.group_id === membership.group_id)) result.push({ product_id: canonical.id, group_id: membership.group_id });
-    return result;
-  }, []);
-  const groupHistory = getGroupMembershipHistory();
+  const canonicalGroupData = canonicalizeDashboardGroupData(getGroupMembershipHistory(), memberships, canonicalProductIdByProductId);
+  const canonicalMemberships = canonicalGroupData.memberships;
+  const groupHistory = canonicalGroupData.history;
+  const metrics = getMetrics();
+  const rangeStart = periodB.start < periodA.start ? periodB.start : periodA.start;
+  const rangeEnd = periodA.end > periodB.end ? periodA.end : periodB.end;
   const allowed = getFilteredProductIds(canonicalProducts, canonicalMemberships, { cabinetFilter: filters?.cabinetId, categoryFilter: filters?.category, brandFilter: filters?.brandId, groupFilter: filters?.groupId, skuFilter: filters?.sku }, { groupHistory, period: { start: periodB.start < periodA.start ? periodB.start : periodA.start, end: periodA.end > periodB.end ? periodA.end : periodB.end } });
   const cabinetForProduct = (product: Product) => canonicalProduct(product).cabinet_id;
   const categoryForProduct = (product: Product) => canonicalProduct(product).category || 'Без категории';
   const groupIdsForProduct = (product: Product) => {
     const canonicalId = canonicalProduct(product).id;
-    if (!groupHistory.length) return new Set(canonicalMemberships.filter(item => item.product_id === canonicalId).map(item => item.group_id || UNGROUPED_GROUP_ID));
-    const dates = getMetrics().filter(row => row.product_id === canonicalId && row.date >= periodB.start && row.date <= periodA.end).map(row => row.date);
-    const ids = new Set<string>();
-    for (const date of dates) {
-      const resolution = resolveGroupAtDate(canonicalId, date, groupHistory, canonicalMemberships);
-      if (resolution.known && resolution.groupId) ids.add(resolution.groupId);
-    }
-    return ids;
+    const relatedProductIds = linkedProductIds.get(product.id) || new Set([product.id]);
+    return getDashboardGroupIdsForLinkedProduct(canonicalId, relatedProductIds, metrics, rangeStart, rangeEnd, groupHistory, canonicalMemberships);
   };
   const rows: TableRow[] = [];
   const productMetrics = (product: Product) => {
     const relatedProductIds = linkedProductIds.get(product.id) || new Set([product.id]);
+    const groupProductId = canonicalProduct(product).id;
     return {
-      current: (groupId?: string) => { const value = sumForProduct(product.id, periodA.start, periodA.end, planA, product.sku, relatedProductIds, groupId, groupHistory, canonicalMemberships); return value ? toMetrics(value) : emptyMetrics(); },
-      previous: (groupId?: string) => { const value = sumForProduct(product.id, periodB.start, periodB.end, planB, product.sku, relatedProductIds, groupId, groupHistory, canonicalMemberships); return value ? toMetrics(value) : emptyMetrics(); },
+      current: (groupId?: string) => { const value = sumForProduct(product.id, periodA.start, periodA.end, planA, product.sku, relatedProductIds, groupId, groupHistory, canonicalMemberships, groupProductId); return value ? toMetrics(value) : emptyMetrics(); },
+      previous: (groupId?: string) => { const value = sumForProduct(product.id, periodB.start, periodB.end, planB, product.sku, relatedProductIds, groupId, groupHistory, canonicalMemberships, groupProductId); return value ? toMetrics(value) : emptyMetrics(); },
     };
   };
   for (const cabinet of cabinets) {
@@ -314,7 +309,7 @@ function getCategoryTableData(periodA: DatePeriod, periodB: DatePeriod, filters?
       for (const groupId of periodGroupIds) {
         if (filters?.groupId && filters?.groupId !== groupId) continue;
         const groupCurrent = emptyMetrics(), groupPrevious = emptyMetrics(); const groupRowId = `${categoryId}:group:${groupId}`; const groupName = groupId === UNGROUPED_GROUP_ID ? 'Без склейки' : groups.find(group => group.id === groupId)?.name || 'Без склейки';
-        for (const product of categoryProducts.filter(item => groupIdsForProduct(item).has(groupId))) { const metrics = productMetrics(product); const current = metrics.current(groupId); const previous = metrics.previous(groupId); rows.push({ id: `${product.id}:${groupId}`, productId: product.id, groupId, type: 'product', name: product.name, sku: product.sku, parent: groupRowId, depth: 3, current, previous }); addTo(groupCurrent, current); addTo(groupPrevious, previous); }
+        for (const product of categoryProducts.filter(item => groupIdsForProduct(item).has(groupId))) { const productValues = productMetrics(product); const current = productValues.current(groupId); const previous = productValues.previous(groupId); const relatedProductIds = [...(linkedProductIds.get(product.id) || new Set([product.id]))]; rows.push({ id: `${product.id}:${groupId}`, productId: product.id, groupId, relatedProductIds, groupProductId: canonicalProduct(product).id, type: 'product', name: product.name, sku: product.sku, parent: groupRowId, depth: 3, current, previous }); addTo(groupCurrent, current); addTo(groupPrevious, previous); }
         recalcDerived(groupCurrent); recalcDerived(groupPrevious); rows.push({ id: groupRowId, type: 'group', name: groupName, parent: categoryId, depth: 2, current: groupCurrent, previous: groupPrevious }); addTo(categoryCurrent, groupCurrent); addTo(categoryPrevious, groupPrevious);
       }
       recalcDerived(categoryCurrent); recalcDerived(categoryPrevious); rows.push({ id: categoryId, type: 'category', name: category, parent: cabinet.id, depth: 1, current: categoryCurrent, previous: categoryPrevious }); addTo(cabinetCurrent, categoryCurrent); addTo(cabinetPrevious, categoryPrevious);
