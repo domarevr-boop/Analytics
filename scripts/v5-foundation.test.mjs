@@ -389,6 +389,19 @@ test('competitor Import UI contracts are bounded and batch-authorized', () => {
   assert.doesNotMatch(smoke, /commit;/iu);
 });
 
+test('competitor control-file smoke uses actual Excel dates and always rolls back', () => {
+  const smoke = readFileSync(new URL('./v5-competitor-file-smoke.mjs', import.meta.url), 'utf8');
+  const comparison = readFileSync(new URL('./compare-v5-competitor-parser.mjs', import.meta.url), 'utf8');
+  assert.match(smoke, /read-excel-file\/node/iu);
+  assert.match(smoke, /v5_competitor_publish_batch/iu);
+  assert.match(smoke, /v5_competitor_snapshot_bounds/iu);
+  assert.match(smoke, /source_file_retained/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+  assert.match(comparison, /--accept-excel-dates/iu);
+  assert.match(comparison, /safeTime - legacyTime === 86_400_000/iu);
+});
+
 test('market client clears stale retry staging before sending normalized chunks', () => {
   const source = readFileSync(new URL('../src/features/market/marketImport.ts', import.meta.url), 'utf8');
   const resetIndex = source.indexOf("supabase.rpc('v5_market_reset_staging'");
