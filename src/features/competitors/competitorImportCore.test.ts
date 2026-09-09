@@ -6,11 +6,12 @@ const workbook = () => extractCompetitorWorkbook([
   { name: 'Воронка', data: [
     ['Служебная строка'],
     ['Дата', 'Позиция', 'Артикул', 'Продавец', 'Бренд', 'Сумма заказов', 'Цена со скидкой', 'Медиана покупателя', 'Ср позиция в поиске', 'Показы', 'Клики', 'CTR', 'Корзины', 'CR в корзину общий', 'Заказы', 'CR из показа в заказ', 'Выкупы', '% выкупа'],
-    ['10.08', 1, 100, 'Seller', 'Brand', '1 000', 100, 90, 5, 1000, 100, 0.1, 50, '5%', 20, 2, 18, 0.9],
+    ['10.08', 1, 100, 'Seller', 'Brand', '1 000', '', 90, '', 1000, 100, 0.1, 50, '5%', 20, 2, 18, 0.9],
   ] },
   { name: 'Запросы', data: [
     ['Дата', 'Артикул', 'Поисковый запрос', 'Количество запросов', 'Количество запросов предыдущий период', 'Конверсия в корзину по артикулу', 'Конверсия в корзину по артикулу предыдущий период', 'Конверсия в заказ по артикулу', 'Конверсия в заказ по артикулу предыдущий период'],
     ['10.08.2026', '200', 'Люстра', 1000, 900, 20, 19, '143%', 125],
+    ['10.08.2026', '200', 'Люстра', 1100, 950, 21, 20, '144%', 126],
   ] },
   { name: 'Остатки', data: [
     ['Дата', 'Название', 'Артикул WB', 'Предмет', 'Бренд', 'Регион', 'Склад', 'Остатки, шт', 'В пути к покупателю, шт', 'В пути от покупателя, шт', 'Среднее количество заказов в день, шт'],
@@ -18,7 +19,7 @@ const workbook = () => extractCompetitorWorkbook([
   ] },
   { name: 'ТОП', data: [
     ['Дата', 'Позиция', 'Артикул', 'Продавец', 'Бренд'],
-    ['11.08.2026', 1, '100', 'Seller', 'Brand'],
+    ['11.08.2026', 1, '100', '', ''],
   ] },
 ], 2026);
 
@@ -30,14 +31,20 @@ test('extractCompetitorWorkbook recognizes four sheets and preserves source sema
   assert.equal(parsed.sections.funnel.sourceRowNumbers[0], 3);
   assert.equal(parsed.sections.funnel.rows[0].reported_ctr, 10);
   assert.equal(parsed.sections.funnel.rows[0].reported_buyout_rate, 90);
-  assert.equal(parsed.sections.search.rows[0].reported_order_conversion, 143);
+  assert.equal(parsed.sections.funnel.rows[0].discounted_price, 0);
+  assert.equal(parsed.sections.funnel.rows[0].avg_search_position, 0);
+  assert.equal(parsed.sections.search.rows[0].reported_order_conversion, 144);
+  assert.equal(parsed.sections.search.rows[0].requests, 1100);
+  assert.equal(parsed.sections.search.sourceRowNumbers[0], 3);
   assert.equal(parsed.sections.stocks.rows[0].warehouse, 'Маркетплейс');
+  assert.equal(parsed.sections.positions.rows[0].seller, 'Без продавца');
+  assert.equal(parsed.sections.positions.rows[0].brand, 'Без бренда');
 });
 
 test('buildCompetitorStagedRows emits canonical sections and original row numbers', () => {
   const rows = buildCompetitorStagedRows(workbook());
   assert.deepEqual(rows.map(row => row.sheet_name), ['funnel', 'search', 'stocks', 'positions']);
-  assert.deepEqual(rows.map(row => row.row_number), [3, 2, 2, 2]);
+  assert.deepEqual(rows.map(row => row.row_number), [3, 3, 2, 2]);
   assert.equal(rows[1].payload.query, 'Люстра');
 });
 

@@ -94,7 +94,7 @@ function field(row: Record<string, unknown>, ...aliases: string[]): unknown {
 function parseNumberOrRaw(value: unknown): number | string {
   if (typeof value === 'number') return Number.isFinite(value) ? value : cellText(value);
   const source = cellText(value);
-  if (!source) return '';
+  if (!source) return 0;
   const compact = source
     .replace(/₽/g, '')
     .replace(/\bр\.?/giu, '')
@@ -162,8 +162,8 @@ function mapSectionRows(section: CompetitorSectionName, sheet: RawSheet, reportY
       ...common,
       wb_article: cellText(field(row, 'Артикул')),
       position: parseNumberOrRaw(field(row, 'Позиция')),
-      seller: cellText(field(row, 'Продавец')),
-      brand: cellText(field(row, 'Бренд')),
+      seller: cellText(field(row, 'Продавец')) || 'Без продавца',
+      brand: cellText(field(row, 'Бренд')) || 'Без бренда',
       ordered_amount: parseNumberOrRaw(field(row, 'Сумма заказов')),
       discounted_price: parseNumberOrRaw(field(row, 'Цена со скидкой')),
       buyer_median_price: parseNumberOrRaw(field(row, 'Медиана покупателя')),
@@ -206,10 +206,40 @@ function mapSectionRows(section: CompetitorSectionName, sheet: RawSheet, reportY
       ...common,
       wb_article: cellText(field(row, 'Артикул')),
       position: parseNumberOrRaw(field(row, 'Позиция')),
-      seller: cellText(field(row, 'Продавец')),
-      brand: cellText(field(row, 'Бренд')),
+      seller: cellText(field(row, 'Продавец')) || 'Без продавца',
+      brand: cellText(field(row, 'Бренд')) || 'Без бренда',
     };
   });
+}
+
+function normalizedBusinessText(value: string | number | undefined): string {
+  return String(value ?? '').toLocaleLowerCase('ru-RU').replace(/\s+/g, ' ').trim();
+}
+
+function competitorBusinessKey(section: CompetitorSectionName, row: CompetitorPayload): string {
+  const common = [row.date, row.wb_article];
+  if (section === 'search') common.push(normalizedBusinessText(row.query));
+  if (section === 'stocks') common.push(normalizedBusinessText(row.region), normalizedBusinessText(row.warehouse));
+  return common.join('\u001f');
+}
+
+function collapseSectionRows(
+  section: CompetitorSectionName,
+  rows: CompetitorPayload[],
+  sourceRowNumbers: number[],
+): { rows: CompetitorPayload[]; sourceRowNumbers: number[] } {
+  const latestByKey = new Map<string, { row: CompetitorPayload; sourceRowNumber: number }>();
+  rows.forEach((row, index) => {
+    latestByKey.set(competitorBusinessKey(section, row), {
+      row,
+      sourceRowNumber: sourceRowNumbers[index] || index + 2,
+    });
+  });
+  const collapsed = [...latestByKey.values()];
+  return {
+    rows: collapsed.map(value => value.row),
+    sourceRowNumbers: collapsed.map(value => value.sourceRowNumber),
+  };
 }
 
 export function extractCompetitorWorkbook(sheets: CompetitorSheetGrid[], reportYear?: number): CompetitorParsedWorkbook {
@@ -226,7 +256,8 @@ export function extractCompetitorWorkbook(sheets: CompetitorSheetGrid[], reportY
   const year = reportYear || inferredYear || new Date().getFullYear();
   const sections = Object.fromEntries(SECTION_NAMES.map(section => {
     const sheet = recognized.get(section)!;
-    return [section, { sheetName: sheet.name, rows: mapSectionRows(section, sheet, year), sourceRowNumbers: sheet.sourceRowNumbers }];
+    const collapsed = collapseSectionRows(section, mapSectionRows(section, sheet, year), sheet.sourceRowNumbers);
+    return [section, { sheetName: sheet.name, ...collapsed }];
   })) as Record<CompetitorSectionName, CompetitorParsedSection>;
   const totalRows = SECTION_NAMES.reduce((sum, section) => sum + sections[section].rows.length, 0);
   if (totalRows > COMPETITOR_MAX_ROWS) throw new Error(`Отчёт «Конкуренты» содержит больше ${COMPETITOR_MAX_ROWS.toLocaleString('ru-RU')} строк`);

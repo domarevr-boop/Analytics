@@ -42,9 +42,27 @@ const sectionCounts = Object.fromEntries(
 );
 const fileBytes = await readFile(inputPath);
 const smokeHash = createHash('sha256').update(fileBytes).update('\0v5-competitor-file-smoke').digest('hex');
-const stageCalls = splitCompetitorRows(stagedRows).map(chunk => (
-  `perform public.v5_competitor_stage_rows(v_batch_id, '${sqlString(JSON.stringify(chunk))}'::jsonb);`
-)).join('\n');
+const sectionFields = {
+  funnel: ['date', 'wb_article', 'position', 'seller', 'brand', 'ordered_amount', 'discounted_price', 'buyer_median_price', 'avg_search_position', 'impressions', 'clicks', 'reported_ctr', 'carts', 'reported_cart_conversion', 'orders', 'reported_order_conversion', 'buyouts', 'reported_buyout_rate'],
+  search: ['date', 'wb_article', 'query', 'requests', 'requests_previous', 'reported_cart_conversion', 'reported_cart_conversion_previous', 'reported_order_conversion', 'reported_order_conversion_previous'],
+  stocks: ['date', 'wb_article', 'name', 'subject', 'brand', 'region', 'warehouse', 'stock', 'in_transit_to_customer', 'in_transit_from_customer', 'avg_daily_orders'],
+  positions: ['date', 'wb_article', 'position', 'seller', 'brand'],
+};
+const stageCalls = Object.entries(sectionFields).flatMap(([section, fields]) => {
+  const sectionRows = stagedRows.filter(row => row.sheet_name === section);
+  return splitCompetitorRows(sectionRows).map(chunk => {
+    const compactRows = chunk.map(row => [row.row_number, ...fields.map(field => row.payload[field])]);
+    const payloadFields = fields.flatMap((field, index) => [`'${field}'`, `item -> ${index + 1}`]).join(', ');
+    return `perform public.v5_competitor_stage_rows(v_batch_id, (
+      select jsonb_agg(jsonb_build_object(
+        'sheet_name', '${section}',
+        'row_number', (item ->> 0)::integer,
+        'payload', jsonb_build_object(${payloadFields})
+      ))
+      from jsonb_array_elements('${sqlString(JSON.stringify(compactRows))}'::jsonb) item
+    ));`;
+  });
+}).join('\n');
 
 const sql = `begin;
 
@@ -74,6 +92,8 @@ declare
   v_bounds jsonb;
   v_history jsonb;
   v_history_item jsonb;
+  v_errors jsonb;
+  v_error_summary jsonb;
 begin
   v_created := public.v5_competitor_create_batch(
     '__v5_real_competitor_file_smoke.xlsx',
@@ -92,8 +112,20 @@ begin
   ${stageCalls}
 
   v_result := public.v5_competitor_publish_batch(v_batch_id);
-  if v_result ->> 'status' <> 'published'
-    or (v_result ->> 'accepted_rows')::integer <> ${stagedRows.length}
+  if v_result ->> 'status' <> 'published' then
+    v_errors := public.v5_competitor_batch_errors(v_batch_id, 200);
+    select jsonb_object_agg(grouped.error_key, grouped.error_count)
+    into v_error_summary
+    from (
+      select concat_ws('.', item ->> 'sheet_name', coalesce(item ->> 'column_name', '_row'), item ->> 'error_code') as error_key,
+        count(*) as error_count
+      from jsonb_array_elements(v_errors) item
+      group by 1
+    ) grouped;
+    raise exception 'Real competitor file validation failed: result %, aggregate errors %', v_result, v_error_summary;
+  end if;
+
+  if (v_result ->> 'accepted_rows')::integer <> ${stagedRows.length}
     or v_result ->> 'period_start' <> '${workbook.dateStart}'
     or v_result ->> 'period_end' <> '${workbook.dateEnd}'
     or (v_result -> 'section_counts' ->> 'funnel')::integer <> ${sectionCounts.funnel}
@@ -155,6 +187,7 @@ let cliStatus = 1;
 try {
   await writeFile(sqlPath, sql, 'utf8');
   console.log(`Control report parsed with actual Excel dates: ${stagedRows.length} rows, ${workbook.dateStart} to ${workbook.dateEnd}.`);
+  console.log(`Compact transactional SQL payload: ${(Buffer.byteLength(sql, 'utf8') / 1024).toFixed(1)} KiB.`);
   const result = spawnSync(process.execPath, [cliEntry, 'db', 'query', '--linked', '--file', sqlPath], {
     cwd: process.cwd(),
     env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
