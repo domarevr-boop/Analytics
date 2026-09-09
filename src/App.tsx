@@ -36,7 +36,8 @@ import { useChartData } from './hooks/useChartData';
 import './App.css';
 import './styles/overview-pages.css';
 
-const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
+const TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v2';
+const LEGACY_TABLE_METRICS_KEY = 'analytics_table_visible_metrics_v1';
 const LAST_PAGE_KEY = 'analytics_last_page_v1';
 const ALL_TABLE_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
 const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'market', 'geography', 'client-experience', 'competitors', 'reporting', 'product'];
@@ -50,7 +51,9 @@ function getInitialPage(): PageName {
 function getInitialTableMetrics(): TableMetricKey[] {
   if (typeof localStorage === 'undefined') return ALL_TABLE_METRICS;
   try {
-    const saved = JSON.parse(localStorage.getItem(TABLE_METRICS_KEY) || '[]') as string[];
+    const currentSaved = localStorage.getItem(TABLE_METRICS_KEY);
+    const saved = JSON.parse(currentSaved || localStorage.getItem(LEGACY_TABLE_METRICS_KEY) || '[]') as string[];
+    if (!currentSaved && saved.length > 0) saved.push('revenue_quartile', 'profit_quartile');
     const valid = ALL_TABLE_METRICS.filter(metric => saved.includes(metric));
     return valid.length > 0 ? valid : ALL_TABLE_METRICS;
   } catch {

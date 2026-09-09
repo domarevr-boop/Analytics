@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { MetricValues, TableRow } from '../types/index.ts';
-import { aggregateDashboardMetrics, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from './dashboardTableCalculations.ts';
+import { aggregateDashboardMetrics, classifyDashboardQuartiles, dashboardActualShare, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from './dashboardTableCalculations.ts';
 
 const metrics = (factOrders: number, orders = 0): MetricValues => ({
   impressions: 0,
@@ -96,4 +96,28 @@ test('shows forecast as plan completion instead of deviation', () => {
 test('shows only a positive daily shortfall', () => {
   assert.equal(dashboardDailyShortfall(4_900_000, 6_300_000), 1_400_000);
   assert.equal(dashboardDailyShortfall(7_000_000, 6_300_000), 0);
+});
+
+test('calculates a signed actual share and preserves missing denominator', () => {
+  assert.equal(dashboardActualShare(25, 100), 25);
+  assert.equal(dashboardActualShare(-10, 50), -20);
+  assert.equal(dashboardActualShare(10, 0), null);
+});
+
+test('splits ranked products into descending equal-count quartiles', () => {
+  const result = classifyDashboardQuartiles([
+    { id: 'p8', value: 10 }, { id: 'p7', value: 20 },
+    { id: 'p6', value: 30 }, { id: 'p5', value: 40 },
+    { id: 'p4', value: 50 }, { id: 'p3', value: 60 },
+    { id: 'p2', value: 70 }, { id: 'p1', value: 80 },
+    { id: 'missing', value: null },
+  ]);
+
+  assert.deepEqual([...result.entries()], [
+    ['p1', 'Q1'], ['p2', 'Q1'],
+    ['p3', 'Q2'], ['p4', 'Q2'],
+    ['p5', 'Q3'], ['p6', 'Q3'],
+    ['p7', 'Q4'], ['p8', 'Q4'],
+  ]);
+  assert.equal(result.has('missing'), false);
 });

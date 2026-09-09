@@ -2539,6 +2539,30 @@ thead .at-metric:last-child {
   color: var(--color-text-dim);
 }
 
+.at-quartile-cell {
+  min-width: 54px;
+  text-align: center;
+}
+
+.at-quartile-badge {
+  display: inline-flex;
+  min-width: 30px;
+  min-height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbe2ea;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #66768a;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.at-quartile-q1 { border-color: #bfe5d2; background: #edf8f2; color: #16865c; }
+.at-quartile-q2 { border-color: #bfd8ef; background: #eef6fd; color: #2f6f9f; }
+.at-quartile-q3 { border-color: #f2d99a; background: #fff8e7; color: #a46b00; }
+.at-quartile-q4 { border-color: #f4c5ca; background: #fff0f2; color: #c23d4a; }
+
 .at-plan-day {
   display: block;
   font-size: 11px;

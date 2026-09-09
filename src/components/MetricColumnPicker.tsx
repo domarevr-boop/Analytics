@@ -7,7 +7,7 @@ interface Props {
 }
 
 const ALL_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
-const CORE_METRICS: TableMetricKey[] = ['fact_orders', 'orders', 'avg_price', 'profit', 'margin', 'revenue'];
+const CORE_METRICS: TableMetricKey[] = ['fact_orders', 'orders', 'avg_price', 'revenue_quartile', 'profit', 'profit_quartile', 'margin', 'revenue'];
 
 export default function MetricColumnPicker({ selected, onChange }: Props) {
   const [open, setOpen] = useState(false);

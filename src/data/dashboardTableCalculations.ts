@@ -1,5 +1,7 @@
 import type { MetricValues, TableRow } from '../types';
 
+export type DashboardQuartile = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+
 const ADDITIVE_KEYS: Array<keyof MetricValues> = [
   'impressions', 'clicks', 'carts', 'orders',
   'ad_spend', 'ad_clicks', 'ad_orders',
@@ -57,6 +59,30 @@ export function dashboardForecastCompletionPct(forecast: number, plan: number): 
 
 export function dashboardDailyShortfall(factPerDay: number, planPerDay: number): number {
   return Math.max(0, planPerDay - factPerDay);
+}
+
+export function dashboardActualShare(value: number, total: number): number | null {
+  return total !== 0 ? value / total * 100 : null;
+}
+
+export function classifyDashboardQuartiles(rows: Array<{ id: string; value: number | null }>): Map<string, DashboardQuartile> {
+  const ranked = rows
+    .filter((row): row is { id: string; value: number } => row.value !== null && Number.isFinite(row.value))
+    .sort((left, right) => right.value - left.value || left.id.localeCompare(right.id));
+  const result = new Map<string, DashboardQuartile>();
+  if (!ranked.length) return result;
+
+  const baseSize = Math.floor(ranked.length / 4);
+  const largerBuckets = ranked.length % 4;
+  let index = 0;
+  for (let quartile = 1; quartile <= 4; quartile++) {
+    const bucketSize = baseSize + (quartile <= largerBuckets ? 1 : 0);
+    for (let offset = 0; offset < bucketSize; offset++) {
+      result.set(ranked[index].id, `Q${quartile}` as DashboardQuartile);
+      index++;
+    }
+  }
+  return result;
 }
 
 export function sortDashboardSiblingsByOrders(rows: TableRow[]): TableRow[] {

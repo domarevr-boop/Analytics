@@ -10,7 +10,7 @@ import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { canonicalizeDashboardGroupData } from '../data/dashboardGroupAttribution';
 import { getEffectivePlanMetrics } from '../data/planningStore';
-import { aggregateDashboardMetrics, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
+import { aggregateDashboardMetrics, classifyDashboardQuartiles, dashboardActualShare, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
 import { TABLE_METRIC_GROUPS, TABLE_METRIC_LABELS, type TableMetricKey } from '../data/dashboardTableMetrics';
 
 const emptyMetrics = emptyDashboardMetrics;
@@ -34,6 +34,7 @@ function pctChange(curr: number, prev: number): number | null {
 }
 
 const PLAN_KEYS = new Set(['orders', 'fact_orders', 'avg_price', 'profit', 'margin', 'revenue']);
+const QUARTILE_KEYS = new Set(['revenue_quartile', 'profit_quartile']);
 
 const METRIC_CFG: Record<string, { suffix: string; decimals: boolean; rev: boolean; primary: boolean }> = {
   fact_orders: { suffix: ' ₽', decimals: false, rev: false, primary: true },
@@ -359,6 +360,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
 
   // Raw daily data per product (last 7 days of periodA)
   const rawMetrics = useMemo(() => getMetrics(), [version]);
+  const profitabilityRecords = useMemo(() => getProfitabilityRecords(), [version]);
   const groupHistory = useMemo(() => getGroupMembershipHistory(), [version]);
   const memberships = useMemo(() => getMemberships(), [version]);
   const canonicalGroupData = useMemo(() => {
@@ -370,6 +372,32 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
     }
     return canonicalizeDashboardGroupData(groupHistory, memberships, canonicalIds);
   }, [allRows, groupHistory, memberships]);
+  const productQuartiles = useMemo(() => {
+    const rowsByProduct = new Map<string, TableRow[]>();
+    for (const row of allRows) {
+      if (row.type !== 'product' || !row.productId) continue;
+      const productRows = rowsByProduct.get(row.productId) || [];
+      productRows.push(row);
+      rowsByProduct.set(row.productId, productRows);
+    }
+
+    const values = [...rowsByProduct.entries()].map(([productId, productRows]) => {
+      const relatedProductIds = new Set(productRows[0].relatedProductIds || [productId]);
+      const hasProfitabilityReport = profitabilityRecords.some(record => relatedProductIds.has(record.product_id)
+        && record.period_end >= periodA.start && record.period_start <= periodA.end);
+      const totals = aggregateDashboardMetrics(productRows.map(row => row.current));
+      return {
+        id: productId,
+        revenue: hasProfitabilityReport ? totals.revenue : null,
+        profit: hasProfitabilityReport ? totals.profit : null,
+      };
+    });
+
+    return {
+      revenue: classifyDashboardQuartiles(values.map(row => ({ id: row.id, value: row.revenue }))),
+      profit: classifyDashboardQuartiles(values.map(row => ({ id: row.id, value: row.profit }))),
+    };
+  }, [allRows, profitabilityRecords, periodA]);
   const productDays = useMemo(() => {
     const map = new Map<string, AggDay[]>();
     for (const m of rawMetrics) {
@@ -379,8 +407,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       map.set(m.product_id, arr);
     }
     // Merge profitability records by date
-    const allProfitability = getProfitabilityRecords();
-    for (const r of allProfitability) {
+    for (const r of profitabilityRecords) {
       if (r.period_start < last7Start || r.period_start > periodA.end) continue;
       const arr = map.get(r.product_id) || [];
       const existing = arr.find(a => a.date === r.period_start);
@@ -398,7 +425,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       arr.sort((a, b) => a.date.localeCompare(b.date));
     }
     return map;
-  }, [rawMetrics, last7Start, periodA]);
+  }, [rawMetrics, profitabilityRecords, last7Start, periodA, products]);
 
   // Get AggDay[] for a row (product: direct, group/cabinet: aggregate children)
   function getRowDays(rowId: string, rowType: string): AggDay[] {
@@ -515,7 +542,19 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
   };
 
   function planCell(row: TableRow, key: string) {
-    if (row.type === 'group' || row.type === 'product') return <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">—</td>;
+    if (row.type === 'group' || row.type === 'product') {
+      if (key !== 'fact_orders' && key !== 'profit') return <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">—</td>;
+      const total = totalRow?.current[key as 'fact_orders' | 'profit'] || 0;
+      const fact = row.current[key as 'fact_orders' | 'profit'];
+      const share = dashboardActualShare(fact, total);
+      if (share === null) return <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">—</td>;
+      return (
+        <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">
+          <span className="at-plan-label">Доля факта: {f1(share)}%</span>
+          <span className="at-plan-fact">Факт: {f(fact)} ₽</span>
+        </td>
+      );
+    }
     const isTotal = row.id === 'total';
     const rootRows = allRows.filter(candidate => candidate.parent === null);
     const curr = isTotal
@@ -583,6 +622,17 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
   }
 
   function cell(row: TableRow, key: string) {
+    if (QUARTILE_KEYS.has(key)) {
+      const quartile = row.type === 'product' && row.productId
+        ? key === 'revenue_quartile' ? productQuartiles.revenue.get(row.productId) : productQuartiles.profit.get(row.productId)
+        : undefined;
+      const metricName = key === 'revenue_quartile' ? 'выручке' : 'чистой прибыли';
+      return (
+        <td key={key} className={`at-td at-mcell at-quartile-cell${focusedMetric === key ? ' at-metric-focused' : ''}`}>
+          {quartile ? <span className={`at-quartile-badge at-quartile-${quartile.toLowerCase()}`} title={`${quartile}: квартиль артикула по ${metricName} за выбранный период`}>{quartile}</span> : '—'}
+        </td>
+      );
+    }
     const curr = row.current[key as keyof MetricValues];
     const prev = row.previous[key as keyof MetricValues];
     const change = pctChange(curr, prev);
@@ -610,7 +660,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
           <tr className="at-header">
             <th className="at-th at-left-top" rowSpan={2}>Товар / группа</th>
             {visibleGroups.map(g => {
-              const chartExtra = g.keys.filter(k => chartMetrics.has(k)).length;
+              const chartExtra = g.keys.filter(k => chartMetrics.has(k) && !QUARTILE_KEYS.has(k)).length;
               const planExtra = g.keys.filter(k => planMetrics.has(k) && PLAN_KEYS.has(k)).length;
               return (
                 <th key={g.label} className="at-group" colSpan={g.keys.length + chartExtra + planExtra}>{g.label}</th>
@@ -619,18 +669,20 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
           </tr>
           <tr className="at-subheader">
             {visibleGroups.flatMap(g => g.keys.flatMap(key => {
-              const chartActive = chartMetrics.has(key);
+              const chartActive = chartMetrics.has(key) && !QUARTILE_KEYS.has(key);
               const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
               return [
                 <th key={key} className={`at-th at-metric${key === 'drr' ? ' at-metric-drr' : ''}${chartActive ? ' at-metric-chart-on' : ''}${focusedMetric === key ? ' at-metric-focused' : ''}`}>
                   {TABLE_METRIC_LABELS[key]}
-                  <span className={`at-chart-btn${chartActive ? ' active' : ''}`} onClick={() => toggleChart(key)}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <rect x="1" y="6" width="2" height="5" rx="0.5" fill="currentColor"/>
-                      <rect x="5" y="3" width="2" height="8" rx="0.5" fill="currentColor"/>
-                      <rect x="9" y="1" width="2" height="10" rx="0.5" fill="currentColor"/>
-                    </svg>
-                  </span>
+                  {!QUARTILE_KEYS.has(key) && (
+                    <span className={`at-chart-btn${chartActive ? ' active' : ''}`} onClick={() => toggleChart(key)}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <rect x="1" y="6" width="2" height="5" rx="0.5" fill="currentColor"/>
+                        <rect x="5" y="3" width="2" height="8" rx="0.5" fill="currentColor"/>
+                        <rect x="9" y="1" width="2" height="10" rx="0.5" fill="currentColor"/>
+                      </svg>
+                    </span>
+                  )}
                   {PLAN_KEYS.has(key) && (
                     <span className={`at-plan-btn${planActive ? ' active' : ''}`} onClick={() => togglePlan(key)}>
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -740,7 +792,7 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
                 <div className="at-product-inner at-total-label">Итого</div>
               </td>
               {visibleGroups.flatMap(g => g.keys.flatMap(key => {
-                const chartActive = chartMetrics.has(key);
+                const chartActive = chartMetrics.has(key) && !QUARTILE_KEYS.has(key);
                 const planActive = planMetrics.has(key) && PLAN_KEYS.has(key);
                 return [
                   cell(totalRow, key),
