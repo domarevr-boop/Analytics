@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { MetricValues, TableRow } from '../types/index.ts';
-import { aggregateDashboardMetrics, dashboardFactPerDay, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from './dashboardTableCalculations.ts';
+import { aggregateDashboardMetrics, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from './dashboardTableCalculations.ts';
 
 const metrics = (factOrders: number, orders = 0): MetricValues => ({
   impressions: 0,
@@ -86,4 +86,14 @@ test('uses the recent daily average even when it is zero', () => {
 
 test('total daily fact is the sum of cabinet daily facts', () => {
   assert.equal(totalDashboardFactPerDay([3_800_000, 1_200_000]), 5_000_000);
+});
+
+test('shows forecast as plan completion instead of deviation', () => {
+  assert.equal(dashboardForecastCompletionPct(147_400_000, 190_500_000).toFixed(1), '77.4');
+  assert.equal(dashboardForecastCompletionPct(0, 0), 0);
+});
+
+test('shows only a positive daily shortfall', () => {
+  assert.equal(dashboardDailyShortfall(4_900_000, 6_300_000), 1_400_000);
+  assert.equal(dashboardDailyShortfall(7_000_000, 6_300_000), 0);
 });

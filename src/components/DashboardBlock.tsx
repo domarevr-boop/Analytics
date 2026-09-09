@@ -5,6 +5,7 @@ import { monthToPeriod, getDefaultMonth } from '../data/mock';
 import { getWbImageUrls } from '../data/images';
 import { subscribeExtraExpenses, getExtraExpensesVersion, getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
+import { dashboardDailyShortfall, dashboardForecastCompletionPct } from '../data/dashboardTableCalculations';
 
 function short(n: number, isPercent: boolean) {
   if (isPercent) return n.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
@@ -60,7 +61,8 @@ function DbCard({
   onActivate: () => void;
 }) {
   const pctClass = m.pct >= 100 ? 'up' : m.pct < 80 ? 'down' : '';
-  const fwdClass = m.forecastPct >= 0 ? 'up' : 'down';
+  const fwdClass = m.forecastPct >= 100 ? 'up' : 'down';
+  const dailyShortfall = dashboardDailyShortfall(m.factPerDay, m.planPerDay);
   const barClass = m.plan > 0
     ? (m.pct >= 90 ? 'db-bar-up' : m.pct >= 70 ? 'db-bar-warn' : 'db-bar-down')
     : '';
@@ -89,9 +91,10 @@ function DbCard({
       {showSecondary && (
         <div className="db-row-secondary">
           <span>Прогноз <strong>{renderValue(m, m.forecast)}</strong></span>
-          {m.forecastPct !== 0 && <span className={`db-fwd db-pct ${fwdClass}`}>{m.forecastPct > 0 ? '+' : ''}{m.forecastPct.toFixed(1)}% к плану</span>}
+          {m.plan > 0 && <span className={`db-fwd db-pct ${fwdClass}`}>{m.forecastPct.toFixed(1)}% плана</span>}
           {m.factPerDay > 0 && <span>Факт/день <strong>{renderValue(m, m.factPerDay)}</strong></span>}
           {m.planPerDay > 0 && <span>План/день <strong>{renderValue(m, m.planPerDay)}</strong></span>}
+          {dailyShortfall > 0 && <span className="db-daily-shortfall">Нехватка/день <strong>{renderValue(m, dailyShortfall)}</strong></span>}
         </div>
       )}
       {planAvailable && (
@@ -207,7 +210,7 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
         fact,
         pct: plan ? (fact / plan) * 100 : 0,
         forecast,
-        forecastPct: plan ? (forecast / plan - 1) * 100 : 0,
+        forecastPct: dashboardForecastCompletionPct(forecast, plan),
         planPerDay: plan / daysInMonth,
         factPerDay: forecastRate,
       };

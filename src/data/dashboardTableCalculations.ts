@@ -51,6 +51,14 @@ export function totalDashboardFactPerDay(childValues: number[]): number {
   return childValues.reduce((sum, value) => sum + value, 0);
 }
 
+export function dashboardForecastCompletionPct(forecast: number, plan: number): number {
+  return plan > 0 ? forecast / plan * 100 : 0;
+}
+
+export function dashboardDailyShortfall(factPerDay: number, planPerDay: number): number {
+  return Math.max(0, planPerDay - factPerDay);
+}
+
 export function sortDashboardSiblingsByOrders(rows: TableRow[]): TableRow[] {
   return [...rows].sort((left, right) =>
     right.current.fact_orders - left.current.fact_orders

@@ -9,7 +9,7 @@ import { getCabinetExtraExpense } from '../data/profitStore';
 import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { getEffectivePlanMetrics } from '../data/planningStore';
-import { aggregateDashboardMetrics, dashboardFactPerDay, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
+import { aggregateDashboardMetrics, dashboardDailyShortfall, dashboardFactPerDay, dashboardForecastCompletionPct, emptyDashboardMetrics, sortDashboardSiblingsByOrders, totalDashboardFactPerDay } from '../data/dashboardTableCalculations';
 import { TABLE_METRIC_GROUPS, TABLE_METRIC_LABELS, type TableMetricKey } from '../data/dashboardTableMetrics';
 
 const emptyMetrics = emptyDashboardMetrics;
@@ -546,18 +546,19 @@ export default function AnalyticsTable({ cabinetFilter, categoryFilter, brandFil
       ? totalDashboardFactPerDay(rootRows.map(factPerDayForRow))
       : factPerDayForRow(row);
     const forecast = fact + factPerDay * Math.max(0, monthDays - days);
-    const forecastPct = plan ? (forecast / plan - 1) * 100 : 0;
+    const forecastPct = dashboardForecastCompletionPct(forecast, plan);
     const barW = Math.min(pct, 100);
     const cf = METRIC_CFG[key];
     const dayPlan = plan / monthDays;
+    const dailyShortfall = dashboardDailyShortfall(factPerDay, dayPlan);
     return (
       <td key={`plan-${row.id}-${key}`} className="at-td at-plan-cell">
         <div className="at-plan-bar-wrap">
           <div className="at-plan-bar" style={{ width: `${barW}%` }}></div>
         </div>
         <span className="at-plan-pct">{f1(pct)}%</span>
-        <span className="at-plan-forecast">Прогноз {forecastPct >= 0 ? '+' : ''}{f1(forecastPct)}% · {f(forecast)}{cf.suffix}</span>
-        {isFinite(dayPlan) && <span className="at-plan-day">Факт {shortFmt(factPerDay)} / план {shortFmt(dayPlan)}{cf.suffix}/день</span>}
+        <span className="at-plan-forecast">Прогноз {f1(forecastPct)}% плана · {f(forecast)}{cf.suffix}</span>
+        {isFinite(dayPlan) && <span className="at-plan-day">Факт {shortFmt(factPerDay)} / план {shortFmt(dayPlan)}{cf.suffix}/день{dailyShortfall > 0 && <em> · нехватка {shortFmt(dailyShortfall)}{cf.suffix}/день</em>}</span>}
       </td>
     );
   }

@@ -1191,6 +1191,11 @@
 .db-pct.up { color: #10B981; }
 .db-pct.down { color: #EF4444; }
 
+.db-daily-shortfall,
+.db-daily-shortfall strong {
+  color: #EF4444;
+}
+
 /* ── Filter Bar ── */
 .filterbar {
   display: flex;
@@ -4614,6 +4619,11 @@ thead .at-metric:last-child {
   transform: none;
 }
 
+.at-plan-day em {
+  color: #EF4444;
+  font-style: normal;
+}
+
 .navbar-tabs { gap: 3px; }
 
 .nav-tab {
@@ -4999,6 +5009,12 @@ thead .at-metric:last-child {
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
   text-align: right;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  white-space: normal;
+}
+
+.db-row-secondary > span {
   white-space: nowrap;
 }
 
