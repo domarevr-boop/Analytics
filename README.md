@@ -5,7 +5,7 @@
 ## Контуры проекта
 
 - **V4 production** — ветка `main`, local-first хранение основных отчётов в браузере и отдельный серверный CX-контур Supabase. Рабочая папка владельца: `C:\Users\vipdo\Documents\test\Analytics`.
-- **V5 staging** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`; сборка подготовлена для адреса `https://domarevr-boop.github.io/Analytics/v5/`, но на 10 сентября 2026 года URL возвращает 404 и ещё не считается опубликованным. Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 использует только отдельные БД/Storage и не заменяет production V4.
+- **V5 staging** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`; 10 сентября 2026 года сборка опубликована по адресу `https://domarevr-boop.github.io/Analytics/v5/` и проверена до экрана входа. Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 использует только отдельные БД/Storage и не заменяет production V4.
 
 В V5-шапке всегда показан жёлтый staging-индикатор с процентом текущего проверяемого roadmap. Его значение хранится в `src/config/v5Release.ts` и автоматически сверяется с чекбоксами `docs/ROADMAP.md`.
 
