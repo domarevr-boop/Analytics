@@ -24,9 +24,9 @@ begin
   values (v_product_id, v_cabinet_id, 'geography-storage-product', 'GEO-SMOKE', 'Geography product', 'seed');
 
   insert into ingest.import_batches (
-    id, source_code, created_by, status, idempotency_key, file_sha256, source_schema_version, published_at
+    id, source_code, cabinet_id, created_by, status, idempotency_key, file_sha256, source_schema_version, published_at
   ) values (
-    v_first_batch, 'geography', v_user_id, 'published', 'geography-storage-smoke-1', repeat('3', 64), 1,
+    v_first_batch, 'geography', v_cabinet_id, v_user_id, 'published', 'geography-storage-smoke-1', repeat('3', 64), 1,
     timezone('utc', now()) - interval '1 minute'
   );
 
@@ -42,7 +42,8 @@ begin
   );
 
   v_bounds := public.v5_geography_snapshot_bounds();
-  if v_bounds ->> 'batch_id' <> v_first_batch::text
+  if not (v_bounds -> 'batch_ids' @> jsonb_build_array(v_first_batch))
+    or (v_bounds ->> 'cabinet_count')::integer <> 1
     or (v_bounds ->> 'row_count')::integer <> 1
     or (v_bounds ->> 'order_count')::integer <> 10
     or (v_bounds ->> 'delivery_order_count')::integer <> 10
@@ -53,9 +54,9 @@ begin
   then raise exception 'Geography level normalization failed'; end if;
 
   insert into ingest.import_batches (
-    id, source_code, created_by, status, idempotency_key, file_sha256, source_schema_version, published_at
+    id, source_code, cabinet_id, created_by, status, idempotency_key, file_sha256, source_schema_version, published_at
   ) values (
-    v_second_batch, 'geography', v_user_id, 'published', 'geography-storage-smoke-2', repeat('4', 64), 1,
+    v_second_batch, 'geography', v_cabinet_id, v_user_id, 'published', 'geography-storage-smoke-2', repeat('4', 64), 1,
     timezone('utc', now())
   );
 
@@ -71,7 +72,8 @@ begin
   );
 
   v_bounds := public.v5_geography_snapshot_bounds();
-  if v_bounds ->> 'batch_id' <> v_second_batch::text
+  if not (v_bounds -> 'batch_ids' @> jsonb_build_array(v_second_batch))
+    or v_bounds -> 'batch_ids' @> jsonb_build_array(v_first_batch)
     or (v_bounds ->> 'row_count')::integer <> 1
     or (v_bounds ->> 'order_count')::integer <> 5
     or (v_bounds ->> 'delivery_row_count')::integer <> 0
@@ -79,7 +81,7 @@ begin
 
   update ingest.import_batches set status = 'cancelled' where id = v_second_batch;
   v_bounds := public.v5_geography_snapshot_bounds();
-  if v_bounds ->> 'batch_id' <> v_first_batch::text then
+  if not (v_bounds -> 'batch_ids' @> jsonb_build_array(v_first_batch)) then
     raise exception 'Geography rollback did not reveal the previous batch';
   end if;
 

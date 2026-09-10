@@ -32,6 +32,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260909013000_v5_competitors_read_api.sql',
     '20260909014000_v5_competitors_import_ui.sql',
     '20260910015000_v5_geography_storage.sql',
+    '20260910016000_v5_geography_cabinet_versions.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -411,6 +412,7 @@ test('competitor control-file smoke uses actual Excel dates and always rolls bac
 
 test('geography storage versions one balanced snapshot with cabinet-scoped access', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260910015000_v5_geography_storage.sql', import.meta.url), 'utf8');
+  const cabinetVersions = readFileSync(new URL('../supabase/migrations/20260910016000_v5_geography_cabinet_versions.sql', import.meta.url), 'utf8');
   const smoke = readFileSync(new URL('../supabase/tests/geography_storage_smoke.sql', import.meta.url), 'utf8');
   assert.match(sql, /create table analytics\.geography_order_versions/iu);
   assert.match(sql, /primary key \(batch_id, date, product_id, normalized_region, normalized_area, normalized_city\)/iu);
@@ -420,6 +422,10 @@ test('geography storage versions one balanced snapshot with cabinet-scoped acces
   assert.match(sql, /app\.can_access_cabinet\(cabinet_id\)/iu);
   assert.match(sql, /public\.v5_geography_snapshot_bounds/iu);
   assert.match(sql, /'schema_version', '20260910015000'/iu);
+  assert.match(cabinetVersions, /foreign key \(batch_id, cabinet_id\) references ingest\.import_batches/iu);
+  assert.match(cabinetVersions, /distinct on \(batch\.cabinet_id\)/iu);
+  assert.match(cabinetVersions, /app\.can_access_cabinet\(batch\.cabinet_id\)/iu);
+  assert.match(cabinetVersions, /'schema_version', '20260910016000'/iu);
   assert.match(smoke, /^begin;/iu);
   assert.match(smoke, /batches were mixed instead of replaced as one snapshot/iu);
   assert.match(smoke, /fulfillment mismatch was accepted/iu);
