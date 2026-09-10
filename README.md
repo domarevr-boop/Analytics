@@ -7,6 +7,8 @@
 - **V4 production** — ветка `main`, local-first хранение основных отчётов в браузере и отдельный серверный CX-контур Supabase. Рабочая папка владельца: `C:\Users\vipdo\Documents\test\Analytics`.
 - **V5 staging** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`, проверочная сборка [domarevr-boop.github.io/Analytics/v5/](https://domarevr-boop.github.io/Analytics/v5/). Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 использует только отдельные БД/Storage и не заменяет production V4.
 
+В V5-шапке всегда показан жёлтый staging-индикатор с процентом текущего проверяемого roadmap. Его значение хранится в `src/config/v5Release.ts` и автоматически сверяется с чекбоксами `docs/ROADMAP.md`.
+
 Текущая архитектура и статус зафиксированы в [PROJECT_STATE](PROJECT_STATE.md), полный переход — в [плане миграции V5](docs/V5_MIGRATION_PLAN.md), а документы и агентские средства — в [едином реестре](docs/INDEX.md). Перед изменениями прочитайте [AGENTS.md](AGENTS.md) и ближайший локальный `AGENTS.md`.
 
 Технические команды и границы удалённых миграций находятся в [Supabase V5 README](supabase/README.md). Прямой `supabase db push` не используется: только защищённый `npm run db:v5:push` после guard и dry-run.

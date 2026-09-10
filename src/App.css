@@ -6646,6 +6646,20 @@ thead .at-metric:last-child {
 .navbar-tabs { gap: 4px; }
 .nav-tab { min-height: 34px; padding: 0 11px; border-radius: 8px; font-size: 11px; }
 .nav-dropdown-menu { border-radius: 12px; box-shadow: 0 20px 50px rgba(15, 23, 42, .2); }
+.v5-staging-indicator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(251, 191, 36, .34);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, .12);
+  color: #fde68a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
 
 .dashboard .page-content:has(> :is(.analytics-page-shell, .entry-page, .funnel-page, .geo-page, .search-analytics-page, .product-overview-page, .registry-page, .import-page)) {
   gap: 0;

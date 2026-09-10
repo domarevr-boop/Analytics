@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useSyncExternalStore, type KeyboardEvent } from 'react';
 import type { PageName } from '../types';
 import { getVersion, subscribe } from '../data/store';
+import { V5_ROADMAP_PERCENT } from '../config/v5Release';
 
 interface NavBarProps {
   activePage: PageName;
@@ -93,6 +94,7 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin, sh
   const [storageUsage, setStorageUsage] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isAllowed = (page: PageName) => !allowedPages || allowedPages.includes(page);
+  const isV5Environment = import.meta.env.VITE_APP_ENV === 'v5-development';
 
   useEffect(() => {
     let cancelled = false;
@@ -266,6 +268,7 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin, sh
         </div>
       </div>
       <div className="navbar-right">
+        {isV5Environment && <span className="v5-staging-indicator" title="Проверочная версия, не production">V5 staging · {V5_ROADMAP_PERCENT}%</span>}
         <span className="sync-indicator" title="Локальное хранилище">
           <span className="sync-dot online" />
           локально{storageUsage === null ? '' : ` · ${formatBytes(storageUsage)}`}
