@@ -31,6 +31,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260908012000_v5_competitors_import.sql',
     '20260909013000_v5_competitors_read_api.sql',
     '20260909014000_v5_competitors_import_ui.sql',
+    '20260910015000_v5_geography_storage.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -406,6 +407,24 @@ test('competitor control-file smoke uses actual Excel dates and always rolls bac
   assert.doesNotMatch(smoke, /commit;/iu);
   assert.match(comparison, /--accept-excel-dates/iu);
   assert.match(comparison, /safeTime - legacyTime === 86_400_000/iu);
+});
+
+test('geography storage versions one balanced snapshot with cabinet-scoped access', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260910015000_v5_geography_storage.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/geography_storage_smoke.sql', import.meta.url), 'utf8');
+  assert.match(sql, /create table analytics\.geography_order_versions/iu);
+  assert.match(sql, /primary key \(batch_id, date, product_id, normalized_region, normalized_area, normalized_city\)/iu);
+  assert.match(sql, /foreign key \(product_id, cabinet_id\) references core\.products/iu);
+  assert.match(sql, /orders_total = product_local_orders \+ product_nonlocal_orders/iu);
+  assert.match(sql, /orders_total = wb_local_orders \+ wb_nonlocal_orders \+ marketplace_local_orders \+ marketplace_nonlocal_orders/iu);
+  assert.match(sql, /app\.can_access_cabinet\(cabinet_id\)/iu);
+  assert.match(sql, /public\.v5_geography_snapshot_bounds/iu);
+  assert.match(sql, /'schema_version', '20260910015000'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /batches were mixed instead of replaced as one snapshot/iu);
+  assert.match(smoke, /fulfillment mismatch was accepted/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
 });
 
 test('V5 staging deployment is isolated under the v5 subdirectory', () => {
