@@ -789,6 +789,41 @@
 @media (max-width:1280px) { .competitors-v2 { padding:18px 16px 40px; }.competitors-kpis { grid-template-columns:repeat(4,1fr); }.competitor-brand-grid { grid-template-columns:repeat(2,1fr); }.competitors-main-grid { grid-template-columns:minmax(0,2fr) 280px; }.competitor-positioning>header { flex-direction:column; }.competitor-chart-controls { width:100%; }.competitor-top-kpis { grid-template-columns:repeat(3,1fr); }.competitor-top-toolbar { grid-template-columns:150px 150px 120px 1fr; }.competitor-trend-toolbar,.competitor-stock-toolbar { grid-template-columns:auto 170px 170px 1fr; } }
 @media (max-width:900px) { .competitors-toolbar { grid-template-columns:1fr 1fr; }.competitors-kpis { grid-template-columns:repeat(2,1fr); }.competitor-brand-grid,.competitors-main-grid,.competitors-secondary-grid,.competitor-top-grid,.competitor-stock-grid { grid-template-columns:1fr; }.competitor-import-grid { grid-template-columns:1fr 1fr; }.competitor-top-toolbar { grid-template-columns:1fr 1fr 1fr; }.competitor-top-toolbar p { grid-column:1/-1; margin:0; text-align:left; }.competitor-top-movements>header { flex-direction:column; }.competitor-top-status-filter { justify-content:flex-start; }.competitor-trend-toolbar,.competitor-stock-toolbar { grid-template-columns:1fr 1fr; }.competitor-trend-toolbar>span { text-align:left; } }
 
+@media (max-width: 520px) {
+  .import-mapper.competitor-import-preview {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .competitor-import-preview .import-mapper-header-info {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .competitor-import-preview .import-mapper-summary {
+    margin-left: 0;
+  }
+
+  .competitor-import-preview .import-mapper-date {
+    justify-content: space-between;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .competitor-import-preview .import-mapper-footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .competitor-import-preview .import-mapper-footer button {
+    justify-content: center;
+    margin: 0;
+    width: 100%;
+  }
+}
+
 @media (max-width: 760px) {
   .nav-dropdown-menu--mega {
     grid-template-columns: 1fr;

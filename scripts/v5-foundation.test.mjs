@@ -376,6 +376,7 @@ test('competitor read API aggregates every page block behind explicit bounds', (
 test('competitor Import UI contracts are bounded and batch-authorized', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260909014000_v5_competitors_import_ui.sql', import.meta.url), 'utf8');
   const smoke = readFileSync(new URL('../supabase/tests/competitors_import_ui_smoke.sql', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8');
   for (const rpc of ['v5_competitor_batch_summary', 'v5_competitor_batch_history', 'v5_competitor_batch_errors', 'v5_competitor_batch_events']) {
     assert.match(sql, new RegExp(rpc, 'iu'));
   }
@@ -387,6 +388,8 @@ test('competitor Import UI contracts are bounded and batch-authorized', () => {
   assert.match(smoke, /^begin;/iu);
   assert.match(smoke, /rollback;/iu);
   assert.doesNotMatch(smoke, /commit;/iu);
+  assert.match(styles, /@media \(max-width: 520px\)[\s\S]*\.competitor-import-preview \.import-mapper-header-info/iu);
+  assert.match(styles, /\.competitor-import-preview \.import-mapper-footer[\s\S]*flex-direction: column-reverse/iu);
 });
 
 test('competitor control-file smoke uses actual Excel dates and always rolls back', () => {
