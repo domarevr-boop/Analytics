@@ -41,6 +41,7 @@
     "db:v5:smoke-competitors-ui": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/competitors_import_ui_smoke.sql",
     "db:v5:smoke-competitors-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-competitor-file-smoke.mjs",
     "db:v5:smoke-geography-storage": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/geography_storage_smoke.sql",
+    "db:v5:smoke-geography-import": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/geography_import_smoke.sql",
     "db:v5:smoke-market-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-market-file-smoke.mjs",
     "db:v5:bootstrap-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/scripts/bootstrap_only_auth_user.sql",
     "preview": "vite preview",

@@ -33,6 +33,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260909014000_v5_competitors_import_ui.sql',
     '20260910015000_v5_geography_storage.sql',
     '20260910016000_v5_geography_cabinet_versions.sql',
+    '20260910017000_v5_geography_import.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -429,6 +430,26 @@ test('geography storage versions one balanced snapshot with cabinet-scoped acces
   assert.match(smoke, /^begin;/iu);
   assert.match(smoke, /batches were mixed instead of replaced as one snapshot/iu);
   assert.match(smoke, /fulfillment mismatch was accepted/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+});
+
+test('geography import retains its source and publishes one canonical cabinet version atomically', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260910017000_v5_geography_import.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/geography_import_smoke.sql', import.meta.url), 'utf8');
+  for (const rpc of ['v5_geography_create_batch', 'v5_geography_reset_staging', 'v5_geography_stage_rows', 'v5_geography_publish_batch', 'v5_geography_rollback_batch']) {
+    assert.match(sql, new RegExp(`public\\.${rpc}`, 'iu'));
+  }
+  assert.match(sql, /p_size_bytes > 26214400/iu);
+  assert.match(sql, /jsonb_array_length\(p_rows\) > 500/iu);
+  assert.match(sql, /v_total_rows > 250000/iu);
+  assert.match(sql, /object\.bucket_id = 'v5-import-sources'/iu);
+  assert.match(sql, /row_number\(\) over \(partition by/iu);
+  assert.match(sql, /order by row_number desc/iu);
+  assert.match(sql, /'schema_version', '20260910017000'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /last normalized row did not win/iu);
+  assert.match(smoke, /invalid geography batch was accepted/iu);
   assert.match(smoke, /rollback;/iu);
   assert.doesNotMatch(smoke, /commit;/iu);
 });
