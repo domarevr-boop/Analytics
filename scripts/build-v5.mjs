@@ -9,6 +9,7 @@ const run = (args) => {
       VITE_APP_BASE: '/Analytics/v5/',
       VITE_V5_MARKET_BACKEND_ENABLED: 'true',
       VITE_V5_COMPETITORS_IMPORT_ENABLED: 'true',
+      VITE_V5_COMPETITORS_BACKEND_ENABLED: 'false',
       VITE_V5_DIRECTORY_BACKEND_ENABLED: 'false',
       VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED: 'false',
     },
