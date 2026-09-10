@@ -32,6 +32,15 @@ import type {
   CompetitorImportHistoryRow,
   CompetitorImportResult,
 } from '../features/competitors/competitorImport';
+import { parseGeographyFileInWorker } from '../features/geography/geographyImportParser';
+import type { ParsedGeographyFile } from '../features/geography/geographyImportParser';
+import {
+  importGeographyToSupabase,
+  isV5GeographyImportEnabled,
+  loadGeographyImportCabinets,
+} from '../features/geography/geographyImport';
+import type { GeographyImportResult } from '../features/geography/geographyImport';
+import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
 import {
   isV5DirectoryBootstrapEnabled,
   isV5DirectoryBootstrapEnvironment,
@@ -113,12 +122,17 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [competitorPreview, setCompetitorPreview] = useState<CompetitorWorkbookData | null>(null);
   const [competitorServerPreview, setCompetitorServerPreview] = useState<ParsedCompetitorFile | null>(null);
+  const [geographyServerPreview, setGeographyServerPreview] = useState<ParsedGeographyFile | null>(null);
+  const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
+  const [geographyCabinetId, setGeographyCabinetId] = useState('');
+  const [geographyCabinetError, setGeographyCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
   const [latestDirectoryBootstrap, setLatestDirectoryBootstrap] = useState<DirectoryBootstrapResult | null>(null);
   const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
   const [latestCompetitorImport, setLatestCompetitorImport] = useState<CompetitorImportResult | null>(null);
+  const [latestGeographyImport, setLatestGeographyImport] = useState<GeographyImportResult | null>(null);
   const [competitorImportHistory, setCompetitorImportHistory] = useState<CompetitorImportHistoryRow[]>([]);
   const [competitorErrors, setCompetitorErrors] = useState<CompetitorBatchErrorRow[]>([]);
   const [competitorErrorBatchId, setCompetitorErrorBatchId] = useState('');
@@ -144,6 +158,15 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       void getLatestCompetitorImport().then(setLatestCompetitorImport);
       void getCompetitorImportHistory().then(setCompetitorImportHistory).catch(() => setCompetitorImportHistory([]));
     }
+    if (isV5GeographyImportEnabled) {
+      void loadGeographyImportCabinets()
+        .then(cabinets => {
+          setGeographyCabinets(cabinets);
+          setGeographyCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
+          setGeographyCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5. Сначала опубликуйте справочник товаров.');
+        })
+        .catch(error => setGeographyCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
+    }
   }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -152,6 +175,8 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setLoading(true);
     setMarketParseContext(null);
     setCompetitorServerPreview(null);
+    setGeographyServerPreview(null);
+    setCompetitorPreview(null);
     setProgress(`Чтение ${file.name}...`);
     try {
       await waitForPaint();
@@ -169,16 +194,28 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a market workbook:', error);
         }
       }
-      if (ext === 'xlsx' && isV5CompetitorImportEnabled) {
-        const competitorData = await parseCompetitorFileInWorker(file);
-        setCompetitorServerPreview(competitorData);
-        setCompetitorYear(competitorData.inferredYear || new Date().getFullYear());
-        setSelectedFile(file);
-        return;
+      if (ext === 'xlsx' && isV5GeographyImportEnabled) {
+        try {
+          const geographyData = await parseGeographyFileInWorker(file);
+          setGeographyServerPreview(geographyData);
+          setSelectedFile(file);
+          return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not a geography workbook:', error);
+        }
       }
-      if (serverOnly) throw new Error(isV5CompetitorImportEnabled
-        ? 'Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv) и «Конкуренты» (.xlsx).'
-        : 'Для роли importer в V5 разрешён только серверный отчёт «Рынок» (.xlsx или .csv).');
+      if (ext === 'xlsx' && isV5CompetitorImportEnabled) {
+        try {
+          const competitorData = await parseCompetitorFileInWorker(file);
+          setCompetitorServerPreview(competitorData);
+          setCompetitorYear(competitorData.inferredYear || new Date().getFullYear());
+          setSelectedFile(file);
+          return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
+        }
+      }
+      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ' и «География заказов» (.xlsx)' : ''}.`);
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -202,6 +239,42 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setProgress('');
     }
   }, [serverOnly]);
+
+  const handleV5GeographyImport = useCallback(async () => {
+    if (!selectedFile || !geographyServerPreview || !geographyCabinetId || importRunningRef.current) return;
+    importRunningRef.current = true;
+    setLoading(true);
+    setProgress('Повторная проверка отчёта географии...');
+    try {
+      const parsedWorkbook = await parseGeographyFileInWorker(selectedFile);
+      const result = await importGeographyToSupabase(selectedFile, geographyCabinetId, parsedWorkbook, current => {
+        const stage = current.stage === 'hashing'
+          ? 'Контрольная сумма'
+          : current.stage === 'uploading'
+            ? 'Сохранение исходника'
+            : current.stage === 'staging'
+              ? 'Передача строк географии'
+              : 'Серверная проверка и публикация';
+        setProgress(`${stage}: ${current.processed}/${current.total}`);
+      });
+      setLatestGeographyImport(result);
+      if (result.status === 'failed') {
+        alert(`Импорт «Географии заказов» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Текущая версия кабинета не изменена.`);
+      } else if (result.duplicate) {
+        alert('Этот файл географии уже опубликован для выбранного кабинета V5. Повторная версия не создавалась.');
+      } else {
+        alert(`Импорт «Географии заказов» опубликован в V5. Исходных строк: ${result.inputRows}, итоговых: ${result.canonicalRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Географии заказов»');
+    } finally {
+      importRunningRef.current = false;
+      setLoading(false);
+      setProgress('');
+      setGeographyServerPreview(null);
+      setSelectedFile(null);
+    }
+  }, [selectedFile, geographyServerPreview, geographyCabinetId]);
 
   const handleV5CompetitorImport = useCallback(async () => {
     if (!selectedFile || !competitorServerPreview || importRunningRef.current) return;
@@ -549,7 +622,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
       <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly
-        ? (isV5CompetitorImportEnabled ? 'Безопасная загрузка серверных отчётов «Рынок» и «Конкуренты» в V5.' : 'Безопасная загрузка серверного отчёта «Рынок» в V5.')
+        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ' и «География заказов»' : ''} в V5.`
         : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {isV5DirectoryBootstrapEnvironment && !serverOnly && (
         <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">
@@ -614,6 +687,30 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           </div>
         </div>
       )}
+      {geographyServerPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header">
+                <div className="import-mapper-header-info"><h3>Серверный импорт географии: {selectedFile?.name}</h3><span className="import-mapper-summary">Лист «{geographyServerPreview.sheetName}» распознан безопасным parser V5</span></div>
+                <span className="import-mapper-date"><label htmlFor="geography-cabinet">Кабинет:</label><select id="geography-cabinet" className="daterange-input" value={geographyCabinetId} onChange={event => setGeographyCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{geographyCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+              </div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{geographyServerPreview.dateStart || 'требует проверки'} — {geographyServerPreview.dateEnd || 'требует проверки'}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Строк в файле</span><strong>{geographyServerPreview.inputRows}</strong><small>до нормализации</small></article>
+                  <article><span>К публикации</span><strong>{geographyServerPreview.rows.length}</strong><small>последняя строка дубликата</small></article>
+                  <article><span>Заменено повторов</span><strong>{geographyServerPreview.replacedDuplicateRows}</strong><small>по товару и географии</small></article>
+                  <article><span>Кабинет</span><strong>{geographyCabinetId ? 'Выбран' : 'Не выбран'}</strong><small>справочник проверит товары</small></article>
+                </div>
+                {geographyCabinetError && <p className="import-mapper-error">{geographyCabinetError}</p>}
+                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер сопоставит SKU только со справочником выбранного кабинета, проверит балансы заказов и атомарно заменит его текущую версию географии.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setGeographyServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !geographyCabinetId || Boolean(geographyCabinetError)} onClick={() => void handleV5GeographyImport()}>Опубликовать географию в V5</button></div>
+            </div>
+          </div>
+        </div>
+      )}
       {!serverOnly && competitorPreview && !competitorServerPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
@@ -666,7 +763,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         </div>
         <div className="dropzone-hint">
           {serverOnly
-            ? (isV5CompetitorImportEnabled ? 'Поддерживаются: «Рынок» (.csv/.xlsx) и «Конкуренты» (.xlsx)' : 'Поддерживаются: отчёт «Рынок» в CSV или Excel (.xlsx)')
+            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}`
             : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
@@ -721,6 +818,20 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td>{latestCompetitorImport.rejectedRows}</td>
               <td>{Object.values(latestCompetitorImport.sectionCounts).reduce((sum, value) => sum + Number(value || 0), 0) || '—'}</td>
               <td>Сохранён в private Storage</td>
+            </tr></tbody>
+          </table></div>
+        </AnalyticsPanel>
+      )}
+
+      {latestGeographyImport && (
+        <AnalyticsPanel className="import-log import-market-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур V5" title="Текущий импорт «Географии заказов»" description={latestGeographyImport.fileName} controls={<span>{latestGeographyImport.status === 'published' ? 'Опубликован' : 'Отклонён'}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Дата</th><th>Период</th><th>Исходных строк</th><th>Принято</th><th>Отклонено</th><th>Итоговых строк</th><th>Повторы</th></tr></thead>
+            <tbody><tr>
+              <td>{formatDate(latestGeographyImport.importedAt)}</td>
+              <td>{latestGeographyImport.periodStart ? `${latestGeographyImport.periodStart} — ${latestGeographyImport.periodEnd || latestGeographyImport.periodStart}` : '—'}</td>
+              <td>{latestGeographyImport.inputRows}</td><td>{latestGeographyImport.acceptedRows}</td><td>{latestGeographyImport.rejectedRows}</td><td>{latestGeographyImport.canonicalRows}</td><td>{latestGeographyImport.replacedDuplicateRows}</td>
             </tr></tbody>
           </table></div>
         </AnalyticsPanel>

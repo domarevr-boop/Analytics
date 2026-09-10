@@ -475,6 +475,22 @@ test('geography read API bounds filters, series, locations and product leaders',
   assert.doesNotMatch(smoke, /commit;/iu);
 });
 
+test('geography Import UI is gated and its real control-file smoke always rolls back', () => {
+  const client = readFileSync(new URL('../src/features/geography/geographyImport.ts', import.meta.url), 'utf8');
+  const parser = readFileSync(new URL('../src/features/geography/geographyImportCore.ts', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('./v5-geography-file-smoke.mjs', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(client, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED === 'true'/u);
+  assert.match(client, /v5_geography_create_batch/iu);
+  assert.match(client, /v5_geography_stage_rows/iu);
+  assert.match(parser, /GEOGRAPHY_MAX_ROWS = 250_000/u);
+  assert.match(smoke, /v5_geography_publish_batch/iu);
+  assert.match(smoke, /v5_geography_summary/iu);
+  assert.match(smoke, /transaction_will_rollback/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.match(exampleEnv, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED=false/iu);
+});
+
 test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
@@ -484,6 +500,7 @@ test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   assert.match(buildScript, /VITE_APP_BASE:\s*'\/Analytics\/v5\/'/u);
   assert.match(buildScript, /VITE_APP_ENV:\s*'v5-development'/u);
   assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED:\s*'false'/u);
   assert.match(workflow, /keep_files:\s*true/iu);
 });
