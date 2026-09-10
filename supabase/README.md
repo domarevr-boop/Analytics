@@ -2,7 +2,7 @@
 
 Этот каталог содержит только активный backend-контур V5. Исторические миграции и функция V4/CX сохранены в `legacy-v4/` и не участвуют в `supabase db push`.
 
-Миграции `20260906000000`–`20260910017000` применены к `analytics-v5-dev`. Последние remote dry-run показывали ровно миграции «Географии»; `db lint --linked --level warning` не нашёл проблем. `npm run db:v5:smoke-geography-storage` подтвердил версионность по кабинетам и балансы, а `npm run db:v5:smoke-geography-import` — private source, идемпотентность, справочник, дедупликацию, ошибочную партию и rollback. Оба теста выполняют полный `ROLLBACK`. Private bucket `v5-import-sources` существует. Первый Auth-пользователь назначен администратором; admin/viewer/importer проверены транзакционно.
+Миграции `20260906000000`–`20260910018000` применены к `analytics-v5-dev`. Последние remote dry-run показывали ровно миграции «Географии»; `db lint --linked --level warning` не нашёл проблем. Storage/import smoke подтвердили версионность, private source, справочник и rollback, а `npm run db:v5:smoke-geography-read` — фильтры, KPI All/FBO/FBS, СВД, дневные ряды, локации и SKU. Все тесты выполняют полный `ROLLBACK`. Private bucket `v5-import-sources` существует. Первый Auth-пользователь назначен администратором; admin/viewer/importer проверены транзакционно.
 
 ## Защита окружения
 
@@ -60,6 +60,8 @@
 
 `migrations/20260910017000_v5_geography_import.sql` добавляет создание кабинетной `.xlsx`-партии, private Storage lineage, hash-идемпотентность, retry-reset, staging чанками до 500 строк, серверное сопоставление товаров и атомарную публикацию максимум 250 000 строк. Оба баланса заказов, даты, числа, СВД и identity проверяются до публикации; нормализованный повтор заменяется последней строкой.
 
+`migrations/20260910018000_v5_geography_read_api.sql` добавляет bounded фильтры, KPI All/FBO/FBS, дневные ряды, пагинированные уровни регион/область/город и лидирующие товары по последней партии каждого доступного кабинета. Финансовые показатели не возвращаются до переноса серверных денежных источников.
+
 ## Применение
 
 1. Выполнить `npx supabase login` локально; токен не добавлять в репозиторий.
@@ -80,6 +82,7 @@
 16. Контракт Import UI «Конкурентов» проверить `npm run db:v5:smoke-competitors-ui`: команда сверяет summary, bounded-историю, ошибки, события и private object path доступной партии и всегда выполняет `ROLLBACK`.
 17. Версионное хранилище «Географии» проверить `npm run db:v5:smoke-geography-storage`: команда проверяет нормализацию, кабинетный снимок, замену/откат версии и запрет несходящегося FBO/FBS внутри транзакции с `ROLLBACK`.
 18. Server import «Географии» проверить `npm run db:v5:smoke-geography-import`: команда проверяет private source, повтор SHA-256, справочник, last-row-дедупликацию, ошибочную партию и admin rollback внутри транзакции с `ROLLBACK`.
+19. Bounded read API «Географии» проверить `npm run db:v5:smoke-geography-read`: команда сверяет фильтры, All/FBO/FBS, взвешенный СВД, дневные ряды, location pagination и product leaders с `ROLLBACK`.
 
 ## Первый администратор
 

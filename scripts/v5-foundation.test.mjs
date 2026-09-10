@@ -34,6 +34,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260910015000_v5_geography_storage.sql',
     '20260910016000_v5_geography_cabinet_versions.sql',
     '20260910017000_v5_geography_import.sql',
+    '20260910018000_v5_geography_read_api.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -450,6 +451,26 @@ test('geography import retains its source and publishes one canonical cabinet ve
   assert.match(smoke, /^begin;/iu);
   assert.match(smoke, /last normalized row did not win/iu);
   assert.match(smoke, /invalid geography batch was accepted/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+});
+
+test('geography read API bounds filters, series, locations and product leaders', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260910018000_v5_geography_read_api.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/geography_read_smoke.sql', import.meta.url), 'utf8');
+  for (const rpc of ['v5_geography_filter_options', 'v5_geography_summary', 'v5_geography_series', 'v5_geography_locations', 'v5_geography_product_leaders']) {
+    assert.match(sql, new RegExp(`public\\.${rpc}`, 'iu'));
+  }
+  assert.match(sql, /p_end - p_start > 731/iu);
+  assert.match(sql, /cardinality\(p_cabinet_ids\).*100/isu);
+  assert.match(sql, /cardinality\(p_product_ids\).*500/isu);
+  assert.match(sql, /p_limit > 200/iu);
+  assert.match(sql, /p_offset > 100000/iu);
+  assert.match(sql, /app\.v5_current_geography_batches/iu);
+  assert.match(sql, /'schema_version', '20260910018000'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /summary formulas failed/iu);
+  assert.match(smoke, /location aggregation failed/iu);
   assert.match(smoke, /rollback;/iu);
   assert.doesNotMatch(smoke, /commit;/iu);
 });
