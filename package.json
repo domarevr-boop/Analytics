@@ -43,7 +43,10 @@
     "db:v5:bootstrap-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/scripts/bootstrap_only_auth_user.sql",
     "preview": "vite preview",
     "predeploy": "node scripts/check-production-env.mjs && node scripts/copy-az-dicts.mjs",
-    "deploy": "vite build && npx gh-pages -d dist -b gh-pages"
+    "deploy": "vite build && npx gh-pages -d dist -b gh-pages",
+    "predeploy:v5": "node scripts/assert-v5-environment.mjs --require-link && node scripts/check-production-env.mjs",
+    "build:v5": "node scripts/build-v5.mjs",
+    "deploy:v5": "npm run build:v5 && npx gh-pages -d dist -b gh-pages -e v5 -a -m \"Deploy V5 staging\""
   },
   "dependencies": {
     "@react-map/russia": "^1.0.9",

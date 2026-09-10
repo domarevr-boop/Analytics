@@ -7,7 +7,7 @@
 ## Подтверждённое состояние
 
 - V5 CLI связан с отдельным project ref и защищён проверкой worktree, ветки, env и link.
-- Private bucket `v5-import-sources` доступен CLI только после явного `--experimental`; read-only listing выполнен, объектов в bucket пока нет.
+- Private bucket `v5-import-sources` доступен CLI только после явного `--experimental`; read-only listing выполнен. После принятой постоянной партии «Конкурентов» в bucket хранится её исходный XLSX, поэтому backup-пакет обязан включать байты Storage, а не только БД.
 - На машине нет Docker, `pg_dump`, `pg_restore` и `psql`. Поэтому логический дамп БД и восстановление сейчас выполнить нельзя.
 - Тариф проекта и наличие платформенных ежедневных backup/PITR из репозитория установить нельзя.
 - Backup БД Supabase не восстанавливает байты Storage: объекты bucket нужно выгружать и восстанавливать отдельно.

@@ -377,6 +377,7 @@ test('competitor Import UI contracts are bounded and batch-authorized', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260909014000_v5_competitors_import_ui.sql', import.meta.url), 'utf8');
   const smoke = readFileSync(new URL('../supabase/tests/competitors_import_ui_smoke.sql', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8');
+  const importPage = readFileSync(new URL('../src/components/ImportPage.tsx', import.meta.url), 'utf8');
   for (const rpc of ['v5_competitor_batch_summary', 'v5_competitor_batch_history', 'v5_competitor_batch_errors', 'v5_competitor_batch_events']) {
     assert.match(sql, new RegExp(rpc, 'iu'));
   }
@@ -390,6 +391,8 @@ test('competitor Import UI contracts are bounded and batch-authorized', () => {
   assert.doesNotMatch(smoke, /commit;/iu);
   assert.match(styles, /@media \(max-width: 520px\)[\s\S]*\.competitor-import-preview \.import-mapper-header-info/iu);
   assert.match(styles, /\.competitor-import-preview \.import-mapper-footer[\s\S]*flex-direction: column-reverse/iu);
+  assert.match(importPage, /function formatEventValue\(value: unknown\)/iu);
+  assert.match(importPage, /Object\.entries\(value as Record<string, unknown>\)/iu);
 });
 
 test('competitor control-file smoke uses actual Excel dates and always rolls back', () => {
@@ -403,6 +406,19 @@ test('competitor control-file smoke uses actual Excel dates and always rolls bac
   assert.doesNotMatch(smoke, /commit;/iu);
   assert.match(comparison, /--accept-excel-dates/iu);
   assert.match(comparison, /safeTime - legacyTime === 86_400_000/iu);
+});
+
+test('V5 staging deployment is isolated under the v5 subdirectory', () => {
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+
+  assert.match(packageJson.scripts['deploy:v5'], /-e v5 -a/iu);
+  assert.match(buildScript, /VITE_APP_BASE:\s*'\/Analytics\/v5\/'/u);
+  assert.match(buildScript, /VITE_APP_ENV:\s*'v5-development'/u);
+  assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED:\s*'false'/u);
+  assert.match(workflow, /keep_files:\s*true/iu);
 });
 
 test('market client clears stale retry staging before sending normalized chunks', () => {

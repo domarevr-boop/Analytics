@@ -5,7 +5,7 @@
 ## Контуры проекта
 
 - **V4 production** — ветка `main`, local-first хранение основных отчётов в браузере и отдельный серверный CX-контур Supabase. Рабочая папка владельца: `C:\Users\vipdo\Documents\test\Analytics`.
-- **V5 development** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`. Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 не публикуется и не должна использовать БД/Storage V4.
+- **V5 staging** — ветка `v5/backend-foundation` в отдельном worktree `C:\Users\vipdo\Documents\test\Analytics-v5`, проверочная сборка [domarevr-boop.github.io/Analytics/v5/](https://domarevr-boop.github.io/Analytics/v5/). Цель — отдельный Supabase/PostgreSQL, серверный импорт и воспроизводимые расчёты. V5 использует только отдельные БД/Storage и не заменяет production V4.
 
 Текущая архитектура и статус зафиксированы в [PROJECT_STATE](PROJECT_STATE.md), полный переход — в [плане миграции V5](docs/V5_MIGRATION_PLAN.md), а документы и агентские средства — в [едином реестре](docs/INDEX.md). Перед изменениями прочитайте [AGENTS.md](AGENTS.md) и ближайший локальный `AGENTS.md`.
 
@@ -42,7 +42,7 @@ Admin-only публикация bootstrap-манифеста справочни�
 
 ## Публикация и безопасность
 
-Текущий GitHub Actions workflow публикует только `main`, то есть V4. `npm run deploy` требует `.env.production.local` и предназначен для принятого production-контура; из V5 worktree его не запускают. Параллельный URL V5 будет добавлен отдельным release-этапом без перезаписи V4.
+Обычный GitHub Actions workflow публикует `main` в корень `/Analytics/`, то есть V4, и сохраняет отдельный подкаталог V5. Из V5-worktree используется только `npm run deploy:v5`: guard проверяет ветку, worktree, отдельный Supabase project ref и public env, затем сборка публикуется в `/Analytics/v5/` с включёнными принятыми V5-сценариями. Bootstrap и серверное чтение справочника остаются выключены. Команда не удаляет V4-файлы в корне Pages.
 
 - Не коммитьте `.env.local`, исходные рабочие выгрузки, пароли и service-role ключи.
 - Не связывайте Supabase CLI в V5 worktree с проектом V4.

@@ -85,6 +85,17 @@ function waitForPaint() {
   return new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 }
 
+function formatEventValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (Array.isArray(value)) return value.map(formatEventValue).join(', ');
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, nestedValue]) => `${key}: ${formatEventValue(nestedValue)}`)
+      .join(', ');
+  }
+  return String(value);
+}
+
 export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   useSyncExternalStore(subscribe, getVersion);
   const logs = getImportLog();
@@ -516,7 +527,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const formatEventDetails = (details: Record<string, unknown>) => {
     const entries = Object.entries(details);
     if (entries.length === 0) return '—';
-    return entries.map(([key, value]) => `${key}: ${value === null ? '—' : String(value)}`).join(' · ');
+    return entries.map(([key, value]) => `${key}: ${formatEventValue(value)}`).join(' · ');
   };
 
   const formatPeriod = (log: ImportFileLog) => {

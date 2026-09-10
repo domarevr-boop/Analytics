@@ -6,7 +6,7 @@
 
 - Работать только в `C:\Users\vipdo\Documents\test\Analytics-v5`, ветка `v5/backend-foundation`.
 - `.env.local` должен содержать `VITE_APP_ENV=v5-development`, URL/publishable key отдельного V5-проекта и `VITE_V5_MARKET_BACKEND_ENABLED=true`. Значения ключей не копировать в отчёт о приёмке.
-- Запуск: `npm run dev -- --host 127.0.0.1`. V5 не публикуется; проверка выполняется локально.
+- Проверка выполняется на staging `https://domarevr-boop.github.io/Analytics/v5/` либо локально через `npm run dev -- --host 127.0.0.1`; оба варианта должны использовать отдельный Supabase V5.
 - Нужны три отдельных Auth-пользователя V5: admin, importer и viewer. Пользователей создаёт владелец в Supabase Dashboard V5 → Authentication → Users; роли назначаются администратором на странице «Админ» V5. Реальные адреса и UUID в документ не записываются.
 - Использовать доверенный отчёт «Рынок» `.xlsx` или `.csv`. До проверки сохранить отдельную копию файла.
 

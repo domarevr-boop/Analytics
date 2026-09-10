@@ -26,3 +26,4 @@ jobs:
           publish_dir: ./dist
           publish_branch: gh-pages
           force_orphan: true
+          keep_files: true
