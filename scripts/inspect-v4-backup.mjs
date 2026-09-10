@@ -168,12 +168,13 @@ function inspectCatalog(catalog) {
   };
 }
 
-async function scanV4Backup(filePath, includeCatalog = false) {
+async function scanV4Backup(filePath, includeCatalog = false, extraCatalogArrays = []) {
   const file = await stat(filePath);
   if (!file.isFile()) throw new Error('V4 backup path is not a file');
 
   const counts = Object.fromEntries([...DATA_ARRAYS].map(key => [key, 0]));
-  const catalog = Object.fromEntries([...CATALOG_ARRAYS].map(key => [key, []]));
+  const capturedArrays = new Set([...CATALOG_ARRAYS, ...extraCatalogArrays]);
+  const catalog = Object.fromEntries([...capturedArrays].map(key => [key, []]));
   const metadata = { version: '', exportedAt: '' };
   const stack = [];
   let inString = false;
@@ -240,7 +241,7 @@ async function scanV4Backup(filePath, includeCatalog = false) {
         if (objectCapture) objectCaptureDepth += 1;
         if (parent?.type === 'array' && parent.targetName) {
           counts[parent.targetName] += 1;
-          if (CATALOG_ARRAYS.has(parent.targetName)) {
+          if (capturedArrays.has(parent.targetName)) {
             objectCapture = '{';
             objectCaptureDepth = 1;
             objectCaptureTarget = parent.targetName;
@@ -308,6 +309,17 @@ export async function readV4BackupCompetitors(filePath) {
       stocks: result.catalog.competitorStocks,
       positions: result.catalog.competitorPositions,
     },
+  };
+}
+
+export async function readV4BackupGeography(filePath) {
+  const result = await scanV4Backup(filePath, true, ['geography']);
+  return {
+    version: result.version,
+    exportedAt: result.exportedAt,
+    sizeBytes: result.sizeBytes,
+    products: result.catalog.products,
+    geography: result.catalog.geography,
   };
 }
 
