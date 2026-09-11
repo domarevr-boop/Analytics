@@ -15,6 +15,8 @@ import { hasKnownGeoArea, hasKnownGeoCity, normalizeGeoArea, normalizeGeoCity, s
 import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
 import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
+import { isV5GeographyBackendEnabled } from '../../features/geography/geographyData';
+import GeographyServerPage from './GeographyServerPage';
 
 type ChartMetric = 'orders' | 'deliveryHours';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
@@ -114,7 +116,7 @@ function GeoSummaryRow({ label, current, previous, accent }: { label: string; cu
   return <article className={`geo-summary-row ${accent}`}><h3>{label}</h3><div><span>Заказы, шт<strong>{formatNumber(current.total)}</strong><small className={ordersDelta === null || ordersDelta >= 0 ? 'geo-positive' : 'geo-negative'}>{ordersDelta === null ? 'Нет базы' : `${ordersDelta >= 0 ? '+' : ''}${formatNumber(ordersDelta)}%`}</small></span><span>Ср. время доставки<strong>{formatHours(current.deliveryHours)}</strong><small className={deliveryDelta === null || deliveryDelta <= 0 ? 'geo-positive' : 'geo-negative'}>{deliveryDelta === null ? 'Нет базы' : `${deliveryDelta > 0 ? '+' : ''}${formatNumber(deliveryDelta)}%`}</small></span></div></article>;
 }
 
-export default function GeographyPage() {
+function LocalGeographyPage() {
   useSyncExternalStore(subscribe, getVersion);
   const geographyRecords = getGeographyOrders();
   const records = useMemo(() => selectDetailedGeographyRows(geographyRecords), [geographyRecords]);
@@ -438,4 +440,8 @@ export default function GeographyPage() {
     </article>
     {selectedGeo && <><button type="button" className="geo-drawer-backdrop" aria-label="Закрыть карточку географии" onClick={() => setSelectedGeo(null)} /><aside className="geo-detail-drawer"><header><div><span>{selectedGeo.level === 'district' ? 'ФЕДЕРАЛЬНЫЙ ОКРУГ' : selectedGeo.level === 'area' ? 'РЕГИОН' : 'НАСЕЛЁННЫЙ ПУНКТ'}</span><h2>{selectedGeo.city || selectedGeo.area || selectedGeo.district}</h2><p>{[selectedGeo.district, selectedGeo.area, selectedGeo.city].filter(Boolean).join(' → ')}</p></div><button type="button" onClick={() => setSelectedGeo(null)}>×</button></header><div className="geo-drawer-kpis"><article><span>Заказы</span><strong>{formatNumber(selectedGeoSummary.total)}</strong></article><article><span>Доля в заказах</span><strong>{formatNumber(orderShare(selectedGeoSummary.total, baseTotals.total))}%</strong></article><article><span>СВД</span><strong>{formatHours(selectedGeoSummary.deliveryHours)}</strong></article><article><span>Сумма заказов</span><strong>{formatMillions(selectedGeoFinance?.orderedAmount || 0)} млн ₽</strong></article><article><span>Чистая прибыль</span><strong>{formatNumber(selectedGeoFinance?.netProfit || 0)} ₽</strong></article><article><span>Рентабельность</span><strong>{formatNumber(selectedGeoFinance?.profitability || 0)}%</strong></article></div><section className="geo-drawer-section"><h3>Динамика</h3><ResponsiveContainer width="100%" height={190}><LineChart data={selectedGeoTrend}><CartesianGrid stroke="#e8eef5" strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 9 }} minTickGap={24} interval="preserveStartEnd" /><YAxis yAxisId="delivery" tick={{ fontSize: 9 }} /><YAxis yAxisId="orders" orientation="right" tick={{ fontSize: 9 }} /><Tooltip /><Line yAxisId="delivery" dataKey="delivery" name="СВД" stroke="#60A5FA" strokeWidth={2.2} dot={false} /><Line yAxisId="orders" dataKey="orders" name="Заказы" stroke="#34D399" strokeWidth={2.2} dot={false} /></LineChart></ResponsiveContainer></section><section className="geo-drawer-section"><h3>Лидирующие товары</h3><div className="geo-drawer-products">{selectedGeoProducts.slice(0, 5).map(row => <div key={row.product?.id}><strong>{row.product?.sku || 'Без артикула'}</strong><span>{row.product?.name || 'Без названия'}</span><b>{formatNumber(row.total)} заказов</b></div>)}</div></section><section className="geo-drawer-section"><h3>Долгая доставка по SKU</h3><div className="geo-drawer-products">{[...selectedGeoProducts].sort((left, right) => (right.deliveryHours || 0) - (left.deliveryHours || 0) || right.total - left.total).slice(0, 5).map(row => <div key={row.product?.id}><strong>{row.product?.sku || 'Без артикула'}</strong><span>{formatHours(row.deliveryHours)} СВД</span><b>{formatNumber(row.total)} заказов</b></div>)}</div></section></aside></>}
   </section>;
+}
+
+export default function GeographyPage() {
+  return isV5GeographyBackendEnabled ? <GeographyServerPage /> : <LocalGeographyPage />;
 }

@@ -21,3 +21,14 @@ test('V5 release metadata matches the checked roadmap', () => {
   assert.equal(V5_ROADMAP_PERCENT, Math.round(done / total * 100));
   assert.equal(V5_STAGING_PATH, '/Analytics/v5/');
 });
+
+test('V5 geography route uses the isolated server page without a local data fallback', () => {
+  const route = readFileSync(new URL('../pages/analytics/GeographyPage.tsx', import.meta.url), 'utf8');
+  const serverPage = readFileSync(new URL('../pages/analytics/GeographyServerPage.tsx', import.meta.url), 'utf8');
+
+  assert.match(route, /isV5GeographyBackendEnabled \? <GeographyServerPage \/> : <LocalGeographyPage \/>/u);
+  assert.doesNotMatch(serverPage, /data\/store/u);
+  for (const loader of ['loadGeographyFilterOptions', 'loadGeographySummary', 'loadGeographySeries', 'loadGeographyLocations', 'loadGeographyProductLeaders']) {
+    assert.match(serverPage, new RegExp(`${loader}\\(`, 'u'));
+  }
+});
