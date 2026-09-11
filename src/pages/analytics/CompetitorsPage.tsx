@@ -11,6 +11,8 @@ import { competitorsHelp } from './analyticsHelpContent';
 import CompetitorOverviewDynamics from './CompetitorOverviewDynamics';
 import CompetitorStockDistribution from './CompetitorStockDistribution';
 import CompetitorTopDynamics from './CompetitorTopDynamics';
+import CompetitorsServerPage from './CompetitorsServerPage';
+import { isV5CompetitorBackendEnabled } from '../../features/competitors/competitorData';
 
 const nf = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 const money = (value: number) => `${new Intl.NumberFormat('ru-RU', { notation: value >= 1_000_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value || 0)} ₽`;
@@ -52,7 +54,7 @@ const change = (values: number[], percentagePoints = false) => {
   return { value: delta, label: `${delta > 0 ? '+' : ''}${nf.format(delta)}%` };
 };
 
-export default function CompetitorsPage() {
+function LocalCompetitorsPage() {
   useSyncExternalStore(subscribe, getVersion);
   const funnel = getCompetitorFunnel(); const search = getCompetitorSearch(); const stocks = getCompetitorStocks(); const positions = getCompetitorPositions(); const products = getProducts();
   const dates = useMemo(() => [...new Set(funnel.map(row => row.date))].sort(), [funnel]);
@@ -123,4 +125,8 @@ export default function CompetitorsPage() {
       <section className="competitors-secondary-grid"><article className="competitors-section"><header><div><span>ПОИСКОВЫЙ СПРОС</span><h2>Крупнейшие запросы</h2></div></header><div className="competitor-mini-list">{queryLeaders.map(row => <div key={row.query}><strong>{row.query}</strong><span>{row.articles} карточек</span><b>{nf.format(row.requests)}</b><small className={row.requests >= row.requestsPrevious ? 'positive' : 'negative'}>{row.requestsPrevious ? `${row.requests >= row.requestsPrevious ? '+' : ''}${nf.format((row.requests - row.requestsPrevious) / row.requestsPrevious * 100)}%` : 'нет базы'}</small></div>)}</div></article><article className="competitors-section"><header><div><span>ОСТАТКИ</span><h2>Минимальное покрытие</h2></div></header><div className="competitor-mini-list">{lowStock.map(row => <div key={row.article}><strong>{row.brand} · {row.article}</strong><span>{row.warehouses ? `${row.warehouses} складов` : 'агрегат маркетплейса'}</span><b>{nf.format(row.coverage)} дн.</b><small>{nf.format(row.stock)} шт.</small></div>)}</div></article></section>
     </>}
   </section>;
+}
+
+export default function CompetitorsPage() {
+  return isV5CompetitorBackendEnabled ? <CompetitorsServerPage /> : <LocalCompetitorsPage />;
 }

@@ -35,6 +35,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260910016000_v5_geography_cabinet_versions.sql',
     '20260910017000_v5_geography_import.sql',
     '20260910018000_v5_geography_read_api.sql',
+    '20260911019000_v5_import_product_resolution.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -455,6 +456,23 @@ test('geography import retains its source and publishes one canonical cabinet ve
   assert.doesNotMatch(smoke, /commit;/iu);
 });
 
+test('geography import resolves aliases and creates missing products without a bootstrap catalog', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260911019000_v5_import_product_resolution.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/geography_import_smoke.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'core.canonical_seller_sku',
+    'core.resolve_or_create_import_product',
+    "'Без склейки'",
+    "'source_seller_sku'",
+    "'products_created'",
+    "'schema_version', '20260911019000'",
+  ]) assert.ok(sql.includes(fragment), `missing import-driven product contract: ${fragment}`);
+  assert.match(sql, /v_non_resolvable_errors\s*>\s*0/iu);
+  assert.match(sql, /product\.source_batch_id\s*=\s*p_batch_id/iu);
+  assert.match(smoke, /missing product was not created from geography import/iu);
+  assert.match(smoke, /raw seller alias was not preserved/iu);
+});
+
 test('geography read API bounds filters, series, locations and product leaders', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260910018000_v5_geography_read_api.sql', import.meta.url), 'utf8');
   const smoke = readFileSync(new URL('../supabase/tests/geography_read_smoke.sql', import.meta.url), 'utf8');
@@ -500,6 +518,7 @@ test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   assert.match(buildScript, /VITE_APP_BASE:\s*'\/Analytics\/v5\/'/u);
   assert.match(buildScript, /VITE_APP_ENV:\s*'v5-development'/u);
   assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_COMPETITORS_BACKEND_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED:\s*'false'/u);
   assert.match(workflow, /keep_files:\s*true/iu);

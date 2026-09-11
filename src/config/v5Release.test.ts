@@ -32,3 +32,14 @@ test('V5 geography route uses the isolated server page without a local data fall
     assert.match(serverPage, new RegExp(`${loader}\\(`, 'u'));
   }
 });
+
+test('V5 competitors route uses the isolated server page without a local data fallback', () => {
+  const route = readFileSync(new URL('../pages/analytics/CompetitorsPage.tsx', import.meta.url), 'utf8');
+  const serverPage = readFileSync(new URL('../pages/analytics/CompetitorsServerPage.tsx', import.meta.url), 'utf8');
+
+  assert.match(route, /isV5CompetitorBackendEnabled \? <CompetitorsServerPage \/> : <LocalCompetitorsPage \/>/u);
+  assert.doesNotMatch(serverPage, /data\/store/u);
+  for (const loader of ['loadV5CompetitorFilters', 'loadV5CompetitorOverview', 'loadV5CompetitorBrands', 'loadV5CompetitorArticles', 'loadV5CompetitorQueries', 'loadV5CompetitorStock', 'loadV5CompetitorTopSummary', 'loadV5CompetitorTopMovements']) {
+    assert.match(serverPage, new RegExp(`${loader}\\(`, 'u'));
+  }
+});

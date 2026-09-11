@@ -10,16 +10,13 @@ do $$
 declare
   v_user_id uuid;
   v_cabinet_id uuid := gen_random_uuid();
-  v_product_id uuid := gen_random_uuid();
 begin
   select access.user_id into strict v_user_id from app.user_access access
   where access.access_role = 'admin' and access.is_active;
   perform set_config('request.jwt.claim.sub', v_user_id::text, true);
   perform set_config('request.jwt.claim.role', 'authenticated', true);
   insert into core.cabinets (id, external_key, name) values (v_cabinet_id, 'geography-import-smoke', 'Geography import smoke');
-  insert into core.products (id, cabinet_id, external_key, seller_sku, wb_sku, name, data_source)
-  values (v_product_id, v_cabinet_id, 'geography-import-product', 'GEO-SELLER', '900001', 'Geography product', 'seed');
-  insert into geography_import_smoke_ids values ('cabinet', v_cabinet_id), ('product', v_product_id);
+  insert into geography_import_smoke_ids values ('cabinet', v_cabinet_id);
 end
 $$;
 
@@ -46,7 +43,7 @@ begin
 
   perform public.v5_geography_stage_rows(v_batch_id, jsonb_build_array(
     jsonb_build_object('row_number', 2, 'payload', jsonb_build_object(
-      'date', '2026-08-10', 'seller_sku', 'GEO-SELLER', 'wb_sku', '900001',
+      'date', '2026-08-10', 'seller_sku', 'GEO-SELLER.0', 'wb_sku', '900001',
       'region', 'Центральный', 'area', ' Москва ', 'city', ' Москва ', 'delivery_hours', 24,
       'orders_total', 10, 'product_local_orders', 6, 'product_nonlocal_orders', 4,
       'wb_local_orders', 3, 'wb_nonlocal_orders', 2, 'marketplace_local_orders', 3, 'marketplace_nonlocal_orders', 2
@@ -71,7 +68,13 @@ begin
     or (v_result ->> 'replaced_duplicate_rows')::integer <> 1
     or v_result ->> 'period_start' <> '2026-08-10'
     or v_result ->> 'period_end' <> '2026-08-11'
+    or (v_result ->> 'products_created')::integer <> 1
+    or (v_result ->> 'products_resolved')::integer <> 1
   then raise exception 'Valid geography publish failed: %', v_result; end if;
+  insert into geography_import_smoke_ids
+  select 'product', product.id from core.products product
+  where product.cabinet_id = v_cabinet_id and product.seller_sku = 'GEO-SELLER';
+  if not found then raise exception 'Missing product was not created from geography import'; end if;
   insert into geography_import_smoke_ids values ('valid_batch', v_batch_id);
 end
 $$;
@@ -82,6 +85,17 @@ do $$
 declare
   v_batch_id uuid := (select value from geography_import_smoke_ids where label = 'valid_batch');
 begin
+  if not exists (
+    select 1 from core.product_aliases alias
+    where alias.product_id = (select value from geography_import_smoke_ids where label = 'product')
+      and alias.alias_value = 'GEO-SELLER.0'
+  ) then raise exception 'Raw seller alias was not preserved'; end if;
+  if not exists (
+    select 1 from core.group_membership_versions membership
+    join core.product_groups product_group on product_group.id = membership.group_id
+    where membership.product_id = (select value from geography_import_smoke_ids where label = 'product')
+      and product_group.is_ungrouped and product_group.name = 'Без склейки'
+  ) then raise exception 'Created product was not assigned to the ungrouped bucket'; end if;
   if not exists (
     select 1 from analytics.geography_order_versions row_data
     where row_data.batch_id = v_batch_id and row_data.normalized_area = 'Москва'
