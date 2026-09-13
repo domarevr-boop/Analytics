@@ -503,7 +503,10 @@ test('geography Import UI is gated and its real control-file smoke always rolls 
   assert.match(client, /v5_geography_create_batch/iu);
   assert.match(client, /v5_geography_stage_rows/iu);
   assert.match(parser, /GEOGRAPHY_MAX_ROWS = 250_000/u);
+  assert.match(smoke, /productPairs\.set\(key, \{ seller_sku: sellerSku, wb_sku: wbSku \}\)/u);
   assert.match(smoke, /v5_geography_publish_batch/iu);
+  assert.match(smoke, /v5_geography_snapshot_bounds\(\)/iu);
+  assert.doesNotMatch(smoke, /v5_geography_snapshot_bounds\(v_cabinet_id\)/iu);
   assert.match(smoke, /v5_geography_summary/iu);
   assert.match(smoke, /transaction_will_rollback/iu);
   assert.match(smoke, /rollback;/iu);

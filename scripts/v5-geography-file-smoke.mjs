@@ -37,11 +37,11 @@ for (const row of workbook.rows) {
   const wbSku = String(row.wb_sku || '').trim();
   const key = sellerSku || `wb:${wbSku}`;
   const previous = productPairs.get(key);
-  if (previous && previous.wbSku !== wbSku) fail('one seller SKU points to multiple WB SKU values');
-  productPairs.set(key, { sellerSku, wbSku });
+  if (previous && previous.wb_sku !== wbSku) fail('one seller SKU points to multiple WB SKU values');
+  productPairs.set(key, { seller_sku: sellerSku, wb_sku: wbSku });
 }
 const products = [...productPairs.values()];
-if (new Set(products.map(row => row.wbSku).filter(Boolean)).size !== products.filter(row => row.wbSku).length) {
+if (new Set(products.map(row => row.wb_sku).filter(Boolean)).size !== products.filter(row => row.wb_sku).length) {
   fail('one WB SKU points to multiple seller SKU values');
 }
 
@@ -123,8 +123,8 @@ begin
     or v_result ->> 'period_end' <> '${workbook.dateEnd}'
   then raise exception 'Real geography file publication assertion failed: %', v_result; end if;
 
-  v_bounds := public.v5_geography_snapshot_bounds(v_cabinet_id);
-  if v_bounds ->> 'batch_id' <> v_batch_id::text
+  v_bounds := public.v5_geography_snapshot_bounds();
+  if not (v_bounds -> 'batch_ids' ? v_batch_id::text)
     or (v_bounds ->> 'row_count')::integer <> ${stagedRows.length}
     or v_bounds ->> 'min_date' <> '${workbook.dateStart}'
     or v_bounds ->> 'max_date' <> '${workbook.dateEnd}'
