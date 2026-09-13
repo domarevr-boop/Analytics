@@ -94,7 +94,7 @@ function readNumber(value: unknown, field: string, nullable = false): number | n
 function readCount(value: unknown, field: string): number {
   const parsed = readNumber(value, field);
   if (!Number.isSafeInteger(parsed)) throw new Error(`V5 «География»: ${field} должен быть целым числом`);
-  return parsed;
+  return parsed as number;
 }
 
 function readStringList(value: unknown, field: string): string[] {

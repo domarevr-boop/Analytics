@@ -36,6 +36,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260910017000_v5_geography_import.sql',
     '20260910018000_v5_geography_read_api.sql',
     '20260911019000_v5_import_product_resolution.sql',
+    '20260913020000_v5_entry_points.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -507,6 +508,33 @@ test('geography Import UI is gated and its real control-file smoke always rolls 
   assert.match(smoke, /transaction_will_rollback/iu);
   assert.match(smoke, /rollback;/iu);
   assert.match(exampleEnv, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED=false/iu);
+});
+
+test('entry points preserves V4 traffic grain behind import-driven products and bounded RPCs', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260913020000_v5_entry_points.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/entry_points_smoke.sql', import.meta.url), 'utf8');
+  const importClient = readFileSync(new URL('../src/features/entryPoints/entryPointsImport.ts', import.meta.url), 'utf8');
+  const readClient = readFileSync(new URL('../src/features/entryPoints/entryPointsData.ts', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(sql, /create table analytics\.entry_point_versions/iu);
+  assert.match(sql, /primary key \(batch_id, date, product_id, section, entry_point\)/iu);
+  assert.match(sql, /core\.resolve_or_create_import_product/iu);
+  assert.match(sql, /v5_entry_points_publish_batch/iu);
+  assert.match(sql, /v5_entry_points_summary/iu);
+  assert.match(sql, /v5_entry_points_series/iu);
+  assert.match(sql, /v5_entry_points_matrix/iu);
+  assert.match(sql, /v5_entry_points_product_leaders/iu);
+  assert.match(sql, /p_end - p_start > 731/iu);
+  assert.match(sql, /p_limit > 200/iu);
+  assert.match(sql, /'schema_version', '20260913020000'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /invalid_rows_do_not_create_products/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+  assert.match(importClient, /VITE_V5_ENTRY_POINTS_IMPORT_ENABLED === 'true'/u);
+  assert.match(readClient, /VITE_V5_ENTRY_POINTS_BACKEND_ENABLED === 'true'/u);
+  assert.match(exampleEnv, /VITE_V5_ENTRY_POINTS_IMPORT_ENABLED=false/iu);
+  assert.match(exampleEnv, /VITE_V5_ENTRY_POINTS_BACKEND_ENABLED=false/iu);
 });
 
 test('V5 staging deployment is isolated under the v5 subdirectory', () => {

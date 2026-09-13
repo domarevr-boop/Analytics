@@ -40,6 +40,14 @@ import {
   loadGeographyImportCabinets,
 } from '../features/geography/geographyImport';
 import type { GeographyImportResult } from '../features/geography/geographyImport';
+import { parseEntryPointsFileInWorker } from '../features/entryPoints/entryPointsImportParser';
+import type { ParsedEntryPointsFile } from '../features/entryPoints/entryPointsImportParser';
+import {
+  importEntryPointsToSupabase,
+  isV5EntryPointsImportEnabled,
+  loadEntryPointsImportCabinets,
+} from '../features/entryPoints/entryPointsImport';
+import type { EntryPointsImportResult } from '../features/entryPoints/entryPointsImport';
 import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
 import {
   isV5DirectoryBootstrapEnabled,
@@ -123,9 +131,13 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [competitorPreview, setCompetitorPreview] = useState<CompetitorWorkbookData | null>(null);
   const [competitorServerPreview, setCompetitorServerPreview] = useState<ParsedCompetitorFile | null>(null);
   const [geographyServerPreview, setGeographyServerPreview] = useState<ParsedGeographyFile | null>(null);
+  const [entryPointsServerPreview, setEntryPointsServerPreview] = useState<ParsedEntryPointsFile | null>(null);
   const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
   const [geographyCabinetId, setGeographyCabinetId] = useState('');
   const [geographyCabinetError, setGeographyCabinetError] = useState('');
+  const [entryPointsCabinets, setEntryPointsCabinets] = useState<V5DirectoryDimension[]>([]);
+  const [entryPointsCabinetId, setEntryPointsCabinetId] = useState('');
+  const [entryPointsCabinetError, setEntryPointsCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
@@ -133,6 +145,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [marketImportHistory, setMarketImportHistory] = useState<MarketImportHistoryRow[]>([]);
   const [latestCompetitorImport, setLatestCompetitorImport] = useState<CompetitorImportResult | null>(null);
   const [latestGeographyImport, setLatestGeographyImport] = useState<GeographyImportResult | null>(null);
+  const [latestEntryPointsImport, setLatestEntryPointsImport] = useState<EntryPointsImportResult | null>(null);
   const [competitorImportHistory, setCompetitorImportHistory] = useState<CompetitorImportHistoryRow[]>([]);
   const [competitorErrors, setCompetitorErrors] = useState<CompetitorBatchErrorRow[]>([]);
   const [competitorErrorBatchId, setCompetitorErrorBatchId] = useState('');
@@ -167,6 +180,15 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         })
         .catch(error => setGeographyCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
     }
+    if (isV5EntryPointsImportEnabled) {
+      void loadEntryPointsImportCabinets()
+        .then(cabinets => {
+          setEntryPointsCabinets(cabinets);
+          setEntryPointsCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
+          setEntryPointsCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5. Первый импорт может создать товары только внутри существующего кабинета.');
+        })
+        .catch(error => setEntryPointsCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
+    }
   }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -176,6 +198,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setMarketParseContext(null);
     setCompetitorServerPreview(null);
     setGeographyServerPreview(null);
+    setEntryPointsServerPreview(null);
     setCompetitorPreview(null);
     setProgress(`Чтение ${file.name}...`);
     try {
@@ -204,6 +227,16 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a geography workbook:', error);
         }
       }
+      if (ext === 'xlsx' && isV5EntryPointsImportEnabled) {
+        try {
+          const entryPointsData = await parseEntryPointsFileInWorker(file);
+          setEntryPointsServerPreview(entryPointsData);
+          setSelectedFile(file);
+          return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not an entry points workbook:', error);
+        }
+      }
       if (ext === 'xlsx' && isV5CompetitorImportEnabled) {
         try {
           const competitorData = await parseCompetitorFileInWorker(file);
@@ -215,7 +248,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
         }
       }
-      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ' и «География заказов» (.xlsx)' : ''}.`);
+      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ' и «Точки входа» (.xlsx)' : ''}.`);
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -239,6 +272,38 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setProgress('');
     }
   }, [serverOnly]);
+
+  const handleV5EntryPointsImport = useCallback(async () => {
+    if (!selectedFile || !entryPointsServerPreview || !entryPointsCabinetId || importRunningRef.current) return;
+    importRunningRef.current = true;
+    setLoading(true);
+    setProgress('Повторная проверка отчёта точек входа...');
+    try {
+      const parsedWorkbook = await parseEntryPointsFileInWorker(selectedFile);
+      const result = await importEntryPointsToSupabase(selectedFile, entryPointsCabinetId, parsedWorkbook, current => {
+        const stage = current.stage === 'hashing' ? 'Контрольная сумма'
+          : current.stage === 'uploading' ? 'Сохранение исходника'
+            : current.stage === 'staging' ? 'Передача строк точек входа' : 'Серверная проверка и публикация';
+        setProgress(`${stage}: ${current.processed}/${current.total}`);
+      });
+      setLatestEntryPointsImport(result);
+      if (result.status === 'failed') {
+        alert(`Импорт «Точек входа» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Текущая версия кабинета не изменена.`);
+      } else if (result.duplicate) {
+        alert('Этот файл «Точек входа» уже опубликован для выбранного кабинета V5. Повторная версия не создавалась.');
+      } else {
+        alert(`Импорт «Точек входа» опубликован в V5. Строк: ${result.canonicalRows}. Товаров создано: ${result.productsCreated}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Точек входа»');
+    } finally {
+      importRunningRef.current = false;
+      setLoading(false);
+      setProgress('');
+      setEntryPointsServerPreview(null);
+      setSelectedFile(null);
+    }
+  }, [selectedFile, entryPointsServerPreview, entryPointsCabinetId]);
 
   const handleV5GeographyImport = useCallback(async () => {
     if (!selectedFile || !geographyServerPreview || !geographyCabinetId || importRunningRef.current) return;
@@ -622,7 +687,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
       <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly
-        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ' и «География заказов»' : ''} в V5.`
+        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ', «География заказов»' : ''}${isV5EntryPointsImportEnabled ? ' и «Точки входа»' : ''} в V5.`
         : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {isV5DirectoryBootstrapEnvironment && !serverOnly && (
         <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">
@@ -711,6 +776,30 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           </div>
         </div>
       )}
+      {entryPointsServerPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header">
+                <div className="import-mapper-header-info"><h3>Серверный импорт точек входа: {selectedFile?.name}</h3><span className="import-mapper-summary">Лист «{entryPointsServerPreview.sheetName}» распознан безопасным parser V5</span></div>
+                <span className="import-mapper-date"><label htmlFor="entry-points-cabinet">Кабинет:</label><select id="entry-points-cabinet" className="daterange-input" value={entryPointsCabinetId} onChange={event => setEntryPointsCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{entryPointsCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+              </div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{entryPointsServerPreview.dateStart || 'требует проверки'} — {entryPointsServerPreview.dateEnd || 'требует проверки'}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Строк в файле</span><strong>{entryPointsServerPreview.inputRows}</strong><small>до нормализации</small></article>
+                  <article><span>К публикации</span><strong>{entryPointsServerPreview.rows.length}</strong><small>по дневному зерну V4</small></article>
+                  <article><span>Заменено повторов</span><strong>{entryPointsServerPreview.replacedDuplicateRows}</strong><small>последняя строка ключа</small></article>
+                  <article><span>Кабинет</span><strong>{entryPointsCabinetId ? 'Выбран' : 'Не выбран'}</strong><small>товары разрешаются импортом</small></article>
+                </div>
+                {entryPointsCabinetError && <p className="import-mapper-error">{entryPointsCabinetError}</p>}
+                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер проверит дату и четыре абсолютные метрики, разрешит или создаст товары по SKU/WB ID/алиасам и атомарно заменит текущую версию кабинета. Денежные показатели появятся после серверного переноса воронки и рентабельности.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setEntryPointsServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !entryPointsCabinetId || Boolean(entryPointsCabinetError)} onClick={() => void handleV5EntryPointsImport()}>Опубликовать точки входа в V5</button></div>
+            </div>
+          </div>
+        </div>
+      )}
       {!serverOnly && competitorPreview && !competitorServerPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
@@ -763,7 +852,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         </div>
         <div className="dropzone-hint">
           {serverOnly
-            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}`
+            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}`
             : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
@@ -832,6 +921,20 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td>{formatDate(latestGeographyImport.importedAt)}</td>
               <td>{latestGeographyImport.periodStart ? `${latestGeographyImport.periodStart} — ${latestGeographyImport.periodEnd || latestGeographyImport.periodStart}` : '—'}</td>
               <td>{latestGeographyImport.inputRows}</td><td>{latestGeographyImport.acceptedRows}</td><td>{latestGeographyImport.rejectedRows}</td><td>{latestGeographyImport.canonicalRows}</td><td>{latestGeographyImport.replacedDuplicateRows}</td>
+            </tr></tbody>
+          </table></div>
+        </AnalyticsPanel>
+      )}
+
+      {latestEntryPointsImport && (
+        <AnalyticsPanel className="import-log import-market-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур V5" title="Текущий импорт «Точек входа»" description={latestEntryPointsImport.fileName} controls={<span>{latestEntryPointsImport.status === 'published' ? 'Опубликован' : 'Отклонён'}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Дата</th><th>Период</th><th>Исходных строк</th><th>Принято</th><th>Отклонено</th><th>Итоговых строк</th><th>Новых товаров</th></tr></thead>
+            <tbody><tr>
+              <td>{formatDate(latestEntryPointsImport.importedAt)}</td>
+              <td>{latestEntryPointsImport.periodStart ? `${latestEntryPointsImport.periodStart} — ${latestEntryPointsImport.periodEnd || latestEntryPointsImport.periodStart}` : '—'}</td>
+              <td>{latestEntryPointsImport.inputRows}</td><td>{latestEntryPointsImport.acceptedRows}</td><td>{latestEntryPointsImport.rejectedRows}</td><td>{latestEntryPointsImport.canonicalRows}</td><td>{latestEntryPointsImport.productsCreated}</td>
             </tr></tbody>
           </table></div>
         </AnalyticsPanel>

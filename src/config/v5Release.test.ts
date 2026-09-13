@@ -43,3 +43,13 @@ test('V5 competitors route uses the isolated server page without a local data fa
     assert.match(serverPage, new RegExp(`${loader}\\(`, 'u'));
   }
 });
+
+test('V5 entry points route keeps the server page isolated from the local store', () => {
+  const route = readFileSync(new URL('../pages/analytics/EntryPointsPage.tsx', import.meta.url), 'utf8');
+  const serverPage = readFileSync(new URL('../pages/analytics/EntryPointsServerPage.tsx', import.meta.url), 'utf8');
+  assert.match(route, /isV5EntryPointsBackendEnabled/u);
+  assert.match(route, /EntryPointsServerPage/u);
+  assert.match(serverPage, /loadEntryPointsSummary/u);
+  assert.match(serverPage, /loadEntryPointsMatrix/u);
+  assert.doesNotMatch(serverPage, /data\/store/u);
+});
