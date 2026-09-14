@@ -134,6 +134,20 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
 });
 
+test('profitability migration audit keeps gross and net profit semantics separate', () => {
+  const audit = readFileSync(new URL('./v5-profitability-audit-core.mjs', import.meta.url), 'utf8');
+  const parser = readFileSync(new URL('../src/features/profitability/profitabilityImportCore.ts', import.meta.url), 'utf8');
+  const contract = readFileSync(new URL('../docs/V5_PROFITABILITY_MIGRATION.md', import.meta.url), 'utf8');
+  assert.match(audit, /rowsWithoutProfitabilityAtStart/u);
+  assert.match(audit, /fixedExpenseBackupCoverage: 'not_in_v4_data_snapshot'/u);
+  assert.doesNotMatch(audit, /console\.log/u);
+  for (const field of ['revenue', 'cost', 'agent_fee', 'logistics_cost', 'marketing_cost', 'storage_cost', 'reported_gross_profit', 'reported_gross_margin']) assert.match(parser, new RegExp(field, 'u'));
+  assert.match(parser, /grossProfit = revenue - \['cost', 'agent_fee', 'logistics_cost', 'marketing_cost', 'storage_cost'\]/u);
+  assert.match(contract, /actual_profit.*валов/isu);
+  assert.match(contract, /Отсутствие значения означает «не задано», а не автоматически 0%/u);
+  assert.match(contract, /не суммируются и не смешиваются/iu);
+});
+
 test('access management requires an existing administrator and keeps bootstrap private', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260906001000_v5_access_management.sql', import.meta.url), 'utf8');
   for (const fragment of [

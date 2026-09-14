@@ -335,6 +335,19 @@ export async function readV4BackupFunnel(filePath) {
   };
 }
 
+export async function readV4BackupProfitability(filePath) {
+  const result = await scanV4Backup(filePath, true, ['metrics', 'profitability', 'importLogs']);
+  return {
+    version: result.version,
+    exportedAt: result.exportedAt,
+    sizeBytes: result.sizeBytes,
+    products: result.catalog.products,
+    metrics: result.catalog.metrics,
+    profitability: result.catalog.profitability,
+    importLogs: result.catalog.importLogs,
+  };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const filePath = process.argv[2];
   if (!filePath) {
