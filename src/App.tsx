@@ -25,7 +25,7 @@ import V5AccessAdminPage from './components/V5AccessAdminPage';
 import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
-import SearchPhrasesPage from './pages/analytics/SearchPhrasesPage';
+import SearchPhrasesPage from './pages/analytics/SearchPhrasesRoute';
 import MarketPage from './pages/analytics/MarketPage';
 import GeographyPage from './pages/analytics/GeographyPage';
 import ClientExperiencePage from './pages/analytics/ClientExperiencePage';

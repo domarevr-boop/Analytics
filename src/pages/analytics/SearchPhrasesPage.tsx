@@ -79,7 +79,7 @@ function Sparkline({ values, color = '#2563EB' }: { values: number[]; color?: st
   return <svg className="search-sparkline" viewBox="0 0 68 27" aria-hidden="true"><polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-export default function SearchPhrasesPage() {
+export function SearchPhrasesLocalPage() {
   useSyncExternalStore(subscribe, getVersion);
   const records = getSearchQueries();
   const marketRecords = getMarketDynamics();

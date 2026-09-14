@@ -37,6 +37,8 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260910018000_v5_geography_read_api.sql',
     '20260911019000_v5_import_product_resolution.sql',
     '20260913020000_v5_entry_points.sql',
+    '20260913021000_v5_search_queries.sql',
+    '20260913022000_v5_search_queries_rpc_fix.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -540,6 +542,37 @@ test('entry points preserves V4 traffic grain behind import-driven products and 
   assert.match(exampleEnv, /VITE_V5_ENTRY_POINTS_BACKEND_ENABLED=false/iu);
 });
 
+test('search queries preserves V4 grain and calculations behind bounded server RPCs', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260913021000_v5_search_queries.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/search_queries_smoke.sql', import.meta.url), 'utf8');
+  const importClient = readFileSync(new URL('../src/features/searchQueries/searchQueriesImport.ts', import.meta.url), 'utf8');
+  const readClient = readFileSync(new URL('../src/features/searchQueries/searchQueriesData.ts', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../src/pages/analytics/SearchPhrasesRoute.tsx', import.meta.url), 'utf8');
+  const serverPage = readFileSync(new URL('../src/pages/analytics/SearchPhrasesServerPage.tsx', import.meta.url), 'utf8');
+  for (const fragment of [
+    'create table analytics.search_query_versions',
+    'primary key (batch_id, date, query, category)',
+    'create or replace view analytics.search_queries_current',
+    'v5_search_queries_publish_batch',
+    'v5_search_queries_summary',
+    'v5_search_queries_series',
+    'v5_search_queries_rows',
+    'p_limit > 1000',
+    "'schema_version', '20260913021000'",
+  ]) assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing search query contract: ${fragment}`);
+  assert.match(sql, /data\.orders \* coalesce\(nullif\(market\.reported_market_avg_check/iu);
+  assert.match(sql, /lower\(entry\.section\) like '%поиск%'/iu);
+  assert.match(smoke, /^begin;/iu);
+  assert.match(smoke, /search_queries_summary_formula_failed/iu);
+  assert.match(smoke, /transaction_will_rollback/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+  assert.match(importClient, /VITE_V5_SEARCH_QUERIES_IMPORT_ENABLED === 'true'/u);
+  assert.match(readClient, /VITE_V5_SEARCH_QUERIES_BACKEND_ENABLED === 'true'/u);
+  assert.match(route, /isV5SearchQueriesBackendEnabled \? <SearchPhrasesServerPage/u);
+  assert.doesNotMatch(serverPage, /\.\.\/\.\.\/data\/store/u);
+});
+
 test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
@@ -551,6 +584,8 @@ test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_COMPETITORS_BACKEND_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_SEARCH_QUERIES_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_SEARCH_QUERIES_BACKEND_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED:\s*'false'/u);
   assert.match(workflow, /keep_files:\s*true/iu);
 });
