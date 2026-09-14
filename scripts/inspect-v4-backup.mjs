@@ -323,6 +323,18 @@ export async function readV4BackupGeography(filePath) {
   };
 }
 
+export async function readV4BackupFunnel(filePath) {
+  const result = await scanV4Backup(filePath, true, ['metrics', 'importLogs']);
+  return {
+    version: result.version,
+    exportedAt: result.exportedAt,
+    sizeBytes: result.sizeBytes,
+    products: result.catalog.products,
+    metrics: result.catalog.metrics,
+    importLogs: result.catalog.importLogs,
+  };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const filePath = process.argv[2];
   if (!filePath) {
