@@ -33,8 +33,28 @@ const totals = workbook.rows.reduce((sum, row) => ({
 const keyCount = new Set(workbook.rows.map(row => `${row.query}\u001f${row.category}`)).size;
 const fileBytes = await readFile(inputPath);
 const smokeHash = createHash('sha256').update(fileBytes).update('\0v5-search-query-smoke').digest('hex');
+const payloadFields = [
+  'date', 'query', 'category',
+  'requests', 'requests_previous', 'avg_daily_requests', 'avg_daily_requests_previous',
+  'card_clicks', 'card_clicks_previous', 'carts', 'carts_previous',
+  'cart_conversion', 'cart_conversion_previous', 'orders', 'orders_previous',
+  'order_conversion', 'order_conversion_previous', 'ordered_subjects',
+  'ordered_subjects_previous', 'products', 'products_previous',
+];
+const compactPayloadSql = payloadFields
+  .map((field, index) => `'${field}', compact_row -> ${index + 1}`)
+  .join(', ');
 const stageCalls = splitSearchQueriesRows(stagedRows)
-  .map(chunk => `perform public.v5_search_queries_stage_rows(v_batch_id, '${sqlString(JSON.stringify(chunk))}'::jsonb);`)
+  .map(chunk => {
+    const compactRows = chunk.map(row => [row.row_number, ...payloadFields.map(field => row.payload[field])]);
+    return `perform public.v5_search_queries_stage_rows(v_batch_id, (
+      select jsonb_agg(jsonb_build_object(
+        'row_number', compact_row -> 0,
+        'payload', jsonb_build_object(${compactPayloadSql})
+      ))
+      from jsonb_array_elements('${sqlString(JSON.stringify(compactRows))}'::jsonb) compact_row
+    ));`;
+  })
   .join('\n');
 
 const sql = `begin;

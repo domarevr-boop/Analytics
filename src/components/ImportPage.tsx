@@ -52,6 +52,8 @@ import { parseSearchQueriesFileInWorker } from '../features/searchQueries/search
 import type { ParsedSearchQueriesFile } from '../features/searchQueries/searchQueriesImportParser';
 import { importSearchQueriesToSupabase, isV5SearchQueriesImportEnabled } from '../features/searchQueries/searchQueriesImport';
 import type { SearchQueriesImportResult } from '../features/searchQueries/searchQueriesImport';
+import { parseFunnelFileInWorker, type ParsedFunnelFile } from '../features/funnel/funnelImportParser';
+import { importFunnelToSupabase, isV5FunnelImportEnabled, loadFunnelImportCabinets, type FunnelImportResult } from '../features/funnel/funnelImport';
 import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
 import {
   isV5DirectoryBootstrapEnabled,
@@ -137,12 +139,16 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [geographyServerPreview, setGeographyServerPreview] = useState<ParsedGeographyFile | null>(null);
   const [entryPointsServerPreview, setEntryPointsServerPreview] = useState<ParsedEntryPointsFile | null>(null);
   const [searchQueriesServerPreview, setSearchQueriesServerPreview] = useState<ParsedSearchQueriesFile | null>(null);
+  const [funnelServerPreview, setFunnelServerPreview] = useState<ParsedFunnelFile | null>(null);
   const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
   const [geographyCabinetId, setGeographyCabinetId] = useState('');
   const [geographyCabinetError, setGeographyCabinetError] = useState('');
   const [entryPointsCabinets, setEntryPointsCabinets] = useState<V5DirectoryDimension[]>([]);
   const [entryPointsCabinetId, setEntryPointsCabinetId] = useState('');
   const [entryPointsCabinetError, setEntryPointsCabinetError] = useState('');
+  const [funnelCabinets, setFunnelCabinets] = useState<V5DirectoryDimension[]>([]);
+  const [funnelCabinetId, setFunnelCabinetId] = useState('');
+  const [funnelCabinetError, setFunnelCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
@@ -152,6 +158,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [latestGeographyImport, setLatestGeographyImport] = useState<GeographyImportResult | null>(null);
   const [latestEntryPointsImport, setLatestEntryPointsImport] = useState<EntryPointsImportResult | null>(null);
   const [latestSearchQueriesImport, setLatestSearchQueriesImport] = useState<SearchQueriesImportResult | null>(null);
+  const [latestFunnelImport, setLatestFunnelImport] = useState<FunnelImportResult | null>(null);
   const [competitorImportHistory, setCompetitorImportHistory] = useState<CompetitorImportHistoryRow[]>([]);
   const [competitorErrors, setCompetitorErrors] = useState<CompetitorBatchErrorRow[]>([]);
   const [competitorErrorBatchId, setCompetitorErrorBatchId] = useState('');
@@ -195,6 +202,15 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         })
         .catch(error => setEntryPointsCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
     }
+    if (isV5FunnelImportEnabled) {
+      void loadFunnelImportCabinets()
+        .then(cabinets => {
+          setFunnelCabinets(cabinets);
+          setFunnelCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
+          setFunnelCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5.');
+        })
+        .catch(error => setFunnelCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
+    }
   }, [serverOnly]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -206,6 +222,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setGeographyServerPreview(null);
     setEntryPointsServerPreview(null);
     setSearchQueriesServerPreview(null);
+    setFunnelServerPreview(null);
     setCompetitorPreview(null);
     setProgress(`Чтение ${file.name}...`);
     try {
@@ -244,6 +261,22 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not an entry points workbook:', error);
         }
       }
+      if (ext === 'xlsx' && isV5FunnelImportEnabled) {
+        try {
+          const xway = await parseFunnelFileInWorker(file, 'xway');
+          if (xway.presentMetricFields.some(field => ['ad_orders_qty', 'ad_ordered_amount', 'ad_spend'].includes(field))) {
+            setFunnelServerPreview(xway); setSelectedFile(file); return;
+          }
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not an XWay workbook:', error);
+        }
+        try {
+          const funnel = await parseFunnelFileInWorker(file, 'wb_funnel');
+          setFunnelServerPreview(funnel); setSelectedFile(file); return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not a WB funnel workbook:', error);
+        }
+      }
       if (ext === 'xlsx' && isV5SearchQueriesImportEnabled) {
         try {
           const searchQueriesData = await parseSearchQueriesFileInWorker(file);
@@ -265,7 +298,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
         }
       }
-      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
+      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -289,6 +322,27 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setProgress('');
     }
   }, [serverOnly]);
+
+  const handleV5FunnelImport = useCallback(async () => {
+    if (!selectedFile || !funnelServerPreview || !funnelCabinetId || importRunningRef.current) return;
+    importRunningRef.current = true; setLoading(true); setProgress('Повторная проверка отчёта воронки...');
+    try {
+      const parsedWorkbook = await parseFunnelFileInWorker(selectedFile, funnelServerPreview.source);
+      const result = await importFunnelToSupabase(selectedFile, funnelCabinetId, parsedWorkbook, current => {
+        const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача строк воронки' : 'Серверная проверка и публикация';
+        setProgress(`${stage}: ${current.processed}/${current.total}`);
+      });
+      setLatestFunnelImport(result);
+      const label = result.source === 'xway' ? 'XWay' : 'WB Воронка';
+      if (result.status === 'failed') alert(`Импорт «${label}» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}.`);
+      else if (result.duplicate) alert(`Этот файл «${label}» уже опубликован для выбранного кабинета V5.`);
+      else alert(`Импорт «${label}» опубликован в V5. Строк: ${result.canonicalRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Воронки/рекламы»');
+    } finally {
+      importRunningRef.current = false; setLoading(false); setProgress(''); setFunnelServerPreview(null); setSelectedFile(null);
+    }
+  }, [selectedFile, funnelServerPreview, funnelCabinetId]);
 
   const handleV5EntryPointsImport = useCallback(async () => {
     if (!selectedFile || !entryPointsServerPreview || !entryPointsCabinetId || importRunningRef.current) return;
@@ -729,7 +783,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
       <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly
-        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ', «География заказов»' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа»' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы»' : ''} в V5.`
+        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ', «География заказов»' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа»' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы»' : ''} в V5.`
         : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {isV5DirectoryBootstrapEnvironment && !serverOnly && (
         <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">
@@ -842,6 +896,33 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           </div>
         </div>
       )}
+      {funnelServerPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header">
+                <div className="import-mapper-header-info">
+                  <h3>Серверный импорт {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронки WB'}: {selectedFile?.name}</h3>
+                  <span className="import-mapper-summary">Лист «{funnelServerPreview.sheetName}» распознан безопасным parser V5</span>
+                </div>
+                <span className="import-mapper-date"><label htmlFor="funnel-cabinet">Кабинет:</label><select id="funnel-cabinet" className="daterange-input" value={funnelCabinetId} onChange={event => setFunnelCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{funnelCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+              </div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{funnelServerPreview.dateStart || 'требует проверки'} — {funnelServerPreview.dateEnd || 'требует проверки'}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Строк в файле</span><strong>{funnelServerPreview.inputRows}</strong><small>до нормализации</small></article>
+                  <article><span>К публикации</span><strong>{funnelServerPreview.rows.length}</strong><small>дата + товар</small></article>
+                  <article><span>Объединено строк</span><strong>{funnelServerPreview.aggregatedRows}</strong><small>метрики суммируются</small></article>
+                  <article><span>Распознано метрик</span><strong>{funnelServerPreview.presentMetricFields.length}</strong><small>{funnelServerPreview.presentMetricFields.join(', ')}</small></article>
+                </div>
+                {funnelCabinetError && <p className="import-mapper-error">{funnelCabinetError}</p>}
+                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер разрешит товары по справочнику, проверит только присутствующие в файле метрики и атомарно наложит частичную версию источника. Для XWay «Orders qty» — количество рекламных заказов, «Orders rub» — их сумма; CPO рассчитывается как расход / количество заказов.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setFunnelServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !funnelCabinetId || Boolean(funnelCabinetError)} onClick={() => void handleV5FunnelImport()}>Опубликовать {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронку WB'} в V5</button></div>
+            </div>
+          </div>
+        </div>
+      )}
       {searchQueriesServerPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
@@ -914,7 +995,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         </div>
         <div className="dropzone-hint">
           {serverOnly
-            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ', «Поисковые запросы» (.xlsx)' : ''}`
+            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ', «Поисковые запросы» (.xlsx)' : ''}`
             : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
@@ -997,6 +1078,20 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               <td>{formatDate(latestEntryPointsImport.importedAt)}</td>
               <td>{latestEntryPointsImport.periodStart ? `${latestEntryPointsImport.periodStart} — ${latestEntryPointsImport.periodEnd || latestEntryPointsImport.periodStart}` : '—'}</td>
               <td>{latestEntryPointsImport.inputRows}</td><td>{latestEntryPointsImport.acceptedRows}</td><td>{latestEntryPointsImport.rejectedRows}</td><td>{latestEntryPointsImport.canonicalRows}</td><td>{latestEntryPointsImport.productsCreated}</td>
+            </tr></tbody>
+          </table></div>
+        </AnalyticsPanel>
+      )}
+
+      {latestFunnelImport && (
+        <AnalyticsPanel className="import-log import-market-latest" density="data">
+          <div className="import-section-head"><PanelHeader eyebrow="Серверный контур V5" title={`Текущий импорт «${latestFunnelImport.source === 'xway' ? 'XWay' : 'Воронки WB'}»`} description={latestFunnelImport.fileName} controls={<span>{latestFunnelImport.status === 'published' ? 'Опубликован' : 'Отклонён'}</span>} /></div>
+          <div className="import-table-wrap"><table className="import-table">
+            <thead><tr><th>Дата</th><th>Период</th><th>Исходных строк</th><th>Принято</th><th>Отклонено</th><th>Итоговых строк</th><th>Объединено</th><th>Новых товаров</th></tr></thead>
+            <tbody><tr>
+              <td>{formatDate(latestFunnelImport.importedAt)}</td>
+              <td>{latestFunnelImport.periodStart ? `${latestFunnelImport.periodStart} — ${latestFunnelImport.periodEnd || latestFunnelImport.periodStart}` : '—'}</td>
+              <td>{latestFunnelImport.inputRows}</td><td>{latestFunnelImport.acceptedRows}</td><td>{latestFunnelImport.rejectedRows}</td><td>{latestFunnelImport.canonicalRows}</td><td>{latestFunnelImport.aggregatedRows}</td><td>{latestFunnelImport.productsCreated}</td>
             </tr></tbody>
           </table></div>
         </AnalyticsPanel>

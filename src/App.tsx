@@ -6,6 +6,7 @@ import { getDefaultPeriods } from './data/mock';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
 import { fetchV5Access, getV5Capabilities, isV5PageAllowed, type V5Access } from './auth/v5Access';
 import { isV5MarketBackendEnabled } from './features/market/marketData';
+import { isV5FunnelBackendEnabled } from './features/funnel/funnelData';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
@@ -24,6 +25,7 @@ import AdminPage from './components/AdminPage';
 import V5AccessAdminPage from './components/V5AccessAdminPage';
 import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
+import FunnelServerPage from './pages/analytics/FunnelServerPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesRoute';
 import MarketPage from './pages/analytics/MarketPage';
@@ -424,7 +426,7 @@ function App() {
       ) : displayPage === 'product' && selectedProductId ? (
         <div className="page-content"><ProductOverviewPage productId={selectedProductId} onBack={closeProduct} /></div>
       ) : displayPage === 'funnel' ? (
-        <div className="page-content"><FunnelPage /></div>
+        <div className="page-content">{isV5FunnelBackendEnabled ? <FunnelServerPage /> : <FunnelPage />}</div>
       ) : displayPage === 'entry-points' ? (
         <div className="page-content"><EntryPointsPage /></div>
       ) : displayPage === 'search-phrases' ? (

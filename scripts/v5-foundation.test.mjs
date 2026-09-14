@@ -39,9 +39,99 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260913020000_v5_entry_points.sql',
     '20260913021000_v5_search_queries.sql',
     '20260913022000_v5_search_queries_rpc_fix.sql',
+    '20260914023000_v5_funnel_import.sql',
+    '20260914024000_v5_funnel_version_order.sql',
+    '20260914025000_v5_funnel_read_api.sql',
+    '20260914026000_v5_funnel_read_access_fix.sql',
+    '20260914027000_v5_funnel_bounded_read_fix.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
+});
+
+test('funnel import separates XWay quantity and money and preserves nullable patches', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260914023000_v5_funnel_import.sql', import.meta.url), 'utf8');
+  const ordering = readFileSync(new URL('../supabase/migrations/20260914024000_v5_funnel_version_order.sql', import.meta.url), 'utf8');
+  const readApi = readFileSync(new URL('../supabase/migrations/20260914025000_v5_funnel_read_api.sql', import.meta.url), 'utf8');
+  const accessFix = readFileSync(new URL('../supabase/migrations/20260914026000_v5_funnel_read_access_fix.sql', import.meta.url), 'utf8');
+  const boundedFix = readFileSync(new URL('../supabase/migrations/20260914027000_v5_funnel_bounded_read_fix.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/funnel_smoke.sql', import.meta.url), 'utf8');
+  for (const fragment of [
+    'create table analytics.funnel_metric_versions',
+    'public.v5_funnel_create_batch',
+    'public.v5_funnel_stage_rows',
+    'public.v5_funnel_publish_batch',
+    'public.v5_funnel_rollback_batch',
+    'core.resolve_or_create_import_product',
+    'app.v5_funnel_current',
+    'ad_orders_qty bigint',
+    'ad_ordered_amount numeric(20, 2)',
+    "source_code in ('wb_funnel', 'xway')",
+    "'schema_version', '20260914023000'",
+  ]) assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing funnel contract: ${fragment}`);
+  assert.match(sql, /jsonb_array_length\(p_rows\) > 500/iu);
+  assert.match(sql, /v_total_rows > 500000/iu);
+  assert.match(sql, /p_size_bytes > 26214400/iu);
+  assert.doesNotMatch(sql, /ad_spend\s*\/\s*ad_ordered_amount/iu);
+  assert.doesNotMatch(sql, /service_role\s*=/iu);
+  assert.match(ordering, /version_order bigint generated always as identity unique/iu);
+  assert.match(ordering, /order by version\.version_order desc/iu);
+  assert.match(ordering, /filter \(where version\.ad_orders_qty is not null\)/iu);
+  assert.match(ordering, /filter \(where version\.ad_ordered_amount is not null\)/iu);
+  assert.match(ordering, /'schema_version',\s*'20260914024000'/iu);
+  for (const rpc of ['v5_funnel_bounds', 'v5_funnel_filter_options', 'v5_funnel_summary', 'v5_funnel_series', 'v5_funnel_rows']) {
+    assert.match(readApi, new RegExp(`public\\.${rpc}`, 'iu'));
+  }
+  assert.match(readApi, /p_limit > 1000/iu);
+  assert.match(readApi, /p_offset > 100000/iu);
+  assert.match(readApi, /p_end - p_start > 731/iu);
+  assert.match(readApi, /version\.effective_date <= metric\.date/iu);
+  assert.match(readApi, /when 'cpo' then counted\.ad_spend \/ nullif\(counted\.ad_orders_qty, 0\)/iu);
+  assert.match(readApi, /'schema_version',\s*'20260914025000'/iu);
+  assert.match(accessFix, /where app\.can_access_cabinet\(metric\.cabinet_id\)/iu);
+  assert.match(accessFix, /revoke all on function app\.v5_funnel_current\(date, date\) from public, anon, authenticated/iu);
+  assert.match(accessFix, /'schema_version',\s*'20260914026000'/iu);
+  assert.match(boundedFix, /create or replace view analytics\.funnel_current_enriched/iu);
+  assert.match(boundedFix, /revoke all on analytics\.funnel_current_enriched from public, anon, authenticated/iu);
+  assert.match(boundedFix, /where base\.date between p_start and p_end and app\.can_access_cabinet\(base\.cabinet_id\)/iu);
+  assert.match(boundedFix, /p_limit > 1000/iu);
+  assert.match(boundedFix, /'schema_version',\s*'20260914027000'/iu);
+  assert.match(smoke, /nullable_patch_preserved/iu);
+  assert.match(smoke, /cpo_uses_order_quantity/iu);
+  assert.match(smoke, /public\.v5_funnel_rollback_batch/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
+});
+
+test('V5 funnel route has a gated server page without importing the local store', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/pages/analytics/FunnelServerPage.tsx', import.meta.url), 'utf8');
+  const client = readFileSync(new URL('../src/features/funnel/funnelData.ts', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(app, /isV5FunnelBackendEnabled \? <FunnelServerPage \/> : <FunnelPage \/>/u);
+  assert.doesNotMatch(page, /data\/store/iu);
+  for (const rpc of ['v5_funnel_bounds', 'v5_funnel_filter_options', 'v5_funnel_summary', 'v5_funnel_series', 'v5_funnel_rows']) assert.match(client, new RegExp(rpc, 'u'));
+  assert.match(client, /VITE_APP_ENV === 'v5-development'/u);
+  assert.match(client, /VITE_V5_FUNNEL_BACKEND_ENABLED === 'true'/u);
+  assert.match(exampleEnv, /VITE_V5_FUNNEL_BACKEND_ENABLED=false/u);
+});
+
+test('V5 funnel import is gated, worker-based and wired into the Import UI', () => {
+  const client = readFileSync(new URL('../src/features/funnel/funnelImport.ts', import.meta.url), 'utf8');
+  const parser = readFileSync(new URL('../src/features/funnel/funnelImportParser.ts', import.meta.url), 'utf8');
+  const worker = readFileSync(new URL('../src/features/funnel/funnelImport.worker.ts', import.meta.url), 'utf8');
+  const importPage = readFileSync(new URL('../src/components/ImportPage.tsx', import.meta.url), 'utf8');
+  const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
+  const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(client, /VITE_V5_FUNNEL_IMPORT_ENABLED === 'true'/u);
+  for (const rpc of ['v5_funnel_create_batch', 'v5_funnel_reset_staging', 'v5_funnel_stage_rows', 'v5_funnel_publish_batch']) assert.match(client, new RegExp(rpc, 'u'));
+  assert.match(parser, /new Worker\(new URL\('\.\/funnelImport\.worker\.ts'/u);
+  assert.match(worker, /extractFunnelWorkbook/u);
+  assert.match(importPage, /parseFunnelFileInWorker/u);
+  assert.match(importPage, /handleV5FunnelImport/u);
+  assert.match(importPage, /Orders qty.*Orders rub.*CPO/isu);
+  assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
 });
 
 test('access management requires an existing administrator and keeps bootstrap private', () => {
@@ -584,6 +674,7 @@ test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_COMPETITORS_BACKEND_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_GEOGRAPHY_IMPORT_ENABLED:\s*'true'/u);
+  assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_SEARCH_QUERIES_IMPORT_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_SEARCH_QUERIES_BACKEND_ENABLED:\s*'true'/u);
   assert.match(buildScript, /VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED:\s*'false'/u);
