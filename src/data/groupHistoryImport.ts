@@ -3,6 +3,7 @@ import { normalizeImportDate } from './dateUtils.ts';
 const MASS_CHANGE_MIN_COMMON_PRODUCTS = 20;
 const MASS_CHANGE_MIN_PRODUCTS = 20;
 const MASS_CHANGE_RATE = 0.15;
+const MASS_CHANGE_CONFIRMATION_RATE = 0.9;
 
 export interface PreparedGroupHistoryRow {
   sourceIndex: number;
@@ -17,7 +18,7 @@ export interface PreparedGroupHistoryRow {
 }
 
 export interface GroupHistorySnapshotAnomaly {
-  kind: 'mass_change' | 'cross_cabinet_singleton';
+  kind: 'mass_change' | 'cross_cabinet_singleton' | 'unconfirmed_transition';
   date: string;
   cabinetKey: string;
   previousDate?: string;
@@ -55,10 +56,13 @@ export function removeReplacedGroupHistorySnapshots<T extends { date: string; pr
   cabinetByProductId: Map<string, string>,
   incomingDates: Set<string>,
   incomingCabinetIds: Set<string>,
+  scopedProductIds: Set<string> = new Set(),
 ): T[] {
   return history.filter(row => {
+    if (!incomingDates.has(row.date)) return true;
+    if (scopedProductIds.has(row.product_id)) return false;
     const cabinetId = cabinetByProductId.get(row.product_id);
-    return !cabinetId || !incomingDates.has(row.date) || !incomingCabinetIds.has(cabinetId);
+    return !cabinetId || !incomingCabinetIds.has(cabinetId);
   });
 }
 
@@ -202,18 +206,32 @@ export function analyzeGroupHistoryImport(
   for (const [cabinetKey, availableDates] of cabinetDates) {
     let previousAcceptedDate = '';
     let previousState: Map<string, string> | null = null;
-    for (const date of [...availableDates].sort()) {
+    const sortedCabinetDates = [...availableDates].sort();
+    for (let dateIndex = 0; dateIndex < sortedCabinetDates.length; dateIndex++) {
+      const date = sortedCabinetDates[dateIndex];
       const snapshotRows = rowsBySnapshot.get(`${date}|${cabinetKey}`) || [];
       const state = new Map(snapshotRows.map(row => [row.identity, row.groupCode]));
       if (previousState) {
         const commonIdentities = [...state.keys()].filter(identity => previousState!.has(identity));
-        const changedProducts = commonIdentities.filter(identity => state.get(identity) !== previousState!.get(identity)).length;
+        const changedIdentities = commonIdentities.filter(identity => state.get(identity) !== previousState!.get(identity));
+        const changedProducts = changedIdentities.length;
         const changeRate = commonIdentities.length > 0 ? changedProducts / commonIdentities.length : 0;
         if (
           commonIdentities.length >= MASS_CHANGE_MIN_COMMON_PRODUCTS
           && changedProducts >= MASS_CHANGE_MIN_PRODUCTS
           && changeRate >= MASS_CHANGE_RATE
         ) {
+          const nextDate = sortedCabinetDates[dateIndex + 1];
+          const nextRows = nextDate ? rowsBySnapshot.get(`${nextDate}|${cabinetKey}`) || [] : [];
+          const nextState = new Map(nextRows.map(row => [row.identity, row.groupCode]));
+          const confirmedProducts = changedIdentities.filter(identity => nextState.get(identity) === state.get(identity)).length;
+          const confirmedByNextSnapshot = changedProducts > 0
+            && confirmedProducts / changedProducts >= MASS_CHANGE_CONFIRMATION_RATE;
+          if (confirmedByNextSnapshot) {
+            previousAcceptedDate = date;
+            previousState = state;
+            continue;
+          }
           const anomaly: GroupHistorySnapshotAnomaly = {
             kind: 'mass_change',
             date,
@@ -265,9 +283,47 @@ export function analyzeGroupHistoryImport(
     }
   }
 
+  const rowsByProduct = new Map<string, PreparedGroupHistoryRow[]>();
+  for (const row of rows) {
+    if (excludedRowIndexes.has(row.sourceIndex)) continue;
+    const productKey = `${row.cabinetKey}|${row.identity}`;
+    rowsByProduct.set(productKey, [...(rowsByProduct.get(productKey) || []), row]);
+  }
+  const unconfirmedBySnapshot = new Map<string, GroupHistorySnapshotAnomaly>();
+  for (const productRows of rowsByProduct.values()) {
+    const orderedRows = [...productRows].sort((left, right) => left.date.localeCompare(right.date));
+    let acceptedGroupCode = orderedRows[0]?.groupCode;
+    for (let index = 1; index < orderedRows.length; index++) {
+      const row = orderedRows[index];
+      if (row.groupCode === acceptedGroupCode) continue;
+      const nextRow = orderedRows[index + 1];
+      const confirmedByNextSnapshot = nextRow?.groupCode === row.groupCode;
+      if (!confirmedByNextSnapshot) {
+        const anomalyKey = `${row.date}|${row.cabinetKey}`;
+        const anomaly = unconfirmedBySnapshot.get(anomalyKey) || {
+          kind: 'unconfirmed_transition' as const,
+          date: row.date,
+          cabinetKey: row.cabinetKey,
+          changedProducts: 0,
+          rowIndexes: [],
+        };
+        anomaly.changedProducts = (anomaly.changedProducts || 0) + 1;
+        anomaly.rowIndexes.push(row.sourceIndex);
+        unconfirmedBySnapshot.set(anomalyKey, anomaly);
+        if (!options.acceptAnomalies) {
+          excludedRowIndexes.add(row.sourceIndex);
+          continue;
+        }
+      }
+      acceptedGroupCode = row.groupCode;
+    }
+  }
+  anomalies.push(...unconfirmedBySnapshot.values());
+
   if (anomalies.length > 0) {
     const massChanges = anomalies.filter(issue => issue.kind === 'mass_change');
     const singletonGroups = anomalies.filter(issue => issue.kind === 'cross_cabinet_singleton');
+    const unconfirmedTransitions = anomalies.filter(issue => issue.kind === 'unconfirmed_transition');
     if (massChanges.length > 0) {
       warnings.push(
         `Обнаружено ${massChanges.length} массовых изменений состава. `
@@ -278,6 +334,13 @@ export function analyzeGroupHistoryImport(
       warnings.push(
         `Обнаружено ${singletonGroups.length} одиночных появлений кода склейки из другого кабинета. `
         + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию эти строки будут пропущены.'),
+      );
+    }
+    if (unconfirmedTransitions.length > 0) {
+      const transitionCount = unconfirmedTransitions.reduce((sum, issue) => sum + (issue.changedProducts || 0), 0);
+      warnings.push(
+        `Обнаружено ${transitionCount} изменений, не подтверждённых следующим снимком. `
+        + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию они будут пропущены.'),
       );
     }
   }
@@ -293,8 +356,13 @@ export function analyzeGroupHistoryImport(
         `${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: изменилось ${anomaly.changedProducts} из `
         + `${anomaly.commonProducts} товаров (${Math.round((anomaly.changeRate || 0) * 1000) / 10}%).`,
       );
-    } else {
+    } else if (anomaly.kind === 'cross_cabinet_singleton') {
       warnings.push(`${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: подозрительный одиночный код ${anomaly.groupCode}.`);
+    } else {
+      warnings.push(
+        `${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: ${anomaly.changedProducts} изменений `
+        + 'не подтверждены следующим снимком.',
+      );
     }
   }
 

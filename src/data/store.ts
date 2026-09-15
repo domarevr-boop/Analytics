@@ -11,7 +11,7 @@ import { currentMembershipsFromHistory, importedGroupHistoryOnly, UNGROUPED_GROU
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
 import { getReportNetProfit } from './profitabilityCalculations';
 import { normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from './geographyHierarchy';
-import { analyzeGroupHistoryImport, removeReplacedGroupHistorySnapshots } from './groupHistoryImport';
+import { analyzeGroupHistoryImport, normalizeGroupHistoryIdentifier, removeReplacedGroupHistorySnapshots } from './groupHistoryImport';
 import type { GroupHistoryImportOptions, PreparedGroupHistoryRow } from './groupHistoryImport';
 
 let _version = 0;
@@ -1321,11 +1321,17 @@ export async function importMappedData(
         if (cabinetId) incomingCabinetIds.add(cabinetId);
       }
       const cabinetByProductId = new Map(_products.map(product => [product.id, product.cabinet_id]));
+      const importIdentifiers = new Set(analysis.rows.flatMap(row => [row.sku, row.wbSku]).filter(Boolean));
+      const scopedProductIds = new Set(_products
+        .filter(product => [product.sku, product.wb_sku, ...(product.aliases || [])]
+          .some(identifier => importIdentifiers.has(normalizeGroupHistoryIdentifier(identifier))))
+        .map(product => product.id));
       _groupHistory = removeReplacedGroupHistorySnapshots(
         _groupHistory,
         cabinetByProductId,
         incomingDates,
         incomingCabinetIds,
+        scopedProductIds,
       );
 
       const recordsByKey = new Map(_groupHistory.map(record => [`${record.date}|${record.product_id}`, record]));

@@ -44,8 +44,47 @@ test('imports a confirmed mass change', () => {
     ...snapshot('2026-09-20', 'Первый', '4', () => 'B'),
   ];
   const analysis = analyzeGroupHistoryImport(rows, undefined, undefined, { acceptAnomalies: true });
-  assert.equal(analysis.anomalies.length, 1);
+  assert.equal(analysis.anomalies.filter(issue => issue.kind === 'mass_change').length, 1);
   assert.equal(analysis.acceptedRows.length, rows.length);
+});
+
+test('accepts a mass transition automatically when the next snapshot confirms it', () => {
+  const rows = [
+    ...snapshot('2026-09-19', 'Первый', '4', () => 'A'),
+    ...snapshot('2026-09-20', 'Первый', '4', () => 'B'),
+    ...snapshot('2026-09-21', 'Первый', '4', () => 'B'),
+  ];
+  const analysis = analyzeGroupHistoryImport(rows);
+
+  assert.equal(analysis.anomalies.filter(issue => issue.kind === 'mass_change').length, 0);
+  assert.equal(analysis.acceptedRows.length, rows.length);
+});
+
+test('holds an isolated product transition until a later snapshot confirms it', () => {
+  const rows = [
+    { date: '2026-09-11', cabinet: 'Второй', sku: '50003', wb_sku: '494674137', group_code: 'СКЛ-014' },
+    { date: '2026-09-13', cabinet: 'Второй', sku: '50003', wb_sku: '494674137', group_code: 'СКЛ-012' },
+  ];
+  const analysis = analyzeGroupHistoryImport(rows);
+
+  assert.equal(analysis.anomalies.some(issue => issue.kind === 'unconfirmed_transition'), true);
+  assert.deepEqual(analysis.acceptedRows.map(row => [row.date, row.groupCode]), [['2026-09-11', 'СКЛ-014']]);
+});
+
+test('backdates a transition to its first observation after the next snapshot confirms it', () => {
+  const rows = [
+    { date: '2026-09-11', cabinet: 'Второй', sku: '50003', wb_sku: '494674137', group_code: 'СКЛ-014' },
+    { date: '2026-09-13', cabinet: 'Второй', sku: '50003', wb_sku: '494674137', group_code: 'СКЛ-012' },
+    { date: '2026-09-14', cabinet: 'Второй', sku: '50003', wb_sku: '494674137', group_code: 'СКЛ-012' },
+  ];
+  const analysis = analyzeGroupHistoryImport(rows);
+
+  assert.equal(analysis.anomalies.some(issue => issue.kind === 'unconfirmed_transition'), false);
+  assert.deepEqual(analysis.acceptedRows.map(row => [row.date, row.groupCode]), [
+    ['2026-09-11', 'СКЛ-014'],
+    ['2026-09-13', 'СКЛ-012'],
+    ['2026-09-14', 'СКЛ-012'],
+  ]);
 });
 
 test('marks ambiguous WB IDs as unsafe without rejecting stable seller SKUs', () => {
@@ -76,6 +115,7 @@ test('clears imported date and cabinet snapshots even when a cabinet is absent f
     { date: '2026-09-20', product_id: 'p1', group_id: 'A' },
     { date: '2026-09-20', product_id: 'p2', group_id: 'B' },
     { date: '2026-09-20', product_id: 'unknown', group_id: 'C' },
+    { date: '2026-09-20', product_id: 'duplicate', group_id: 'D' },
     { date: '2026-09-21', product_id: 'p2', group_id: 'B' },
   ];
   const result = removeReplacedGroupHistorySnapshots(
@@ -83,7 +123,8 @@ test('clears imported date and cabinet snapshots even when a cabinet is absent f
     new Map([['p1', 'cab-1'], ['p2', 'cab-2']]),
     new Set(['2026-09-20']),
     new Set(['cab-1', 'cab-2']),
+    new Set(['duplicate']),
   );
 
-  assert.deepEqual(result, [history[0], history[3], history[4]]);
+  assert.deepEqual(result, [history[0], history[3], history[5]]);
 });
