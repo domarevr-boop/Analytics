@@ -5,6 +5,9 @@ import type { ColumnMapping } from '../data/columnMapping';
 import type { ImportSource } from '../types';
 import { detectSourceFromFilename } from '../data/store';
 import { normalizeImportDate } from '../data/dateUtils';
+import { analyzeGroupHistoryImport } from '../data/groupHistoryImport';
+import type { GroupHistoryImportOptions } from '../data/groupHistoryImport';
+import { classifySku } from '../data/rules';
 
 const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
   { value: 'reviews', label: 'Отзывы WB (Клиентский опыт)' },
@@ -28,6 +31,7 @@ interface Props {
     dateOverride?: string,
     dateEndOverride?: string,
     dateYearOverride?: number,
+    groupHistoryOptions?: GroupHistoryImportOptions,
   ) => void;
   onCancel: () => void;
 }
@@ -46,12 +50,19 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
   const [manualDateStart, setManualDateStart] = useState(todayStr);
   const [manualDateEnd, setManualDateEnd] = useState(todayStr);
   const [reportYear, setReportYear] = useState(() => new Date().getFullYear());
+  const [acceptGroupHistoryAnomalies, setAcceptGroupHistoryAnomalies] = useState(false);
 
   const mapping = useMemo(() => autoDetectMapping(parsed.headers, source), [parsed.headers, source]);
   const required = useMemo(() => getRequiredFields(source), [source]);
 
   const finalMap = mapping.map;
   const remapped = useMemo(() => remapRows(parsed.rows, finalMap), [parsed.rows, finalMap]);
+  const groupHistoryAnalysis = useMemo(() => source === 'group_history'
+    ? analyzeGroupHistoryImport(remapped, undefined, reportYear, {
+      acceptAnomalies: acceptGroupHistoryAnomalies,
+      inferCabinetId: identity => classifySku(identity).cabinetId,
+    })
+    : null, [remapped, source, reportYear, acceptGroupHistoryAnomalies]);
 
   if (DEV) console.log('[ImportColumnMapper] render:', { source, manualDateStart, manualDateEnd, totalRows: parsed.totalRows, finalMap, unmapped: mapping.unmapped, remappedLen: remapped.length });
   if (DEV && remapped.length > 0) console.log('[ImportColumnMapper] first remapped:', remapped[0]);
@@ -69,6 +80,7 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
     ? [
       ...(!mappedFields.includes('date') ? ['date'] : []),
       ...(!mappedFields.includes('sku') && !mappedFields.includes('wb_sku') ? ['sku'] : []),
+      ...(!mappedFields.includes('group_code') ? ['group_code'] : []),
     ]
     : required.filter(f => !mappedFields.includes(f));
   const hasYearlessDates = hasSourceDate && remapped.some(row =>
@@ -130,6 +142,10 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
   const dateError = dateCoverage.invalidRows > 0
     ? `Некорректная дата или период в ${dateCoverage.invalidRows} строках`
     : '';
+  const groupHistoryError = groupHistoryAnalysis?.errors.join(' ') || '';
+  const importRowCount = source === 'group_history'
+    ? groupHistoryAnalysis?.acceptedRows.length || 0
+    : remapped.length;
 
   return (
     <div className="import-mapper-overlay">
@@ -221,6 +237,32 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
             </div>
           )}
 
+          {source === 'group_history' && groupHistoryAnalysis && (groupHistoryAnalysis.warnings.length > 0 || groupHistoryError) && (
+            <div className="map-section">
+              <div className={`map-section-title ${groupHistoryError ? 'map-section-error' : 'map-section-warning'}`}>
+                {groupHistoryError ? 'Импорт склеек заблокирован' : 'Проверка истории склеек'}
+              </div>
+              <div className="map-section-body group-history-checks">
+                {groupHistoryError && <p className="map-error-desc">{groupHistoryError}</p>}
+                {groupHistoryAnalysis.warnings.slice(0, 8).map(message => <p key={message}>{message}</p>)}
+                {groupHistoryAnalysis.warnings.length > 8 && <p>Ещё предупреждений: {groupHistoryAnalysis.warnings.length - 8}.</p>}
+                {groupHistoryAnalysis.anomalies.length > 0 && (
+                  <label className="group-history-confirm">
+                    <input
+                      type="checkbox"
+                      checked={acceptGroupHistoryAnomalies}
+                      onChange={event => setAcceptGroupHistoryAnomalies(event.target.checked)}
+                    />
+                    <span>Подтверждаю, что массовые изменения и одиночные коды в файле реальны</span>
+                  </label>
+                )}
+                {!acceptGroupHistoryAnomalies && groupHistoryAnalysis.excludedRowIndexes.size > 0 && (
+                  <p><strong>{groupHistoryAnalysis.excludedRowIndexes.size} строк будут пропущены.</strong> На этих датах сохранится предыдущее состояние.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="import-preview">
             <h4>Предпросмотр (первые {previewRows.length} строк)</h4>
             <div className={`import-date-coverage${dateError ? ' error' : ''}`}>
@@ -258,11 +300,13 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
           <div className="import-mapper-status">
             {missingRequired.length > 0 ? (
               <span className="import-mapper-error">Импорт заблокирован — нет обязательных полей</span>
+            ) : groupHistoryError ? (
+              <span className="import-mapper-error">Импорт заблокирован — проверьте историю склеек</span>
             ) : dateError || dateCoverage.datedRows === 0 ? (
               <span className="import-mapper-error">Импорт заблокирован — проверьте покрытие дат</span>
             ) : (
               <span className="import-mapper-ok">
-                v Импорт {remapped.length} строк готов
+                v Импорт {importRowCount} строк готов
                 {mapping.unmapped.length > 0 && ` (${mapping.unmapped.length} колонок будет проигнорировано)`}
               </span>
             )}
@@ -271,7 +315,7 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
             <button className="dict-btn" onClick={onCancel}>Отмена</button>
             <button
               className="dict-btn dict-btn-primary"
-              disabled={missingRequired.length > 0 || Boolean(dateError) || dateCoverage.datedRows === 0}
+              disabled={missingRequired.length > 0 || Boolean(dateError) || dateCoverage.datedRows === 0 || Boolean(groupHistoryError)}
                 onClick={() => {
                 const needsDateOverride = (source === 'xway' || source === 'profitability') && !hasSourceDate;
                 onConfirm(
@@ -281,10 +325,11 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
                   needsDateOverride ? manualDateStart : undefined,
                   needsDateOverride && source === 'profitability' ? manualDateEnd : undefined,
                   hasYearlessDates ? reportYear : undefined,
+                  source === 'group_history' ? { acceptAnomalies: acceptGroupHistoryAnomalies } : undefined,
                 );
               }}
             >
-              Импортировать {remapped.length} строк
+              Импортировать {importRowCount} строк
             </button>
           </div>
         </div>

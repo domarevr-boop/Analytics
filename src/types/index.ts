@@ -351,6 +351,7 @@ export interface ImportFileLog {
   uploadedAt: string;
   status: 'processing' | 'success' | 'error';
   error?: string;
+  warning?: string;
   cabinetId?: string;
   cabinetName?: string;
   dataStart?: string;

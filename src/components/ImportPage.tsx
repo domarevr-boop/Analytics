@@ -11,6 +11,7 @@ import DataCoverage from './DataCoverage';
 import { AnalyticsPageHeader, AnalyticsPanel, PanelHeader } from './AnalyticsPrimitives';
 import { getLatestReviewImport, importReviewsToSupabase } from '../features/clientExperience/reviewImport';
 import type { ReviewImportSummary } from '../features/clientExperience/reviewImport';
+import type { GroupHistoryImportOptions } from '../data/groupHistoryImport';
 
 const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Отзывы WB',
@@ -136,6 +137,7 @@ export default function ImportPage() {
     dateOverride?: string,
     dateEndOverride?: string,
     dateYearOverride?: number,
+    groupHistoryOptions?: GroupHistoryImportOptions,
   ) => {
     if (!parsed || importRunningRef.current) return;
     importRunningRef.current = true;
@@ -171,10 +173,12 @@ export default function ImportPage() {
         ].join('\n'));
         return;
       }
-      const result = await importMappedData(parsed.fileName, source, remapped, dateOverride, dateEndOverride, dateYearOverride);
+      const result = await importMappedData(parsed.fileName, source, remapped, dateOverride, dateEndOverride, dateYearOverride, groupHistoryOptions);
       if (DEV) console.log('[import-ui] importMappedData returned:', result.status, result.rowCount);
       if (result.status === 'error') {
         alert(`Ошибка импорта: ${result.error}`);
+      } else if (result.warning) {
+        alert(`Импорт завершён с проверкой.\n\n${result.warning}`);
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка импорта');

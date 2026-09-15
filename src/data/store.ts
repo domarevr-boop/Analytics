@@ -11,6 +11,8 @@ import { currentMembershipsFromHistory, importedGroupHistoryOnly, UNGROUPED_GROU
 import { getAllExtraExpenses, getCabinetExtraExpense, initializeExtraExpenses, replaceExtraExpenses } from './profitStore';
 import { getReportNetProfit } from './profitabilityCalculations';
 import { normalizeGeoArea, normalizeGeoCity, selectDetailedGeographyRows } from './geographyHierarchy';
+import { analyzeGroupHistoryImport, removeReplacedGroupHistorySnapshots } from './groupHistoryImport';
+import type { GroupHistoryImportOptions, PreparedGroupHistoryRow } from './groupHistoryImport';
 
 let _version = 0;
 const _listeners = new Set<() => void>();
@@ -769,6 +771,24 @@ function resolveProduct(sku: string, wbSku?: string, cabinetName?: string): Prod
   return p;
 }
 
+function resolveGroupHistoryProduct(
+  row: PreparedGroupHistoryRow,
+  unsafeSellerKeys: Set<string>,
+  unsafeWbKeys: Set<string>,
+): Product {
+  const identity = row.sku || row.wbSku;
+  const product = resolveProduct(identity, row.sku ? undefined : row.wbSku, row.cabinetName || undefined);
+  if (!row.sku || !row.wbSku) return product;
+
+  const sellerKey = `${row.cabinetKey}|${row.sku}`;
+  const wbKey = `${row.cabinetKey}|${row.wbSku}`;
+  const wbIdentityIsSafe = !unsafeSellerKeys.has(sellerKey) && !unsafeWbKeys.has(wbKey);
+  if (!wbIdentityIsSafe || (product.wb_sku && product.wb_sku !== row.wbSku)) return product;
+  if (!product.wb_sku) product.wb_sku = row.wbSku;
+  registerAlias(row.wbSku, product.id);
+  return product;
+}
+
 export function upsertMetrics(date: string, productId: string, patch: Partial<DailyMetrics>) {
   const existing = _metrics.find(m => m.date === date && m.product_id === productId);
   if (DEV) console.log('[store] upsertMetrics:', { date, productId, patch, existing: !!existing });
@@ -1150,6 +1170,7 @@ export async function importMappedData(
   dateOverride?: string,
   dateEndOverride?: string,
   dateYearOverride?: number,
+  groupHistoryOptions: GroupHistoryImportOptions = {},
 ): Promise<ImportFileLog> {
   const log: ImportFileLog = {
     id: `log-${_nextLogId++}`, fileName, source, rowCount: 0,
@@ -1273,32 +1294,57 @@ export async function importMappedData(
       }
     } else if (source === 'group_history') {
       const cabinetsBefore = _cabinets.map(item => ({ ...item }));
+      const groupsBefore = _groups.map(item => ({ ...item }));
       const productsBefore = _products.map(item => ({ ...item, aliases: item.aliases ? [...item.aliases] : [] }));
       const membershipsBefore = _memberships.map(item => ({ ...item }));
+      const groupHistoryBefore = _groupHistory.map(item => ({ ...item }));
+      const analysis = analyzeGroupHistoryImport(rows, dateOverride, dateYearOverride, {
+        ...groupHistoryOptions,
+        inferCabinetId: identity => classifySku(identity).cabinetId,
+      });
+      if (analysis.errors.length > 0) throw new Error(`Импорт остановлен: ${analysis.errors.join(' ')}`);
+
       // Membership history is authoritative and can only come from the import.
       // Remove records created by the old dictionary editor so they cannot
       // survive indefinitely when a later file does not contain that date.
       _groupHistory = importedGroupHistoryOnly(_groupHistory);
+
+      // Every represented date belongs to one combined snapshot. Replacing the
+      // date × cabinet matrix removes stale rows left by an older broken import;
+      // an absent daily cabinet slice then naturally inherits its prior state.
+      const incomingDates = new Set(analysis.rows.map(row => row.date));
+      const incomingCabinetIds = new Set<string>();
+      for (const row of analysis.rows) {
+        const cabinetId = row.cabinetName
+          ? resolveImportCabinetId(row.sku || row.wbSku, row.cabinetName)
+          : row.inferredCabinetId;
+        if (cabinetId) incomingCabinetIds.add(cabinetId);
+      }
+      const cabinetByProductId = new Map(_products.map(product => [product.id, product.cabinet_id]));
+      _groupHistory = removeReplacedGroupHistorySnapshots(
+        _groupHistory,
+        cabinetByProductId,
+        incomingDates,
+        incomingCabinetIds,
+      );
+
       const recordsByKey = new Map(_groupHistory.map(record => [`${record.date}|${record.product_id}`, record]));
       const incomingKeys = new Set<string>();
       const duplicateKeys = new Set<string>();
       const pending: Array<{ date: string; product: Product; groupCode: string }> = [];
-      for (const row of rows) {
-        const date = normalizeImportDate(dateOverride || row.date, dateYearOverride);
-        const rawSku = String(row.sku || '').trim();
-        const rawWbSku = String(row.wb_sku || '').trim();
-        const sku = rawSku || rawWbSku;
-        if (!date || !sku) continue;
-        const product = resolveProduct(sku, rawWbSku, row.cabinet);
-        const key = `${date}|${product.id}`;
+      for (const row of analysis.acceptedRows) {
+        const product = resolveGroupHistoryProduct(row, analysis.unsafeSellerKeys, analysis.unsafeWbKeys);
+        const key = `${row.date}|${product.id}`;
         if (incomingKeys.has(key)) duplicateKeys.add(key);
         incomingKeys.add(key);
-        pending.push({ date, product, groupCode: String(row.group_code || '').trim() });
+        pending.push({ date: row.date, product, groupCode: row.groupCode });
       }
       if (duplicateKeys.size > 0) {
         _cabinets = cabinetsBefore;
+        _groups = groupsBefore;
         _products = productsBefore;
         _memberships = membershipsBefore;
+        _groupHistory = groupHistoryBefore;
         buildAliasMap();
         throw new Error(`Импорт остановлен: несколько склеек для одного товара на одну дату (${[...duplicateKeys].join(', ')})`);
       }
@@ -1318,6 +1364,12 @@ export async function importMappedData(
       // Keep the legacy current-membership index aligned for the remaining
       // consumers that do not resolve membership by an analytics date.
       _memberships = currentMembershipsFromHistory(_groupHistory);
+      const usedGroupIds = new Set(_groupHistory.map(record => record.group_id));
+      _groups = _groups.filter(group => !group.id.startsWith('grp-code:') || usedGroupIds.has(group.id));
+      const skippedRows = analysis.rows.length - analysis.acceptedRows.length;
+      const notices = [...analysis.warnings];
+      if (skippedRows > 0) notices.unshift(`Пропущено ${skippedRows} строк из аномальных срезов.`);
+      log.warning = notices.join(' ');
     } else if (source === 'geography') {
       _geography = selectDetailedGeographyRows(_geography);
       const recordsByKey = new Map(_geography.map(record => [`${record.date}|${record.product_id}|${record.region}|${normalizeGeoArea(record.area)}|${normalizeGeoCity(record.city)}`, record]));

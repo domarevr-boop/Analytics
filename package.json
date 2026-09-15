@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:cx": "node --test src/features/clientExperience/cxCalculations.test.ts",
-    "test:groups": "node --test src/data/groupMembershipHistory.test.ts",
+    "test:groups": "node --test src/data/groupMembershipHistory.test.ts src/data/groupHistoryImport.test.ts",
     "test:planning": "node --test src/data/planningCalculations.test.ts src/data/planningSelectors.test.ts src/data/planningPlanActions.test.ts",
     "test:dashboard": "node --test src/data/dashboardTableCalculations.test.ts src/data/dashboardGroupAttribution.test.ts",
     "test:profitability": "node --test src/data/profitabilityTableCalculations.test.ts",

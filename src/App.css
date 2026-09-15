@@ -3608,6 +3608,11 @@ thead .at-metric:last-child {
   color: #EF4444;
 }
 
+.map-section-warning {
+  background: #FFFBEB;
+  color: #B45309;
+}
+
 .map-section-ok {
   background: #F0FDF4;
   color: #10B981;
@@ -3622,6 +3627,29 @@ thead .at-metric:last-child {
 .map-error-desc {
   margin: 0;
   line-height: 1.5;
+}
+
+.group-history-checks {
+  display: grid;
+  gap: 6px;
+}
+
+.group-history-checks p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.group-history-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.group-history-confirm input {
+  margin-top: 2px;
 }
 
 .map-unmapped-list {

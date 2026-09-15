@@ -347,7 +347,7 @@ export function getRequiredFields(source?: ImportSource): string[] {
   if (source === 'geography') return ['sku', 'date', 'region', 'geo_orders_total'];
   if (source === 'entry_points') return ['sku', 'date', 'entry_section', 'entry_point', 'entry_impressions', 'entry_clicks', 'entry_carts', 'entry_orders'];
   if (source === 'profitability') return ['sku', 'profit_revenue', 'actual_profit', 'actual_margin'];
-  if (source === 'group_history') return ['date', 'sku'];
+  if (source === 'group_history') return ['date', 'sku', 'group_code'];
   if (source === 'xway') return ['sku'];
   return ['sku', 'date'];
 }
