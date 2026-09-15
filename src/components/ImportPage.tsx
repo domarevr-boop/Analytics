@@ -56,6 +56,12 @@ import { parseFunnelFileInWorker, type ParsedFunnelFile } from '../features/funn
 import { importFunnelToSupabase, isV5FunnelImportEnabled, loadFunnelImportCabinets, type FunnelImportResult } from '../features/funnel/funnelImport';
 import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
 import {
+  buildCabinetRoutingPlan,
+  cabinetRoutingError,
+  cabinetRoutingSummary,
+  subsetWorkbookByCabinet,
+} from '../features/imports/cabinetRouting';
+import {
   isV5DirectoryBootstrapEnabled,
   isV5DirectoryBootstrapEnvironment,
   prepareDirectoryBootstrap,
@@ -141,13 +147,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [searchQueriesServerPreview, setSearchQueriesServerPreview] = useState<ParsedSearchQueriesFile | null>(null);
   const [funnelServerPreview, setFunnelServerPreview] = useState<ParsedFunnelFile | null>(null);
   const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
-  const [geographyCabinetId, setGeographyCabinetId] = useState('');
   const [geographyCabinetError, setGeographyCabinetError] = useState('');
   const [entryPointsCabinets, setEntryPointsCabinets] = useState<V5DirectoryDimension[]>([]);
-  const [entryPointsCabinetId, setEntryPointsCabinetId] = useState('');
   const [entryPointsCabinetError, setEntryPointsCabinetError] = useState('');
   const [funnelCabinets, setFunnelCabinets] = useState<V5DirectoryDimension[]>([]);
-  const [funnelCabinetId, setFunnelCabinetId] = useState('');
   const [funnelCabinetError, setFunnelCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
@@ -188,7 +191,6 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       void loadGeographyImportCabinets()
         .then(cabinets => {
           setGeographyCabinets(cabinets);
-          setGeographyCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
           setGeographyCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5. Сначала опубликуйте справочник товаров.');
         })
         .catch(error => setGeographyCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
@@ -197,7 +199,6 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       void loadEntryPointsImportCabinets()
         .then(cabinets => {
           setEntryPointsCabinets(cabinets);
-          setEntryPointsCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
           setEntryPointsCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5. Первый импорт может создать товары только внутри существующего кабинета.');
         })
         .catch(error => setEntryPointsCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
@@ -206,12 +207,33 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       void loadFunnelImportCabinets()
         .then(cabinets => {
           setFunnelCabinets(cabinets);
-          setFunnelCabinetId(current => current || (cabinets.length === 1 ? cabinets[0].id : ''));
           setFunnelCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5.');
         })
         .catch(error => setFunnelCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
     }
   }, [serverOnly]);
+
+  const geographyRouting = useMemo(
+    () => geographyServerPreview ? buildCabinetRoutingPlan(geographyServerPreview.rows, geographyCabinets) : null,
+    [geographyServerPreview, geographyCabinets],
+  );
+  const entryPointsRouting = useMemo(
+    () => entryPointsServerPreview ? buildCabinetRoutingPlan(entryPointsServerPreview.rows, entryPointsCabinets) : null,
+    [entryPointsServerPreview, entryPointsCabinets],
+  );
+  const funnelRouting = useMemo(
+    () => funnelServerPreview ? buildCabinetRoutingPlan(funnelServerPreview.rows, funnelCabinets) : null,
+    [funnelServerPreview, funnelCabinets],
+  );
+  const geographyRoutingError = geographyCabinetError || (geographyRouting && geographyServerPreview
+    ? cabinetRoutingError(geographyRouting, geographyServerPreview.sourceRowNumbers)
+    : '');
+  const entryPointsRoutingError = entryPointsCabinetError || (entryPointsRouting && entryPointsServerPreview
+    ? cabinetRoutingError(entryPointsRouting, entryPointsServerPreview.sourceRowNumbers)
+    : '');
+  const funnelRoutingError = funnelCabinetError || (funnelRouting && funnelServerPreview
+    ? cabinetRoutingError(funnelRouting, funnelServerPreview.sourceRowNumbers)
+    : '');
 
   const handleFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -324,47 +346,65 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   }, [serverOnly]);
 
   const handleV5FunnelImport = useCallback(async () => {
-    if (!selectedFile || !funnelServerPreview || !funnelCabinetId || importRunningRef.current) return;
+    if (!selectedFile || !funnelServerPreview || !funnelRouting || funnelRoutingError || importRunningRef.current) return;
     importRunningRef.current = true; setLoading(true); setProgress('Повторная проверка отчёта воронки...');
     try {
       const parsedWorkbook = await parseFunnelFileInWorker(selectedFile, funnelServerPreview.source);
-      const result = await importFunnelToSupabase(selectedFile, funnelCabinetId, parsedWorkbook, current => {
-        const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача строк воронки' : 'Серверная проверка и публикация';
-        setProgress(`${stage}: ${current.processed}/${current.total}`);
-      });
-      setLatestFunnelImport(result);
-      const label = result.source === 'xway' ? 'XWay' : 'WB Воронка';
-      if (result.status === 'failed') alert(`Импорт «${label}» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}.`);
-      else if (result.duplicate) alert(`Этот файл «${label}» уже опубликован для выбранного кабинета V5.`);
-      else alert(`Импорт «${label}» опубликован в V5. Строк: ${result.canonicalRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, funnelCabinets);
+      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
+      if (routingError) throw new Error(routingError);
+      const results: FunnelImportResult[] = [];
+      for (let index = 0; index < routing.routes.length; index += 1) {
+        const route = routing.routes[index];
+        const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
+        const result = await importFunnelToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+          const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача строк воронки' : 'Серверная проверка и публикация';
+          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+        });
+        results.push(result);
+      }
+      const latest = results.at(-1);
+      if (latest) setLatestFunnelImport(latest);
+      const label = parsedWorkbook.source === 'xway' ? 'XWay' : 'WB Воронка';
+      const failed = results.filter(result => result.status === 'failed');
+      if (failed.length) alert(`Импорт «${label}» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      else if (results.every(result => result.duplicate)) alert(`Этот файл «${label}» уже опубликован во всех определённых кабинетах V5.`);
+      else alert(`Импорт «${label}» опубликован автоматически. Кабинетов: ${results.length}. Строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Воронки/рекламы»');
     } finally {
       importRunningRef.current = false; setLoading(false); setProgress(''); setFunnelServerPreview(null); setSelectedFile(null);
     }
-  }, [selectedFile, funnelServerPreview, funnelCabinetId]);
+  }, [selectedFile, funnelServerPreview, funnelRouting, funnelRoutingError, funnelCabinets]);
 
   const handleV5EntryPointsImport = useCallback(async () => {
-    if (!selectedFile || !entryPointsServerPreview || !entryPointsCabinetId || importRunningRef.current) return;
+    if (!selectedFile || !entryPointsServerPreview || !entryPointsRouting || entryPointsRoutingError || importRunningRef.current) return;
     importRunningRef.current = true;
     setLoading(true);
     setProgress('Повторная проверка отчёта точек входа...');
     try {
       const parsedWorkbook = await parseEntryPointsFileInWorker(selectedFile);
-      const result = await importEntryPointsToSupabase(selectedFile, entryPointsCabinetId, parsedWorkbook, current => {
-        const stage = current.stage === 'hashing' ? 'Контрольная сумма'
-          : current.stage === 'uploading' ? 'Сохранение исходника'
-            : current.stage === 'staging' ? 'Передача строк точек входа' : 'Серверная проверка и публикация';
-        setProgress(`${stage}: ${current.processed}/${current.total}`);
-      });
-      setLatestEntryPointsImport(result);
-      if (result.status === 'failed') {
-        alert(`Импорт «Точек входа» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Текущая версия кабинета не изменена.`);
-      } else if (result.duplicate) {
-        alert('Этот файл «Точек входа» уже опубликован для выбранного кабинета V5. Повторная версия не создавалась.');
-      } else {
-        alert(`Импорт «Точек входа» опубликован в V5. Строк: ${result.canonicalRows}. Товаров создано: ${result.productsCreated}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, entryPointsCabinets);
+      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
+      if (routingError) throw new Error(routingError);
+      const results: EntryPointsImportResult[] = [];
+      for (let index = 0; index < routing.routes.length; index += 1) {
+        const route = routing.routes[index];
+        const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
+        const result = await importEntryPointsToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+          const stage = current.stage === 'hashing' ? 'Контрольная сумма'
+            : current.stage === 'uploading' ? 'Сохранение исходника'
+              : current.stage === 'staging' ? 'Передача строк точек входа' : 'Серверная проверка и публикация';
+          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+        });
+        results.push(result);
       }
+      const latest = results.at(-1);
+      if (latest) setLatestEntryPointsImport(latest);
+      const failed = results.filter(result => result.status === 'failed');
+      if (failed.length) alert(`Импорт «Точек входа» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      else if (results.every(result => result.duplicate)) alert('Этот файл «Точек входа» уже опубликован во всех определённых кабинетах V5.');
+      else alert(`Импорт «Точек входа» опубликован автоматически. Кабинетов: ${results.length}. Строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Товаров создано: ${results.reduce((sum, result) => sum + result.productsCreated, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Точек входа»');
     } finally {
@@ -374,7 +414,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setEntryPointsServerPreview(null);
       setSelectedFile(null);
     }
-  }, [selectedFile, entryPointsServerPreview, entryPointsCabinetId]);
+  }, [selectedFile, entryPointsServerPreview, entryPointsRouting, entryPointsRoutingError, entryPointsCabinets]);
 
   const handleV5SearchQueriesImport = useCallback(async () => {
     if (!selectedFile || !searchQueriesServerPreview || importRunningRef.current) return;
@@ -402,30 +442,37 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   }, [selectedFile, searchQueriesServerPreview]);
 
   const handleV5GeographyImport = useCallback(async () => {
-    if (!selectedFile || !geographyServerPreview || !geographyCabinetId || importRunningRef.current) return;
+    if (!selectedFile || !geographyServerPreview || !geographyRouting || geographyRoutingError || importRunningRef.current) return;
     importRunningRef.current = true;
     setLoading(true);
     setProgress('Повторная проверка отчёта географии...');
     try {
       const parsedWorkbook = await parseGeographyFileInWorker(selectedFile);
-      const result = await importGeographyToSupabase(selectedFile, geographyCabinetId, parsedWorkbook, current => {
-        const stage = current.stage === 'hashing'
-          ? 'Контрольная сумма'
-          : current.stage === 'uploading'
-            ? 'Сохранение исходника'
-            : current.stage === 'staging'
-              ? 'Передача строк географии'
-              : 'Серверная проверка и публикация';
-        setProgress(`${stage}: ${current.processed}/${current.total}`);
-      });
-      setLatestGeographyImport(result);
-      if (result.status === 'failed') {
-        alert(`Импорт «Географии заказов» отклонён сервером. Ошибочных строк: ${result.rejectedRows}, ошибок: ${result.errorCount}. Текущая версия кабинета не изменена.`);
-      } else if (result.duplicate) {
-        alert('Этот файл географии уже опубликован для выбранного кабинета V5. Повторная версия не создавалась.');
-      } else {
-        alert(`Импорт «Географии заказов» опубликован в V5. Исходных строк: ${result.inputRows}, итоговых: ${result.canonicalRows}. Период: ${result.periodStart || '—'} — ${result.periodEnd || '—'}.`);
+      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, geographyCabinets);
+      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
+      if (routingError) throw new Error(routingError);
+      const results: GeographyImportResult[] = [];
+      for (let index = 0; index < routing.routes.length; index += 1) {
+        const route = routing.routes[index];
+        const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
+        const result = await importGeographyToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+          const stage = current.stage === 'hashing'
+            ? 'Контрольная сумма'
+            : current.stage === 'uploading'
+              ? 'Сохранение исходника'
+              : current.stage === 'staging'
+                ? 'Передача строк географии'
+                : 'Серверная проверка и публикация';
+          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+        });
+        results.push(result);
       }
+      const latest = results.at(-1);
+      if (latest) setLatestGeographyImport(latest);
+      const failed = results.filter(result => result.status === 'failed');
+      if (failed.length) alert(`Импорт «Географии заказов» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      else if (results.every(result => result.duplicate)) alert('Этот файл географии уже опубликован во всех определённых кабинетах V5.');
+      else alert(`Импорт «Географии заказов» опубликован автоматически. Кабинетов: ${results.length}. Итоговых строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Географии заказов»');
     } finally {
@@ -435,7 +482,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       setGeographyServerPreview(null);
       setSelectedFile(null);
     }
-  }, [selectedFile, geographyServerPreview, geographyCabinetId]);
+  }, [selectedFile, geographyServerPreview, geographyRouting, geographyRoutingError, geographyCabinets]);
 
   const handleV5CompetitorImport = useCallback(async () => {
     if (!selectedFile || !competitorServerPreview || importRunningRef.current) return;
@@ -854,7 +901,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
             <div className="import-mapper competitor-import-preview">
               <div className="import-mapper-header">
                 <div className="import-mapper-header-info"><h3>Серверный импорт географии: {selectedFile?.name}</h3><span className="import-mapper-summary">Лист «{geographyServerPreview.sheetName}» распознан безопасным parser V5</span></div>
-                <span className="import-mapper-date"><label htmlFor="geography-cabinet">Кабинет:</label><select id="geography-cabinet" className="daterange-input" value={geographyCabinetId} onChange={event => setGeographyCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{geographyCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+                <span className="import-mapper-date"><label>Кабинеты:</label><strong>Автоматически</strong></span>
               </div>
               <div className="import-mapper-body">
                 <div className="import-date-coverage"><span>Покрытие дат</span><strong>{geographyServerPreview.dateStart || 'требует проверки'} — {geographyServerPreview.dateEnd || 'требует проверки'}</strong></div>
@@ -862,12 +909,12 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                   <article><span>Строк в файле</span><strong>{geographyServerPreview.inputRows}</strong><small>до нормализации</small></article>
                   <article><span>К публикации</span><strong>{geographyServerPreview.rows.length}</strong><small>последняя строка дубликата</small></article>
                   <article><span>Заменено повторов</span><strong>{geographyServerPreview.replacedDuplicateRows}</strong><small>по товару и географии</small></article>
-                  <article><span>Кабинет</span><strong>{geographyCabinetId ? 'Выбран' : 'Не выбран'}</strong><small>справочник проверит товары</small></article>
+                  <article><span>Распределение</span><strong>{geographyRouting?.routes.length || 0} каб.</strong><small>{geographyRouting ? cabinetRoutingSummary(geographyRouting) : 'проверяется'}</small></article>
                 </div>
-                {geographyCabinetError && <p className="import-mapper-error">{geographyCabinetError}</p>}
-                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер сопоставит SKU только со справочником выбранного кабинета, проверит балансы заказов и атомарно заменит его текущую версию географии.</p>
+                {geographyRoutingError && <p className="import-mapper-error">{geographyRoutingError}</p>}
+                <p className="import-preview-note">Кабинет определяется по первой цифре артикула продавца: 3/4 — «Светпланет», 5 — «Ледситипро». Смешанный файл автоматически разделяется на кабинетные партии; сервер проверит балансы заказов и атомарно заменит текущую версию каждого кабинета.</p>
               </div>
-              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setGeographyServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !geographyCabinetId || Boolean(geographyCabinetError)} onClick={() => void handleV5GeographyImport()}>Опубликовать географию в V5</button></div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setGeographyServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(geographyRoutingError)} onClick={() => void handleV5GeographyImport()}>Опубликовать географию в V5</button></div>
             </div>
           </div>
         </div>
@@ -878,7 +925,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
             <div className="import-mapper competitor-import-preview">
               <div className="import-mapper-header">
                 <div className="import-mapper-header-info"><h3>Серверный импорт точек входа: {selectedFile?.name}</h3><span className="import-mapper-summary">Лист «{entryPointsServerPreview.sheetName}» распознан безопасным parser V5</span></div>
-                <span className="import-mapper-date"><label htmlFor="entry-points-cabinet">Кабинет:</label><select id="entry-points-cabinet" className="daterange-input" value={entryPointsCabinetId} onChange={event => setEntryPointsCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{entryPointsCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+                <span className="import-mapper-date"><label>Кабинеты:</label><strong>Автоматически</strong></span>
               </div>
               <div className="import-mapper-body">
                 <div className="import-date-coverage"><span>Покрытие дат</span><strong>{entryPointsServerPreview.dateStart || 'требует проверки'} — {entryPointsServerPreview.dateEnd || 'требует проверки'}</strong></div>
@@ -886,12 +933,12 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                   <article><span>Строк в файле</span><strong>{entryPointsServerPreview.inputRows}</strong><small>до нормализации</small></article>
                   <article><span>К публикации</span><strong>{entryPointsServerPreview.rows.length}</strong><small>по дневному зерну V4</small></article>
                   <article><span>Заменено повторов</span><strong>{entryPointsServerPreview.replacedDuplicateRows}</strong><small>последняя строка ключа</small></article>
-                  <article><span>Кабинет</span><strong>{entryPointsCabinetId ? 'Выбран' : 'Не выбран'}</strong><small>товары разрешаются импортом</small></article>
+                  <article><span>Распределение</span><strong>{entryPointsRouting?.routes.length || 0} каб.</strong><small>{entryPointsRouting ? cabinetRoutingSummary(entryPointsRouting) : 'проверяется'}</small></article>
                 </div>
-                {entryPointsCabinetError && <p className="import-mapper-error">{entryPointsCabinetError}</p>}
-                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер проверит дату и четыре абсолютные метрики, разрешит или создаст товары по SKU/WB ID/алиасам и атомарно заменит текущую версию кабинета. Денежные показатели появятся после серверного переноса воронки и рентабельности.</p>
+                {entryPointsRoutingError && <p className="import-mapper-error">{entryPointsRoutingError}</p>}
+                <p className="import-preview-note">Кабинет определяется по первой цифре артикула продавца: 3/4 — «Светпланет», 5 — «Ледситипро». Смешанный файл автоматически разделяется на кабинетные партии; сервер разрешит или создаст товары по SKU/WB ID/алиасам.</p>
               </div>
-              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setEntryPointsServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !entryPointsCabinetId || Boolean(entryPointsCabinetError)} onClick={() => void handleV5EntryPointsImport()}>Опубликовать точки входа в V5</button></div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setEntryPointsServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(entryPointsRoutingError)} onClick={() => void handleV5EntryPointsImport()}>Опубликовать точки входа в V5</button></div>
             </div>
           </div>
         </div>
@@ -905,7 +952,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                   <h3>Серверный импорт {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронки WB'}: {selectedFile?.name}</h3>
                   <span className="import-mapper-summary">Лист «{funnelServerPreview.sheetName}» распознан безопасным parser V5</span>
                 </div>
-                <span className="import-mapper-date"><label htmlFor="funnel-cabinet">Кабинет:</label><select id="funnel-cabinet" className="daterange-input" value={funnelCabinetId} onChange={event => setFunnelCabinetId(event.target.value)}><option value="">Выберите кабинет</option>{funnelCabinets.map(cabinet => <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>)}</select></span>
+                <span className="import-mapper-date"><label>Кабинеты:</label><strong>Автоматически</strong></span>
               </div>
               <div className="import-mapper-body">
                 <div className="import-date-coverage"><span>Покрытие дат</span><strong>{funnelServerPreview.dateStart || 'требует проверки'} — {funnelServerPreview.dateEnd || 'требует проверки'}</strong></div>
@@ -915,10 +962,11 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                   <article><span>Объединено строк</span><strong>{funnelServerPreview.aggregatedRows}</strong><small>метрики суммируются</small></article>
                   <article><span>Распознано метрик</span><strong>{funnelServerPreview.presentMetricFields.length}</strong><small>{funnelServerPreview.presentMetricFields.join(', ')}</small></article>
                 </div>
-                {funnelCabinetError && <p className="import-mapper-error">{funnelCabinetError}</p>}
-                <p className="import-preview-note">Исходник будет сохранён в private Storage. Сервер разрешит товары по справочнику, проверит только присутствующие в файле метрики и атомарно наложит частичную версию источника. Для XWay «Orders qty» — количество рекламных заказов, «Orders rub» — их сумма; CPO рассчитывается как расход / количество заказов.</p>
+                <p className="import-preview-note"><strong>Распределение:</strong> {funnelRouting ? cabinetRoutingSummary(funnelRouting) : 'проверяется'}.</p>
+                {funnelRoutingError && <p className="import-mapper-error">{funnelRoutingError}</p>}
+                <p className="import-preview-note">Кабинет определяется по первой цифре артикула продавца: 3/4 — «Светпланет», 5 — «Ледситипро». Смешанный файл автоматически разделяется на кабинетные партии. Для XWay «Orders qty» — количество рекламных заказов, «Orders rub» — их сумма; CPO рассчитывается как расход / количество заказов.</p>
               </div>
-              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setFunnelServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || !funnelCabinetId || Boolean(funnelCabinetError)} onClick={() => void handleV5FunnelImport()}>Опубликовать {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронку WB'} в V5</button></div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setFunnelServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(funnelRoutingError)} onClick={() => void handleV5FunnelImport()}>Опубликовать {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронку WB'} в V5</button></div>
             </div>
           </div>
         </div>

@@ -121,6 +121,7 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   const parser = readFileSync(new URL('../src/features/funnel/funnelImportParser.ts', import.meta.url), 'utf8');
   const worker = readFileSync(new URL('../src/features/funnel/funnelImport.worker.ts', import.meta.url), 'utf8');
   const importPage = readFileSync(new URL('../src/components/ImportPage.tsx', import.meta.url), 'utf8');
+  const cabinetRouting = readFileSync(new URL('../src/features/imports/cabinetRouting.ts', import.meta.url), 'utf8');
   const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
   const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
   assert.match(client, /VITE_V5_FUNNEL_IMPORT_ENABLED === 'true'/u);
@@ -129,6 +130,10 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   assert.match(worker, /extractFunnelWorkbook/u);
   assert.match(importPage, /parseFunnelFileInWorker/u);
   assert.match(importPage, /handleV5FunnelImport/u);
+  assert.match(importPage, /buildCabinetRoutingPlan/u);
+  assert.doesNotMatch(importPage, /Выберите кабинет/u);
+  assert.match(cabinetRouting, /prefixes: \['3', '4'\].*Светпланет/isu);
+  assert.match(cabinetRouting, /prefixes: \['5'\].*Ледситипро/isu);
   assert.match(importPage, /Orders qty.*Orders rub.*CPO/isu);
   assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
   assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
