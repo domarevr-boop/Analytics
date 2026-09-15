@@ -51,6 +51,7 @@
     "db:v5:smoke-geography-import": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/geography_import_smoke.sql",
     "db:v5:smoke-geography-read": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/geography_read_smoke.sql",
     "db:v5:smoke-entry-points": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/entry_points_smoke.sql",
+    "db:v5:smoke-entry-points-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-entry-points-file-smoke.mjs",
     "db:v5:smoke-geography-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-geography-file-smoke.mjs",
     "db:v5:smoke-market-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-market-file-smoke.mjs",
     "db:v5:bootstrap-admin": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/scripts/bootstrap_only_auth_user.sql",

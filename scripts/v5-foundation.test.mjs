@@ -135,6 +135,9 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   assert.match(cabinetRouting, /prefixes: \['3', '4'\].*Светпланет/isu);
   assert.match(cabinetRouting, /prefixes: \['5'\].*Ледситипро/isu);
   assert.match(importPage, /Orders qty.*Orders rub.*CPO/isu);
+  const fileAudit = readFileSync(new URL('./v5-funnel-file-audit.mjs', import.meta.url), 'utf8');
+  assert.match(fileAudit, /buildCabinetRoutingPlan/iu);
+  assert.match(fileAudit, /cabinetRoutes/iu);
   assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
   assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
 });
@@ -629,6 +632,7 @@ test('entry points preserves V4 traffic grain behind import-driven products and 
   const smoke = readFileSync(new URL('../supabase/tests/entry_points_smoke.sql', import.meta.url), 'utf8');
   const importClient = readFileSync(new URL('../src/features/entryPoints/entryPointsImport.ts', import.meta.url), 'utf8');
   const readClient = readFileSync(new URL('../src/features/entryPoints/entryPointsData.ts', import.meta.url), 'utf8');
+  const fileSmoke = readFileSync(new URL('./v5-entry-points-file-smoke.mjs', import.meta.url), 'utf8');
   const exampleEnv = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
   assert.match(sql, /create table analytics\.entry_point_versions/iu);
   assert.match(sql, /primary key \(batch_id, date, product_id, section, entry_point\)/iu);
@@ -647,6 +651,11 @@ test('entry points preserves V4 traffic grain behind import-driven products and 
   assert.doesNotMatch(smoke, /commit;/iu);
   assert.match(importClient, /VITE_V5_ENTRY_POINTS_IMPORT_ENABLED === 'true'/u);
   assert.match(readClient, /VITE_V5_ENTRY_POINTS_BACKEND_ENABLED === 'true'/u);
+  assert.match(fileSmoke, /read-excel-file\/node/iu);
+  assert.match(fileSmoke, /buildCabinetRoutingPlan/iu);
+  assert.match(fileSmoke, /v5_entry_points_summary/iu);
+  assert.match(fileSmoke, /transaction_will_rollback/iu);
+  assert.match(fileSmoke, /--local-only/iu);
   assert.match(exampleEnv, /VITE_V5_ENTRY_POINTS_IMPORT_ENABLED=false/iu);
   assert.match(exampleEnv, /VITE_V5_ENTRY_POINTS_BACKEND_ENABLED=false/iu);
 });

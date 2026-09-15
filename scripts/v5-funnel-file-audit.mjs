@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import readExcelFile from 'read-excel-file/node';
 import { extractFunnelWorkbook } from '../src/features/funnel/funnelImportCore.ts';
+import { buildCabinetRoutingPlan, cabinetRoutingError, cabinetRoutingSummary } from '../src/features/imports/cabinetRouting.ts';
 
 const inputPath = process.argv[2] ? resolve(process.argv[2]) : '';
 const source = process.argv[3] === 'wb_funnel' ? 'wb_funnel' : 'xway';
@@ -20,6 +21,11 @@ const totals = Object.fromEntries(workbook.presentMetricFields.map(field => [
 ]));
 const invalidNumericValues = workbook.rows.reduce((count, row) => count
   + workbook.presentMetricFields.filter(field => typeof row[field] !== 'number').length, 0);
+const routing = buildCabinetRoutingPlan(workbook.rows, [
+  { id: 'cab-1', externalKey: 'cab-1', name: 'Светпланет' },
+  { id: 'cab-2', externalKey: 'cab-2', name: 'Ледситипро' },
+]);
+const routingError = cabinetRoutingError(routing, workbook.sourceRowNumbers);
 
 console.log(JSON.stringify({
   source: workbook.source,
@@ -31,5 +37,7 @@ console.log(JSON.stringify({
   dateEnd: workbook.dateEnd,
   presentMetricFields: workbook.presentMetricFields,
   invalidNumericValues,
+  cabinetRoutes: cabinetRoutingSummary(routing),
+  routingError: routingError || null,
   totals,
 }, null, 2));
