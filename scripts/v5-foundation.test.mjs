@@ -700,9 +700,13 @@ test('search queries preserves V4 grain and calculations behind bounded server R
 test('V5 staging deployment is isolated under the v5 subdirectory', () => {
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const buildScript = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
+  const productionDeploy = readFileSync(new URL('./deploy-production.mjs', import.meta.url), 'utf8');
   const workflow = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
 
+  assert.match(packageJson.scripts.deploy, /node scripts\/deploy-production\.mjs/iu);
   assert.match(packageJson.scripts['deploy:v5'], /-e v5 -a/iu);
+  assert.match(productionDeploy, /remove:\s*\['\*\*\/\*',\s*'!v5\/\*\*'\]/u);
+  assert.match(productionDeploy, /add:\s*false/u);
   assert.match(buildScript, /VITE_APP_BASE:\s*'\/Analytics\/v5\/'/u);
   assert.match(buildScript, /VITE_APP_ENV:\s*'v5-development'/u);
   assert.match(buildScript, /VITE_V5_COMPETITORS_IMPORT_ENABLED:\s*'true'/u);
