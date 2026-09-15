@@ -23,6 +23,7 @@
     "db:v5:smoke-search-queries": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/search_queries_smoke.sql",
     "db:v5:smoke-search-queries-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-search-queries-file-smoke.mjs",
     "db:v5:smoke-funnel": "node scripts/assert-v5-environment.mjs --require-link && node scripts/run-supabase.mjs db query --linked --file supabase/tests/funnel_smoke.sql",
+    "db:v5:smoke-funnel-file": "node scripts/assert-v5-environment.mjs --require-link && node scripts/v5-funnel-file-smoke.mjs",
     "backup:v4:inspect": "node scripts/inspect-v4-backup.mjs",
     "backup:v4:inspect-competitors": "node scripts/inspect-v4-competitors.mjs",
     "backup:v4:inspect-geography": "node scripts/inspect-v4-geography.mjs",

@@ -136,8 +136,14 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   assert.match(cabinetRouting, /prefixes: \['5'\].*Ледситипро/isu);
   assert.match(importPage, /Orders qty.*Orders rub.*CPO/isu);
   const fileAudit = readFileSync(new URL('./v5-funnel-file-audit.mjs', import.meta.url), 'utf8');
+  const fileSmoke = readFileSync(new URL('./v5-funnel-file-smoke.mjs', import.meta.url), 'utf8');
   assert.match(fileAudit, /buildCabinetRoutingPlan/iu);
   assert.match(fileAudit, /cabinetRoutes/iu);
+  assert.match(fileSmoke, /read-excel-file\/node/iu);
+  assert.match(fileSmoke, /buildCabinetRoutingPlan/iu);
+  assert.match(fileSmoke, /v5_funnel_summary/iu);
+  assert.match(fileSmoke, /transaction_will_rollback/iu);
+  assert.match(fileSmoke, /--local-only/iu);
   assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
   assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
 });
