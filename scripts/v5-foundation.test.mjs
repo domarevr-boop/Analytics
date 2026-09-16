@@ -46,6 +46,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260914027000_v5_funnel_bounded_read_fix.sql',
     '20260916028000_v5_canonical_cabinets.sql',
     '20260916029000_v5_funnel_publish_timeout.sql',
+    '20260916030000_v5_profitability_import.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -168,6 +169,8 @@ test('profitability migration audit keeps gross and net profit semantics separat
   const audit = readFileSync(new URL('./v5-profitability-audit-core.mjs', import.meta.url), 'utf8');
   const parser = readFileSync(new URL('../src/features/profitability/profitabilityImportCore.ts', import.meta.url), 'utf8');
   const contract = readFileSync(new URL('../docs/V5_PROFITABILITY_MIGRATION.md', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../supabase/migrations/20260916030000_v5_profitability_import.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/profitability_smoke.sql', import.meta.url), 'utf8');
   assert.match(audit, /rowsWithoutProfitabilityAtStart/u);
   assert.match(audit, /fixedExpenseBackupCoverage: 'not_in_v4_data_snapshot'/u);
   assert.doesNotMatch(audit, /console\.log/u);
@@ -176,6 +179,24 @@ test('profitability migration audit keeps gross and net profit semantics separat
   assert.match(contract, /actual_profit.*валов/isu);
   assert.match(contract, /Отсутствие значения означает «не задано», а не автоматически 0%/u);
   assert.match(contract, /не суммируются и не смешиваются/iu);
+  for (const fragment of [
+    'analytics.profitability_metric_versions',
+    'public.v5_profitability_create_batch',
+    'public.v5_profitability_reset_staging',
+    'public.v5_profitability_stage_rows',
+    'public.v5_profitability_publish_batch',
+    'public.v5_profitability_rollback_batch',
+    'app.v5_profitability_current',
+    "'schema_version', '20260916030000'",
+  ]) assert.ok(sql.toLowerCase().includes(fragment.toLowerCase()), `missing profitability import contract: ${fragment}`);
+  assert.match(sql, /gross_profit numeric\(20, 2\) generated always as/iu);
+  assert.match(sql, /gross_margin numeric\(20, 6\) generated always as/iu);
+  assert.match(sql, /set statement_timeout = '120s'/iu);
+  assert.match(sql, /order by version\.date, version\.product_id, version\.version_order desc/iu);
+  assert.doesNotMatch(sql, /fixed_expense_percent[^\n]*default\s+0/iu);
+  assert.match(smoke, /generated_gross_profit_verified/iu);
+  assert.match(smoke, /invalid_rows_do_not_create_products/iu);
+  assert.match(smoke, /transaction_will_rollback/iu);
 });
 
 test('access management requires an existing administrator and keeps bootstrap private', () => {
