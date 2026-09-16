@@ -78,7 +78,7 @@ export async function importGeographyToSupabase(
   onProgress?: (progress: GeographyImportProgress) => void,
 ): Promise<GeographyImportResult> {
   if (!isV5GeographyImportEnabled) throw new Error('Серверный импорт «Географии заказов» выключен feature flag');
-  if (!cabinetId) throw new Error('Перед импортом выберите кабинет');
+  if (!cabinetId) throw new Error('Не удалось автоматически определить кабинет по артикулу продавца');
   if (file.size <= 0 || file.size > GEOGRAPHY_MAX_FILE_BYTES) throw new Error('Файл «География заказов» должен быть не пустым и не больше 25 MiB');
   if (file.name.split('.').pop()?.toLocaleLowerCase('en-US') !== 'xlsx') throw new Error('V5 импорт «Географии заказов» поддерживает только .xlsx');
   const { data: userData, error: userError } = await supabase.auth.getUser();

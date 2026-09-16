@@ -79,7 +79,7 @@ export async function importEntryPointsToSupabase(
   onProgress?: (progress: EntryPointsImportProgress) => void,
 ): Promise<EntryPointsImportResult> {
   if (!isV5EntryPointsImportEnabled) throw new Error('Серверный импорт «Точек входа» выключен feature flag');
-  if (!cabinetId) throw new Error('Перед импортом выберите кабинет');
+  if (!cabinetId) throw new Error('Не удалось автоматически определить кабинет по артикулу продавца');
   if (file.size <= 0 || file.size > ENTRY_POINTS_MAX_FILE_BYTES) throw new Error('Файл «Точки входа» должен быть не пустым и не больше 25 MiB');
   if (file.name.split('.').pop()?.toLocaleLowerCase('en-US') !== 'xlsx') throw new Error('V5 импорт «Точек входа» поддерживает только .xlsx');
   const { data: userData, error: userError } = await supabase.auth.getUser();

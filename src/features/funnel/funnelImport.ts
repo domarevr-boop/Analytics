@@ -25,7 +25,7 @@ export async function loadFunnelImportCabinets(): Promise<V5DirectoryDimension[]
 }
 export async function importFunnelToSupabase(file: File, cabinetId: string, workbook: FunnelParsedWorkbook, onProgress?: (value: FunnelImportProgress) => void): Promise<FunnelImportResult> {
   if (!isV5FunnelImportEnabled) throw new Error('Серверный импорт «Воронки/рекламы» выключен feature flag');
-  if (!cabinetId) throw new Error('Перед импортом выберите кабинет');
+  if (!cabinetId) throw new Error('Не удалось автоматически определить кабинет по артикулу продавца');
   if (file.size <= 0 || file.size > FUNNEL_MAX_FILE_BYTES || file.name.split('.').pop()?.toLocaleLowerCase('en-US') !== 'xlsx') throw new Error('V5 импорт «Воронки/рекламы» поддерживает .xlsx до 25 MiB');
   const { data: userData, error: userError } = await supabase.auth.getUser(); if (userError || !userData.user) throw new Error('Для импорта требуется авторизация в V5');
   onProgress?.({ stage: 'hashing', processed: 0, total: workbook.rows.length }); const fileHash = await hash(file);
