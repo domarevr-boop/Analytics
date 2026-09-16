@@ -45,6 +45,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260914026000_v5_funnel_read_access_fix.sql',
     '20260914027000_v5_funnel_bounded_read_fix.sql',
     '20260916028000_v5_canonical_cabinets.sql',
+    '20260916029000_v5_funnel_publish_timeout.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -55,6 +56,13 @@ test('canonical V4 cabinets are seeded for automatic V5 import routing', () => {
   assert.match(sql, /\('cab-1',\s*'Светпланет',\s*true\)/iu);
   assert.match(sql, /\('cab-2',\s*'Ледситипро',\s*true\)/iu);
   assert.match(sql, /on conflict\s*\(external_key\)\s*do update/iu);
+});
+
+test('full funnel publications receive a function-local timeout budget', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260916029000_v5_funnel_publish_timeout.sql', import.meta.url), 'utf8');
+  assert.match(sql, /alter function public\.v5_funnel_publish_batch\(uuid\)\s+set statement_timeout to '120s'/iu);
+  assert.match(sql, /'schema_version',\s*'20260916029000'/iu);
+  assert.doesNotMatch(sql, /alter role/iu);
 });
 
 test('funnel import separates XWay quantity and money and preserves nullable patches', () => {
