@@ -1,7 +1,5 @@
 import { normalizeImportDate } from './dateUtils.ts';
 
-const MASS_CHANGE_MIN_COMMON_PRODUCTS = 20;
-const MASS_CHANGE_MIN_PRODUCTS = 20;
 const MASS_CHANGE_RATE = 0.15;
 const MASS_CHANGE_CONFIRMATION_RATE = 0.9;
 
@@ -18,7 +16,7 @@ export interface PreparedGroupHistoryRow {
 }
 
 export interface GroupHistorySnapshotAnomaly {
-  kind: 'mass_change' | 'cross_cabinet_singleton' | 'unconfirmed_transition';
+  kind: 'mass_change';
   date: string;
   cabinetKey: string;
   previousDate?: string;
@@ -217,9 +215,8 @@ export function analyzeGroupHistoryImport(
         const changedProducts = changedIdentities.length;
         const changeRate = commonIdentities.length > 0 ? changedProducts / commonIdentities.length : 0;
         if (
-          commonIdentities.length >= MASS_CHANGE_MIN_COMMON_PRODUCTS
-          && changedProducts >= MASS_CHANGE_MIN_PRODUCTS
-          && changeRate >= MASS_CHANGE_RATE
+          commonIdentities.length > 0
+          && changeRate > MASS_CHANGE_RATE
         ) {
           const nextDate = sortedCabinetDates[dateIndex + 1];
           const nextRows = nextDate ? rowsBySnapshot.get(`${nextDate}|${cabinetKey}`) || [] : [];
@@ -254,95 +251,11 @@ export function analyzeGroupHistoryImport(
     }
   }
 
-  const rowsByGroupAndCabinet = new Map<string, Map<string, PreparedGroupHistoryRow[]>>();
-  for (const row of rows) {
-    if (!row.groupCode) continue;
-    const byCabinet = rowsByGroupAndCabinet.get(row.groupCode) || new Map<string, PreparedGroupHistoryRow[]>();
-    byCabinet.set(row.cabinetKey, [...(byCabinet.get(row.cabinetKey) || []), row]);
-    rowsByGroupAndCabinet.set(row.groupCode, byCabinet);
-  }
-  for (const [groupCode, byCabinet] of rowsByGroupAndCabinet) {
-    if (byCabinet.size < 2) continue;
-    const orderedCabinets = [...byCabinet.entries()].sort((left, right) => right[1].length - left[1].length);
-    const dominantRows = orderedCabinets[0][1];
-    if (dominantRows.length < 10) continue;
-    for (const [cabinetKey, candidateRows] of orderedCabinets.slice(1)) {
-      const identities = new Set(candidateRows.map(row => row.identity));
-      const candidateDates = new Set(candidateRows.map(row => row.date));
-      if (candidateRows.length !== 1 || identities.size !== 1 || candidateDates.size !== 1) continue;
-      const row = candidateRows[0];
-      const anomaly: GroupHistorySnapshotAnomaly = {
-        kind: 'cross_cabinet_singleton',
-        date: row.date,
-        cabinetKey,
-        groupCode,
-        rowIndexes: [row.sourceIndex],
-      };
-      anomalies.push(anomaly);
-      if (!options.acceptAnomalies) excludedRowIndexes.add(row.sourceIndex);
-    }
-  }
-
-  const rowsByProduct = new Map<string, PreparedGroupHistoryRow[]>();
-  for (const row of rows) {
-    if (excludedRowIndexes.has(row.sourceIndex)) continue;
-    const productKey = `${row.cabinetKey}|${row.identity}`;
-    rowsByProduct.set(productKey, [...(rowsByProduct.get(productKey) || []), row]);
-  }
-  const unconfirmedBySnapshot = new Map<string, GroupHistorySnapshotAnomaly>();
-  for (const productRows of rowsByProduct.values()) {
-    const orderedRows = [...productRows].sort((left, right) => left.date.localeCompare(right.date));
-    let acceptedGroupCode = orderedRows[0]?.groupCode;
-    for (let index = 1; index < orderedRows.length; index++) {
-      const row = orderedRows[index];
-      if (row.groupCode === acceptedGroupCode) continue;
-      const nextRow = orderedRows[index + 1];
-      const confirmedByNextSnapshot = nextRow?.groupCode === row.groupCode;
-      if (!confirmedByNextSnapshot) {
-        const anomalyKey = `${row.date}|${row.cabinetKey}`;
-        const anomaly = unconfirmedBySnapshot.get(anomalyKey) || {
-          kind: 'unconfirmed_transition' as const,
-          date: row.date,
-          cabinetKey: row.cabinetKey,
-          changedProducts: 0,
-          rowIndexes: [],
-        };
-        anomaly.changedProducts = (anomaly.changedProducts || 0) + 1;
-        anomaly.rowIndexes.push(row.sourceIndex);
-        unconfirmedBySnapshot.set(anomalyKey, anomaly);
-        if (!options.acceptAnomalies) {
-          excludedRowIndexes.add(row.sourceIndex);
-          continue;
-        }
-      }
-      acceptedGroupCode = row.groupCode;
-    }
-  }
-  anomalies.push(...unconfirmedBySnapshot.values());
-
   if (anomalies.length > 0) {
-    const massChanges = anomalies.filter(issue => issue.kind === 'mass_change');
-    const singletonGroups = anomalies.filter(issue => issue.kind === 'cross_cabinet_singleton');
-    const unconfirmedTransitions = anomalies.filter(issue => issue.kind === 'unconfirmed_transition');
-    if (massChanges.length > 0) {
-      warnings.push(
-        `Обнаружено ${massChanges.length} массовых изменений состава. `
-        + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию эти срезы будут пропущены.'),
-      );
-    }
-    if (singletonGroups.length > 0) {
-      warnings.push(
-        `Обнаружено ${singletonGroups.length} одиночных появлений кода склейки из другого кабинета. `
-        + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию эти строки будут пропущены.'),
-      );
-    }
-    if (unconfirmedTransitions.length > 0) {
-      const transitionCount = unconfirmedTransitions.reduce((sum, issue) => sum + (issue.changedProducts || 0), 0);
-      warnings.push(
-        `Обнаружено ${transitionCount} изменений, не подтверждённых следующим снимком. `
-        + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию они будут пропущены.'),
-      );
-    }
+    warnings.push(
+      `Резких изменений более 15% состава кабинета: ${anomalies.length}. `
+      + (options.acceptAnomalies ? 'Они будут импортированы по подтверждению.' : 'По умолчанию эти срезы будут пропущены.'),
+    );
   }
 
   const unknownCabinets = [...cabinetDates.keys()].filter(key => key === 'id:unknown');
@@ -351,19 +264,10 @@ export function analyzeGroupHistoryImport(
   }
 
   for (const anomaly of anomalies) {
-    if (anomaly.kind === 'mass_change') {
-      warnings.push(
-        `${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: изменилось ${anomaly.changedProducts} из `
-        + `${anomaly.commonProducts} товаров (${Math.round((anomaly.changeRate || 0) * 1000) / 10}%).`,
-      );
-    } else if (anomaly.kind === 'cross_cabinet_singleton') {
-      warnings.push(`${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: подозрительный одиночный код ${anomaly.groupCode}.`);
-    } else {
-      warnings.push(
-        `${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: ${anomaly.changedProducts} изменений `
-        + 'не подтверждены следующим снимком.',
-      );
-    }
+    warnings.push(
+      `${anomaly.date}, ${issueLabel(anomaly.cabinetKey)}: изменилось ${anomaly.changedProducts} из `
+      + `${anomaly.commonProducts} товаров (${Math.round((anomaly.changeRate || 0) * 1000) / 10}%).`,
+    );
   }
 
   const acceptedRows = rows.filter(row => !excludedRowIndexes.has(row.sourceIndex));

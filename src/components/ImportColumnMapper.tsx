@@ -253,7 +253,7 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
                       checked={acceptGroupHistoryAnomalies}
                       onChange={event => setAcceptGroupHistoryAnomalies(event.target.checked)}
                     />
-                    <span>Подтверждаю, что массовые, одиночные и неподтверждённые изменения в файле реальны</span>
+                    <span>Подтверждаю все резкие изменения более 15% состава кабинета</span>
                   </label>
                 )}
                 {!acceptGroupHistoryAnomalies && groupHistoryAnalysis.excludedRowIndexes.size > 0 && (
