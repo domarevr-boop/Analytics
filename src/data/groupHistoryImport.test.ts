@@ -95,14 +95,15 @@ test('marks ambiguous WB IDs as unsafe without rejecting stable seller SKUs', ()
   assert.equal(analysis.unsafeWbKeys.has('name:первый|1008000000'), true);
 });
 
-test('accepts a one-row cross-cabinet code as a small change', () => {
+test('rejects a one-row cross-cabinet code without requesting confirmation', () => {
   const rows = [
     ...snapshot('2026-09-19', 'Второй', '5', () => 'СКЛ-012'),
     { date: '2026-09-19', cabinet: 'Первый', sku: '40581', wb_sku: '1507427752', group_code: 'СКЛ-012' },
   ];
   const analysis = analyzeGroupHistoryImport(rows);
   assert.equal(analysis.anomalies.length, 0);
-  assert.equal(analysis.acceptedRows.some(row => row.sku === '40581'), true);
+  assert.equal(analysis.acceptedRows.some(row => row.sku === '40581'), false);
+  assert.equal(analysis.warnings.some(message => message.includes('массово относящихся к другому кабинету')), true);
 });
 
 test('clears imported date and cabinet snapshots even when a cabinet is absent from that date', () => {

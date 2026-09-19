@@ -251,6 +251,32 @@ export function analyzeGroupHistoryImport(
     }
   }
 
+  let rejectedCrossCabinetRows = 0;
+  const rowsByGroupAndCabinet = new Map<string, Map<string, PreparedGroupHistoryRow[]>>();
+  for (const row of rows) {
+    if (!row.groupCode) continue;
+    const byCabinet = rowsByGroupAndCabinet.get(row.groupCode) || new Map<string, PreparedGroupHistoryRow[]>();
+    byCabinet.set(row.cabinetKey, [...(byCabinet.get(row.cabinetKey) || []), row]);
+    rowsByGroupAndCabinet.set(row.groupCode, byCabinet);
+  }
+  for (const byCabinet of rowsByGroupAndCabinet.values()) {
+    if (byCabinet.size < 2) continue;
+    const orderedCabinets = [...byCabinet.entries()].sort((left, right) => right[1].length - left[1].length);
+    if (orderedCabinets[0][1].length < 10) continue;
+    for (const [, candidateRows] of orderedCabinets.slice(1)) {
+      const identities = new Set(candidateRows.map(row => row.identity));
+      const candidateDates = new Set(candidateRows.map(row => row.date));
+      if (candidateRows.length !== 1 || identities.size !== 1 || candidateDates.size !== 1) continue;
+      excludedRowIndexes.add(candidateRows[0].sourceIndex);
+      rejectedCrossCabinetRows++;
+    }
+  }
+  if (rejectedCrossCabinetRows > 0) {
+    warnings.push(
+      `Автоматически пропущено одиночных кодов склеек, массово относящихся к другому кабинету: ${rejectedCrossCabinetRows}.`,
+    );
+  }
+
   if (anomalies.length > 0) {
     warnings.push(
       `Резких изменений более 15% состава кабинета: ${anomalies.length}. `

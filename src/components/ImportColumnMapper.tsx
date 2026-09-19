@@ -256,8 +256,8 @@ export default function ImportColumnMapper({ parsed, onConfirm, onCancel }: Prop
                     <span>Подтверждаю все резкие изменения более 15% состава кабинета</span>
                   </label>
                 )}
-                {!acceptGroupHistoryAnomalies && groupHistoryAnalysis.excludedRowIndexes.size > 0 && (
-                  <p><strong>{groupHistoryAnalysis.excludedRowIndexes.size} строк будут пропущены.</strong> На этих датах сохранится предыдущее состояние.</p>
+                {groupHistoryAnalysis.excludedRowIndexes.size > 0 && (
+                  <p><strong>{groupHistoryAnalysis.excludedRowIndexes.size} строк будут пропущены.</strong> Для них сохранится предыдущее состояние.</p>
                 )}
               </div>
             </div>
