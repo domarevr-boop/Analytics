@@ -48,16 +48,43 @@ $$;
 reset role;
 
 do $$
-declare v_row record;
+declare v_row record; v_view_count integer; v_filtered_count integer;
 begin
   select * into strict v_row from app.v5_profitability_current(date '2026-08-01', date '2026-08-01');
   if v_row.quantity <> 2.5 or v_row.revenue <> 1000 or v_row.gross_profit <> 500
     or v_row.gross_margin <> 50 or v_row.reported_gross_profit <> 500 or v_row.reported_gross_margin <> 50
   then raise exception 'Profitability generated amounts failed: %', row_to_json(v_row); end if;
+  select count(*) into v_view_count from analytics.profitability_current_enriched where date = date '2026-08-01';
+  select count(*) into v_filtered_count from app.v5_profitability_filtered(date '2026-08-01', date '2026-08-01');
+  if v_view_count <> 1 or v_filtered_count <> 1 then raise exception 'Profitability read path missing: view %, filtered %', v_view_count, v_filtered_count; end if;
 end
 $$;
 
 set local role authenticated;
+
+do $$
+declare
+  v_summary record;
+  v_row record;
+  v_expense jsonb;
+  v_cabinet_id uuid := (select value from profitability_smoke_ids where label = 'cabinet');
+begin
+  select * into strict v_summary from public.v5_profitability_summary(date '2026-08-01', date '2026-08-01');
+  if v_summary.gross_profit <> 500 or v_summary.net_profit is not null or v_summary.expenses_configured then
+    raise exception 'Profitability summary must keep net metrics null before expense configuration: %', row_to_json(v_summary);
+  end if;
+  v_expense := public.v5_profitability_set_expense(v_cabinet_id, date '2026-08-01', 10);
+  if (v_expense ->> 'expense_pct')::numeric <> 10 then raise exception 'Expense setting failed: %', v_expense; end if;
+  select * into strict v_summary from public.v5_profitability_summary(date '2026-08-01', date '2026-08-01');
+  if v_summary.expense_amount <> 100 or v_summary.net_profit <> 400 or v_summary.profitability <> 40 or not v_summary.expenses_configured then
+    raise exception 'Configured profitability summary is wrong: %', row_to_json(v_summary);
+  end if;
+  select * into strict v_row from public.v5_profitability_rows(
+    date '2026-08-01', date '2026-08-01', array[v_cabinet_id], null, null, null, null, 'PROFIT-SKU', 'net_profit', 0, 10
+  );
+  if v_row.net_profit <> 400 or v_row.total_count <> 1 then raise exception 'Bounded profitability row is wrong: %', row_to_json(v_row); end if;
+end
+$$;
 
 do $$
 declare
@@ -111,6 +138,9 @@ $$;
 select jsonb_build_object(
   'generated_gross_profit_verified', true,
   'generated_gross_margin_verified', true,
+  'nullable_net_profit_verified', true,
+  'monthly_expense_verified', true,
+  'bounded_read_verified', true,
   'invalid_rows_do_not_create_products', true,
   'rollback_verified', true,
   'transaction_will_rollback', true

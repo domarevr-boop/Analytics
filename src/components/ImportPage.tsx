@@ -54,6 +54,8 @@ import { importSearchQueriesToSupabase, isV5SearchQueriesImportEnabled } from '.
 import type { SearchQueriesImportResult } from '../features/searchQueries/searchQueriesImport';
 import { parseFunnelFileInWorker, type ParsedFunnelFile } from '../features/funnel/funnelImportParser';
 import { importFunnelToSupabase, isV5FunnelImportEnabled, loadFunnelImportCabinets, type FunnelImportResult } from '../features/funnel/funnelImport';
+import { parseProfitabilityFileInWorker, type ParsedProfitabilityFile } from '../features/profitability/profitabilityImportParser';
+import { importProfitabilityToSupabase, isV5ProfitabilityImportEnabled, loadProfitabilityImportCabinets, type ProfitabilityImportResult } from '../features/profitability/profitabilityImport';
 import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
 import {
   buildCabinetRoutingPlan,
@@ -146,12 +148,15 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [entryPointsServerPreview, setEntryPointsServerPreview] = useState<ParsedEntryPointsFile | null>(null);
   const [searchQueriesServerPreview, setSearchQueriesServerPreview] = useState<ParsedSearchQueriesFile | null>(null);
   const [funnelServerPreview, setFunnelServerPreview] = useState<ParsedFunnelFile | null>(null);
+  const [profitabilityServerPreview, setProfitabilityServerPreview] = useState<ParsedProfitabilityFile | null>(null);
   const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
   const [geographyCabinetError, setGeographyCabinetError] = useState('');
   const [entryPointsCabinets, setEntryPointsCabinets] = useState<V5DirectoryDimension[]>([]);
   const [entryPointsCabinetError, setEntryPointsCabinetError] = useState('');
   const [funnelCabinets, setFunnelCabinets] = useState<V5DirectoryDimension[]>([]);
   const [funnelCabinetError, setFunnelCabinetError] = useState('');
+  const [profitabilityCabinets, setProfitabilityCabinets] = useState<V5DirectoryDimension[]>([]);
+  const [profitabilityCabinetError, setProfitabilityCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
   const [latestReviewImport, setLatestReviewImport] = useState<ReviewImportSummary | null>(null);
   const [latestMarketImport, setLatestMarketImport] = useState<MarketImportResult | null>(null);
@@ -162,6 +167,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [latestEntryPointsImport, setLatestEntryPointsImport] = useState<EntryPointsImportResult | null>(null);
   const [latestSearchQueriesImport, setLatestSearchQueriesImport] = useState<SearchQueriesImportResult | null>(null);
   const [latestFunnelImport, setLatestFunnelImport] = useState<FunnelImportResult | null>(null);
+  const [, setLatestProfitabilityImport] = useState<ProfitabilityImportResult | null>(null);
   const [competitorImportHistory, setCompetitorImportHistory] = useState<CompetitorImportHistoryRow[]>([]);
   const [competitorErrors, setCompetitorErrors] = useState<CompetitorBatchErrorRow[]>([]);
   const [competitorErrorBatchId, setCompetitorErrorBatchId] = useState('');
@@ -211,6 +217,11 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         })
         .catch(error => setFunnelCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
     }
+    if (isV5ProfitabilityImportEnabled) {
+      void loadProfitabilityImportCabinets()
+        .then(cabinets => { setProfitabilityCabinets(cabinets); setProfitabilityCabinetError(cabinets.length ? '' : 'Нет доступных активных кабинетов V5.'); })
+        .catch(error => setProfitabilityCabinetError(error instanceof Error ? error.message : 'Не удалось получить кабинеты V5'));
+    }
   }, [serverOnly]);
 
   const geographyRouting = useMemo(
@@ -225,6 +236,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     () => funnelServerPreview ? buildCabinetRoutingPlan(funnelServerPreview.rows, funnelCabinets) : null,
     [funnelServerPreview, funnelCabinets],
   );
+  const profitabilityRouting = useMemo(
+    () => profitabilityServerPreview ? buildCabinetRoutingPlan(profitabilityServerPreview.rows, profitabilityCabinets) : null,
+    [profitabilityServerPreview, profitabilityCabinets],
+  );
   const geographyRoutingError = geographyCabinetError || (geographyRouting && geographyServerPreview
     ? cabinetRoutingError(geographyRouting, geographyServerPreview.sourceRowNumbers)
     : '');
@@ -233,6 +248,9 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     : '');
   const funnelRoutingError = funnelCabinetError || (funnelRouting && funnelServerPreview
     ? cabinetRoutingError(funnelRouting, funnelServerPreview.sourceRowNumbers)
+    : '');
+  const profitabilityRoutingError = profitabilityCabinetError || (profitabilityRouting && profitabilityServerPreview
+    ? cabinetRoutingError(profitabilityRouting, profitabilityServerPreview.sourceRowNumbers)
     : '');
 
   const handleFile = useCallback(async (file: File) => {
@@ -245,6 +263,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setEntryPointsServerPreview(null);
     setSearchQueriesServerPreview(null);
     setFunnelServerPreview(null);
+    setProfitabilityServerPreview(null);
     setCompetitorPreview(null);
     setProgress(`Чтение ${file.name}...`);
     try {
@@ -299,6 +318,14 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a WB funnel workbook:', error);
         }
       }
+      if (ext === 'xlsx' && isV5ProfitabilityImportEnabled) {
+        try {
+          const profitabilityData = await parseProfitabilityFileInWorker(file);
+          setProfitabilityServerPreview(profitabilityData); setSelectedFile(file); return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not a profitability workbook:', error);
+        }
+      }
       if (ext === 'xlsx' && isV5SearchQueriesImportEnabled) {
         try {
           const searchQueriesData = await parseSearchQueriesFileInWorker(file);
@@ -320,7 +347,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
         }
       }
-      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
+      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5ProfitabilityImportEnabled ? ', «Рентабельность» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -376,6 +403,35 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
       importRunningRef.current = false; setLoading(false); setProgress(''); setFunnelServerPreview(null); setSelectedFile(null);
     }
   }, [selectedFile, funnelServerPreview, funnelRouting, funnelRoutingError, funnelCabinets]);
+
+  const handleV5ProfitabilityImport = useCallback(async () => {
+    if (!selectedFile || !profitabilityServerPreview || !profitabilityRouting || profitabilityRoutingError || importRunningRef.current) return;
+    importRunningRef.current = true; setLoading(true); setProgress('Повторная проверка отчёта рентабельности...');
+    try {
+      const parsedWorkbook = await parseProfitabilityFileInWorker(selectedFile);
+      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, profitabilityCabinets);
+      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
+      if (routingError) throw new Error(routingError);
+      const results: ProfitabilityImportResult[] = [];
+      for (let index = 0; index < routing.routes.length; index += 1) {
+        const route = routing.routes[index]; const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
+        const result = await importProfitabilityToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+          const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача финансовых строк' : 'Серверная проверка и публикация';
+          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+        });
+        results.push(result);
+      }
+      const latest = results.at(-1); if (latest) setLatestProfitabilityImport(latest);
+      const failed = results.filter(result => result.status === 'failed');
+      if (failed.length) alert(`Импорт «Рентабельности» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      else if (results.every(result => result.duplicate)) alert('Этот файл «Рентабельности» уже опубликован во всех определённых кабинетах V5.');
+      else alert(`Импорт «Рентабельности» опубликован автоматически. Кабинетов: ${results.length}. Строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Рентабельности»');
+    } finally {
+      importRunningRef.current = false; setLoading(false); setProgress(''); setProfitabilityServerPreview(null); setSelectedFile(null);
+    }
+  }, [selectedFile, profitabilityServerPreview, profitabilityRouting, profitabilityRoutingError, profitabilityCabinets]);
 
   const handleV5EntryPointsImport = useCallback(async () => {
     if (!selectedFile || !entryPointsServerPreview || !entryPointsRouting || entryPointsRoutingError || importRunningRef.current) return;
@@ -971,6 +1027,27 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           </div>
         </div>
       )}
+      {profitabilityServerPreview && (
+        <div className="import-mapper-wrapper">
+          <div className="import-mapper-overlay">
+            <div className="import-mapper competitor-import-preview">
+              <div className="import-mapper-header"><div className="import-mapper-header-info"><h3>Серверный импорт рентабельности: {selectedFile?.name}</h3><span className="import-mapper-summary">Лист «{profitabilityServerPreview.sheetName}» распознан безопасным parser V5</span></div><span className="import-mapper-date"><label>Кабинеты:</label><strong>Автоматически</strong></span></div>
+              <div className="import-mapper-body">
+                <div className="import-date-coverage"><span>Покрытие дат</span><strong>{profitabilityServerPreview.dateStart || 'требует проверки'} — {profitabilityServerPreview.dateEnd || 'требует проверки'}</strong></div>
+                <div className="competitor-import-grid">
+                  <article><span>Строк в файле</span><strong>{profitabilityServerPreview.inputRows}</strong><small>до нормализации</small></article>
+                  <article><span>К публикации</span><strong>{profitabilityServerPreview.rows.length}</strong><small>дата + товар</small></article>
+                  <article><span>Заменено повторов</span><strong>{profitabilityServerPreview.replacedDuplicateRows}</strong><small>последняя строка ключа</small></article>
+                  <article><span>Распределение</span><strong>{profitabilityRouting?.routes.length || 0} каб.</strong><small>{profitabilityRouting ? cabinetRoutingSummary(profitabilityRouting) : 'проверяется'}</small></article>
+                </div>
+                {profitabilityRoutingError && <p className="import-mapper-error">{profitabilityRoutingError}</p>}
+                <p className="import-preview-note">Кабинет определяется автоматически: 3/4 — «Светпланет», 5 — «Ледситипро». Валовая прибыль пересчитывается сервером из выручки и прямых расходов. Чистая прибыль останется пустой до настройки месячных постоянных расходов.</p>
+              </div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setProfitabilityServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(profitabilityRoutingError)} onClick={() => void handleV5ProfitabilityImport()}>Опубликовать рентабельность в V5</button></div>
+            </div>
+          </div>
+        </div>
+      )}
       {searchQueriesServerPreview && (
         <div className="import-mapper-wrapper">
           <div className="import-mapper-overlay">
@@ -1043,7 +1120,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         </div>
         <div className="dropzone-hint">
           {serverOnly
-            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ', «Поисковые запросы» (.xlsx)' : ''}`
+            ? `Поддерживаются: «Рынок» (.csv/.xlsx)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5ProfitabilityImportEnabled ? ', «Рентабельность» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ', «Поисковые запросы» (.xlsx)' : ''}`
             : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>

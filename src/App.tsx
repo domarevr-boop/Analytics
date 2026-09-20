@@ -7,6 +7,7 @@ import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth 
 import { fetchV5Access, getV5Capabilities, isV5PageAllowed, type V5Access } from './auth/v5Access';
 import { isV5MarketBackendEnabled } from './features/market/marketData';
 import { isV5FunnelBackendEnabled } from './features/funnel/funnelData';
+import { isV5ProfitabilityBackendEnabled } from './features/profitability/profitabilityData';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
@@ -26,6 +27,7 @@ import V5AccessAdminPage from './components/V5AccessAdminPage';
 import DevPage from './components/DevPage';
 import FunnelPage from './pages/analytics/FunnelPage';
 import FunnelServerPage from './pages/analytics/FunnelServerPage';
+import ProfitabilityServerPage from './pages/analytics/ProfitabilityServerPage';
 import EntryPointsPage from './pages/analytics/EntryPointsPage';
 import SearchPhrasesPage from './pages/analytics/SearchPhrasesRoute';
 import MarketPage from './pages/analytics/MarketPage';
@@ -446,7 +448,7 @@ function App() {
       ) : displayPage === 'import' ? (
         <div className="page-content"><ImportPage serverOnly={IS_V5_ENVIRONMENT && !canManage} /></div>
       ) : displayPage === 'profitability' ? (
-        <div className="page-content"><ProfitabilityPage {...filterBarProps} /></div>
+        <div className="page-content">{isV5ProfitabilityBackendEnabled ? <ProfitabilityServerPage /> : <ProfitabilityPage {...filterBarProps} />}</div>
       ) : displayPage === 'admin' ? (
         IS_V5_ENVIRONMENT
           ? <V5AccessAdminPage onAccessChanged={() => setAdminRefreshKey(v => v + 1)} />

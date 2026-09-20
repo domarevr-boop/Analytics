@@ -48,6 +48,8 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260916029000_v5_funnel_publish_timeout.sql',
     '20260916030000_v5_profitability_import.sql',
     '20260920031000_v5_geography_location_city_filter.sql',
+    '20260920032000_v5_profitability_read_api.sql',
+    '20260920033000_v5_profitability_read_access_fix.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -65,6 +67,25 @@ test('canonical V4 cabinets are seeded for automatic V5 import routing', () => {
   assert.match(sql, /\('cab-1',\s*'Светпланет',\s*true\)/iu);
   assert.match(sql, /\('cab-2',\s*'Ледситипро',\s*true\)/iu);
   assert.match(sql, /on conflict\s*\(external_key\)\s*do update/iu);
+});
+
+test('profitability read API keeps net metrics nullable without configured monthly expenses', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260920032000_v5_profitability_read_api.sql', import.meta.url), 'utf8');
+  for (const fragment of ['profitability_monthly_expenses', 'v5_profitability_bounds', 'v5_profitability_summary', 'v5_profitability_series', 'v5_profitability_rows', 'v5_profitability_set_expense']) {
+    assert.ok(sql.includes(fragment), `missing profitability read contract: ${fragment}`);
+  }
+  assert.match(sql, /case when expense\.expense_pct is null then null/iu);
+  assert.match(sql, /p_expense_pct between 0 and 100|p_expense_pct < 0 or p_expense_pct > 100/iu);
+});
+
+test('V5 profitability route is server-only and its import uses automatic cabinet routing', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/pages/analytics/ProfitabilityServerPage.tsx', import.meta.url), 'utf8');
+  const importPage = readFileSync(new URL('../src/components/ImportPage.tsx', import.meta.url), 'utf8');
+  assert.match(app, /isV5ProfitabilityBackendEnabled\s*\?\s*<ProfitabilityServerPage\s*\/>/u);
+  assert.doesNotMatch(page, /data\/store|profitStore/u);
+  assert.match(importPage, /buildCabinetRoutingPlan\(profitabilityServerPreview\.rows, profitabilityCabinets\)/u);
+  assert.match(importPage, /Опубликовать рентабельность в V5/u);
 });
 
 test('full funnel publications receive a function-local timeout budget', () => {
