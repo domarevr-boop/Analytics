@@ -2,6 +2,12 @@ import type { GeographyOrderRecord } from '../../types';
 
 export type GeographyFulfillment = 'all' | 'fbo' | 'fbs';
 
+export const geographyHeatColors = {
+  low: '#D95D4F',
+  middle: '#F2C94C',
+  high: '#2F9E68',
+} as const;
+
 export const geographyFulfillmentLabels: Record<GeographyFulfillment, string> = {
   all: 'Все заказы',
   fbo: 'FBO · Склад WB',
@@ -42,6 +48,26 @@ export function toMillions(amount: number) {
 
 export function amountShare(amount: number, denominator: number) {
   return denominator > 0 ? amount / denominator * 100 : 0;
+}
+
+function parseHexColor(color: string) {
+  return [1, 3, 5].map(index => Number.parseInt(color.slice(index, index + 2), 16));
+}
+
+function interpolateColor(from: string, to: string, ratio: number) {
+  const start = parseHexColor(from);
+  const end = parseHexColor(to);
+  const channels = start.map((channel, index) => Math.round(channel + (end[index] - channel) * ratio));
+  return `#${channels.map(channel => channel.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
+export function geographyHeatColor(value: number, minimum: number, maximum: number, inverse = false) {
+  if (!Number.isFinite(value)) return null;
+  const normalized = maximum > minimum ? Math.min(1, Math.max(0, (value - minimum) / (maximum - minimum))) : 0.5;
+  const ratio = inverse ? 1 - normalized : normalized;
+  return ratio <= 0.5
+    ? interpolateColor(geographyHeatColors.low, geographyHeatColors.middle, ratio * 2)
+    : interpolateColor(geographyHeatColors.middle, geographyHeatColors.high, (ratio - 0.5) * 2);
 }
 
 export function topFiveWithOther(rows: { name: string; value: number }[], denominator = rows.reduce((sum, row) => sum + row.value, 0)) {

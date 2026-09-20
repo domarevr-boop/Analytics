@@ -19,8 +19,9 @@ import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
 type ChartMetric = 'orders' | 'deliveryHours';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
 type DetailSort = 'orders' | 'orderedAmount' | 'share' | 'deliveryHours';
-type MapMetric = 'orderedAmount' | 'deliveryHours' | 'netProfitShare' | 'orderedAmountShare';
+type MapMetric = 'orders' | 'orderedAmount' | 'deliveryHours' | 'netProfitShare' | 'orderedAmountShare';
 type DetailMetricRow = { orders: number; orderedAmount: number; share: number; deliveryHours: number | null };
+type MapAreaMetricRow = { name: string; district: string; orders: number; orderedAmount: number | null; deliveryHours: number | null; netProfit: number | null };
 const DETAIL_PAGE_SIZE = 8;
 
 const metricLabels: Record<ChartMetric, string> = {
@@ -30,12 +31,14 @@ const funnelMetricLabels: Record<FunnelMetric, string> = {
   orderedAmount: 'Сумма заказов, ₽', impressions: 'Показы', clicks: 'Клики', carts: 'Корзины', orders: 'Заказы, шт', ctr: 'CTR', cartCr: 'CR корзины', impressionOrderCr: 'CR показ → заказ',
 };
 const mapMetricLabels: Record<MapMetric, string> = {
+  orders: 'Заказы',
   orderedAmount: 'Сумма заказов',
   deliveryHours: 'СВД',
   netProfitShare: 'Доля ЧП',
   orderedAmountShare: 'Доля суммы заказов',
 };
 const regionColors = ['#2563EB', '#38BDF8', '#10B981', '#34D399', '#8B5CF6', '#F59E0B', '#F97316'];
+const mapDateFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 type FinanceGeoRow = { region: string; area: string; city: string; orders: number; orderedAmount: number; netProfit: number; profitRevenue: number; profitability: number };
 
 function sumFinance(rows: FinanceGeoRow[]) {
@@ -62,6 +65,7 @@ function formatHours(hours: number | null) {
 function parseDate(value: string) { return new Date(`${value}T00:00:00Z`); }
 function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
 function shiftDate(value: string, days: number) { const date = parseDate(value); date.setUTCDate(date.getUTCDate() + days); return isoDate(date); }
+function formatMapDate(value: string) { return value ? mapDateFormatter.format(parseDate(value)) : 'Нет даты'; }
 function previousPeriod(start: string, end: string) {
   if (!start || !end) return { start: '', end: '' };
   const days = Math.round((parseDate(end).getTime() - parseDate(start).getTime()) / 86_400_000) + 1;
@@ -142,7 +146,8 @@ export default function GeographyPage() {
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(() => new Set());
   const [expandedDetailAreas, setExpandedDetailAreas] = useState<Set<string>>(() => new Set());
   const [detailSort, setDetailSort] = useState<DetailSort>('orders');
-  const [mapMetric, setMapMetric] = useState<MapMetric>('orderedAmount');
+  const [mapMetric, setMapMetric] = useState<MapMetric>('orders');
+  const [mapDate, setMapDate] = useState(() => dates.at(-1) || '');
   const [detailPage, setDetailPage] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [selectedGeo, setSelectedGeo] = useState<{ level: 'district' | 'area' | 'city'; district: string; area?: string; city?: string } | null>(null);
@@ -166,6 +171,24 @@ export default function GeographyPage() {
     if (city && record.city !== city) return false;
     return true;
   }), [baseFiltered, region, area, city]);
+  const mapDates = useMemo(() => {
+    if (!start || !end || start > end) return [];
+    const result: string[] = [];
+    let current = start;
+    while (current <= end && result.length < 3_660) {
+      result.push(current);
+      current = shiftDate(current, 1);
+    }
+    return result;
+  }, [start, end]);
+  const effectiveMapDate = mapDates.includes(mapDate) ? mapDate : mapDates.at(-1) || '';
+  const mapDateIndex = Math.max(0, mapDates.indexOf(effectiveMapDate));
+  const mapRecordsByDate = useMemo(() => {
+    const result = new Map<string, GeographyOrderRecord[]>();
+    filtered.forEach(record => appendToMap(result, record.date, record));
+    return result;
+  }, [filtered]);
+  const mapFiltered = useMemo(() => mapRecordsByDate.get(effectiveMapDate) || [], [mapRecordsByDate, effectiveMapDate]);
   const baseTotals = useMemo(() => aggregateGeography(baseFiltered, fulfillment), [baseFiltered, fulfillment]);
   const totals = useMemo(() => aggregateGeography(filtered, fulfillment), [filtered, fulfillment]);
   const fulfillmentTotals = useMemo(() => ({
@@ -274,19 +297,40 @@ export default function GeographyPage() {
     }).filter(row => row.orders > 0);
     return rows.sort((left, right) => detailSortValue(right, detailSort) - detailSortValue(left, detailSort));
   }, [filtered, financeLeaves, baseTotals.total, detailSort, fulfillment]);
+  const mapFinanceLeaves = useMemo(() => mapMetric === 'orders' || mapMetric === 'deliveryHours' ? [] : buildFinanceLeaves(mapFiltered, records, productById, fulfillment), [mapFiltered, records, productById, fulfillment, mapMetric]);
+  const mapAreaRows = useMemo<MapAreaMetricRow[]>(() => {
+    const hasFinance = mapMetric !== 'orders' && mapMetric !== 'deliveryHours';
+    const recordsByArea = new Map<string, { district: string; name: string; rows: GeographyOrderRecord[] }>();
+    const financeByArea = new Map<string, FinanceGeoRow[]>();
+    mapFiltered.filter(record => hasKnownGeoArea(record.area)).forEach(record => {
+      const name = normalizeGeoArea(record.area);
+      const key = `${record.region}|${name}`;
+      const entry = recordsByArea.get(key) || { district: record.region, name, rows: [] };
+      entry.rows.push(record);
+      recordsByArea.set(key, entry);
+    });
+    mapFinanceLeaves.forEach(row => appendToMap(financeByArea, `${row.region}|${row.area}`, row));
+    return [...recordsByArea.entries()].map(([key, entry]) => {
+      const summary = aggregateGeography(entry.rows, fulfillment);
+      const finance = sumFinance(financeByArea.get(key) || []);
+      return { name: entry.name, district: entry.district, orders: summary.total, deliveryHours: summary.deliveryHours, orderedAmount: hasFinance ? finance.orderedAmount : null, netProfit: hasFinance ? finance.netProfit : null };
+    }).filter(row => row.orders > 0);
+  }, [mapFiltered, mapFinanceLeaves, fulfillment, mapMetric]);
   const mapRows = useMemo<RussiaMapAreaRow[]>(() => {
-    const totalOrderedAmount = detailAreas.reduce((sum, row) => sum + row.orderedAmount, 0);
-    const totalNetProfit = detailAreas.reduce((sum, row) => sum + row.netProfit, 0);
-    return detailAreas.map(row => {
-      const netProfitShare = totalNetProfit ? row.netProfit / totalNetProfit * 100 : null;
-      const orderedAmountShare = totalOrderedAmount ? row.orderedAmount / totalOrderedAmount * 100 : 0;
-      const value = mapMetric === 'orderedAmount'
-        ? row.orderedAmount
-        : mapMetric === 'deliveryHours'
-          ? row.deliveryHours
-          : mapMetric === 'netProfitShare'
-            ? netProfitShare
-            : orderedAmountShare;
+    const totalOrderedAmount = mapAreaRows.reduce((sum, row) => sum + (row.orderedAmount || 0), 0);
+    const totalNetProfit = mapAreaRows.reduce((sum, row) => sum + (row.netProfit || 0), 0);
+    return mapAreaRows.map(row => {
+      const netProfitShare = totalNetProfit && row.netProfit !== null ? row.netProfit / totalNetProfit * 100 : null;
+      const orderedAmountShare = totalOrderedAmount && row.orderedAmount !== null ? row.orderedAmount / totalOrderedAmount * 100 : 0;
+      const value = mapMetric === 'orders'
+        ? row.orders
+        : mapMetric === 'orderedAmount'
+          ? row.orderedAmount
+          : mapMetric === 'deliveryHours'
+            ? row.deliveryHours
+            : mapMetric === 'netProfitShare'
+              ? netProfitShare
+              : orderedAmountShare;
       return {
         area: row.name,
         district: row.district,
@@ -298,7 +342,7 @@ export default function GeographyPage() {
         orderedAmountShare,
       };
     });
-  }, [detailAreas, mapMetric]);
+  }, [mapAreaRows, mapMetric]);
   const detailPageCount = Math.max(1, Math.ceil(detailAreas.length / DETAIL_PAGE_SIZE));
   const currentDetailPage = Math.min(detailPage, detailPageCount - 1);
   const visibleDetailAreas = detailAreas.slice(currentDetailPage * DETAIL_PAGE_SIZE, (currentDetailPage + 1) * DETAIL_PAGE_SIZE);
@@ -405,15 +449,25 @@ export default function GeographyPage() {
     </div>
     <div className="geo-map-grid">
       <article className="geo-card geo-map-card">
-        <div className="geo-card-head"><div><h2>Карта областей России</h2><p>Цвет показывает выбранную метрику. Нажмите на область, чтобы применить географический фильтр.</p></div><label className="geo-map-metric">Показатель<select value={mapMetric} onChange={event => setMapMetric(event.target.value as MapMetric)}>{Object.entries(mapMetricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        <div className="geo-card-head"><div><h2>Карта областей России</h2><p>Дневной срез: двигайте дату и наблюдайте изменение спроса. Нажмите на область, чтобы применить фильтр.</p></div><label className="geo-map-metric">Показатель<select value={mapMetric} onChange={event => setMapMetric(event.target.value as MapMetric)}>{Object.entries(mapMetricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        <div className="geo-map-timeline">
+          <button type="button" aria-label="Предыдущая дата карты" disabled={mapDateIndex <= 0} onClick={() => setMapDate(mapDates[Math.max(0, mapDateIndex - 1)] || effectiveMapDate)}>‹</button>
+          <div className="geo-map-timeline-control">
+            <div><span>Дата карты</span><output htmlFor="geo-map-date-slider">{formatMapDate(effectiveMapDate)}</output></div>
+            <input id="geo-map-date-slider" type="range" min={0} max={Math.max(0, mapDates.length - 1)} step={1} value={mapDateIndex} disabled={mapDates.length <= 1} aria-label="Дата карты" aria-valuetext={formatMapDate(effectiveMapDate)} onChange={event => setMapDate(mapDates[Number(event.target.value)] || effectiveMapDate)} />
+            <div className="geo-map-timeline-bounds"><span>{formatMapDate(mapDates[0] || '')}</span><span>{formatMapDate(mapDates.at(-1) || '')}</span></div>
+          </div>
+          <button type="button" aria-label="Следующая дата карты" disabled={mapDateIndex >= mapDates.length - 1} onClick={() => setMapDate(mapDates[Math.min(mapDates.length - 1, mapDateIndex + 1)] || effectiveMapDate)}>›</button>
+        </div>
+        {mapRows.length === 0 && <div className="geo-map-empty">На {formatMapDate(effectiveMapDate)} в выбранном срезе нет заказов.</div>}
         <RussiaMetricMap
           rows={mapRows}
           metricLabel={mapMetricLabels[mapMetric]}
-          formatValue={value => mapMetric === 'orderedAmount' ? `${formatNumber(value || 0)} ₽` : mapMetric === 'deliveryHours' ? formatHours(value) : value === null ? '—' : `${formatNumber(value)}%`}
+          contextLabel={formatMapDate(effectiveMapDate)}
+          formatValue={value => mapMetric === 'orders' ? `${formatNumber(value || 0)} шт.` : mapMetric === 'orderedAmount' ? `${formatNumber(value || 0)} ₽` : mapMetric === 'deliveryHours' ? formatHours(value) : value === null ? '—' : `${formatNumber(value)}%`}
           inverse={mapMetric === 'deliveryHours'}
-          diverging={mapMetric === 'netProfitShare'}
           onAreaSelect={selectedArea => {
-            const row = detailAreas.find(item => item.name === selectedArea);
+            const row = mapAreaRows.find(item => item.name === selectedArea);
             if (!row) return;
             setRegion(row.district);
             setArea(row.name);

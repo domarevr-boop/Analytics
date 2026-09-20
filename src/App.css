@@ -7404,11 +7404,22 @@ thead .at-metric:last-child {
 .geo-map-card { min-height: 470px; overflow: hidden; }
 .geo-map-metric { display: grid; gap: 4px; min-width: 190px; color: #718097; font-size: 8px; }
 .geo-map-metric select { min-height: 32px; border: 1px solid #dbe3ed; border-radius: 7px; background: #fff; color: #18324d; padding: 0 9px; font: inherit; }
+.geo-map-timeline { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; gap: 10px; margin: 2px 8px 0; padding: 10px 12px 8px; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; }
+.geo-map-timeline > button { width: 32px; height: 32px; border: 1px solid #d7e0ea; border-radius: 7px; background: #fff; color: #294866; font: 700 19px/1 inherit; cursor: pointer; }
+.geo-map-timeline > button:disabled { cursor: default; opacity: .38; }
+.geo-map-timeline-control { display: grid; gap: 5px; min-width: 0; }
+.geo-map-timeline-control > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.geo-map-timeline-control > div:first-child span { color: #718097; font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.geo-map-timeline-control output { color: #18324d; font-size: 10px; font-weight: 800; }
+.geo-map-timeline-control input[type='range'] { width: 100%; height: 18px; margin: 0; accent-color: #e7ad26; cursor: ew-resize; }
+.geo-map-timeline-control input[type='range']:disabled { cursor: default; opacity: .55; }
+.geo-map-timeline-bounds { display: flex; justify-content: space-between; gap: 12px; color: #8996a7; font-size: 7px; }
+.geo-map-empty { margin: 8px 8px 0; padding: 8px 10px; border-radius: 7px; background: #fff7e7; color: #8a6814; font-size: 8px; text-align: center; }
 .russia-metric-map { display: grid; gap: 10px; }
 .russia-metric-map-stage { position: relative; display: grid; min-height: 390px; place-items: center; overflow: hidden; padding: 4px 16px; background: radial-gradient(circle at 48% 50%, rgba(71,139,235,.08), transparent 62%); }
 .russia-metric-map-stage .map { width: 100% !important; max-width: 1040px; }
 .russia-metric-map-stage svg { display: block; width: 100%; height: auto; max-height: 430px; }
-.russia-metric-map-stage svg path { cursor: pointer; transition: filter .12s ease, opacity .12s ease; }
+.russia-metric-map-stage svg path { cursor: pointer; transition: fill .18s ease, filter .12s ease, opacity .12s ease; }
 .russia-metric-map-stage svg path:hover { filter: saturate(1.08); }
 .russia-map-tooltip { position: absolute; z-index: 8; display: grid; gap: 3px; min-width: 190px; max-width: 250px; padding: 10px 11px; border: 1px solid #dbe3ed; border-radius: 8px; background: rgba(255,255,255,.97); box-shadow: 0 10px 28px rgba(31,55,82,.14); color: #18324d; font-size: 9px; pointer-events: none; }
 .russia-map-tooltip strong { font-size: 11px; }
@@ -7416,6 +7427,7 @@ thead .at-metric:last-child {
 .russia-map-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 8px; color: #6f7f94; font-size: 8px; }
 .russia-map-scale span { display: inline-flex; align-items: center; gap: 4px; }
 .russia-map-scale i { width: 18px; height: 8px; border: 1px solid rgba(24,50,77,.06); border-radius: 2px; }
+.russia-map-scale .russia-map-gradient { width: min(280px, 42vw); height: 9px; border: 1px solid rgba(24,50,77,.08); border-radius: 999px; }
 .russia-map-unmatched { padding: 7px 8px; border-radius: 6px; background: #f7f9fc; color: #718097; font-size: 8px; }
 
 .geo-page-v2 .geo-plan-card { align-content: start; gap: 12px; }
@@ -7493,6 +7505,10 @@ thead .at-metric:last-child {
   .geo-detail-table-card .geo-card-head { align-items: stretch; }
   .geo-detail-sort select { width: 100%; }
   .geo-map-metric { width: 100%; }
+  .geo-map-timeline { grid-template-columns: 30px minmax(0, 1fr) 30px; margin-inline: 0; padding-inline: 8px; }
+  .geo-map-timeline > button { width: 30px; height: 30px; }
+  .geo-map-timeline-control output { font-size: 9px; }
+  .geo-map-timeline-bounds { display: none; }
   .russia-metric-map-stage { min-height: 250px; padding-inline: 0; }
   .geo-page-v2 .geo-bottom-rankings { grid-template-columns: 1fr; }
 }

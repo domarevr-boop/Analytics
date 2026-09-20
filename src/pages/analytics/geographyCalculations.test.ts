@@ -4,6 +4,8 @@ import test from 'node:test';
 import type { GeographyOrderRecord } from '../../types';
 import {
   aggregateGeography,
+  geographyHeatColor,
+  geographyHeatColors,
   getFulfillmentCoverage,
   getFulfillmentOrders,
 } from './geographyCalculations.ts';
@@ -37,4 +39,17 @@ test('reports incomplete fulfillment coverage without falling back to total orde
   const coverage = getFulfillmentCoverage([record({ orders_total: 10, wb_local_orders: 0, wb_nonlocal_orders: 2, marketplace_local_orders: 0, marketplace_nonlocal_orders: 3 })]);
   assert.deepEqual(coverage, { total: 10, fbo: 2, fbs: 3, distributed: 5, residual: 5, coverage: 50 });
   assert.equal(getFulfillmentOrders(record({ orders_total: 10, wb_local_orders: 0, wb_nonlocal_orders: 0, marketplace_local_orders: 0, marketplace_nonlocal_orders: 0 }), 'fbo'), 0);
+});
+
+test('builds a continuous red-yellow-green heat scale', () => {
+  assert.equal(geographyHeatColor(10, 10, 30), geographyHeatColors.low);
+  assert.equal(geographyHeatColor(20, 10, 30), geographyHeatColors.middle);
+  assert.equal(geographyHeatColor(30, 10, 30), geographyHeatColors.high);
+  assert.notEqual(geographyHeatColor(15, 10, 30), geographyHeatColors.low);
+});
+
+test('reverses the heat scale for metrics where less is better', () => {
+  assert.equal(geographyHeatColor(10, 10, 30, true), geographyHeatColors.high);
+  assert.equal(geographyHeatColor(30, 10, 30, true), geographyHeatColors.low);
+  assert.equal(geographyHeatColor(20, 20, 20), geographyHeatColors.middle);
 });
