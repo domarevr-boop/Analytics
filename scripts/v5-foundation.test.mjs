@@ -47,9 +47,17 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260916028000_v5_canonical_cabinets.sql',
     '20260916029000_v5_funnel_publish_timeout.sql',
     '20260916030000_v5_profitability_import.sql',
+    '20260920031000_v5_geography_location_city_filter.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
+});
+
+test('geography location RPC accepts and applies the frontend city filter', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20260920031000_v5_geography_location_city_filter.sql', import.meta.url), 'utf8');
+  assert.match(sql, /p_city text default null/iu);
+  assert.match(sql, /row_data\.normalized_city = p_city/iu);
+  assert.match(sql, /grant execute on function public\.v5_geography_locations\(date, date, text, text, uuid\[\], uuid\[\], text, text, text, integer, integer\) to authenticated/iu);
 });
 
 test('canonical V4 cabinets are seeded for automatic V5 import routing', () => {

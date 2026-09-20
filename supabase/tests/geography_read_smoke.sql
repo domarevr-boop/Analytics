@@ -47,9 +47,14 @@ begin
   end if;
 
   select * into v_location from public.v5_geography_locations(
-    date '2026-08-10', date '2026-08-11', 'area', 'all', null, null, 'Центральный', null, 100, 0
+    date '2026-08-10', date '2026-08-11', 'area', 'all', null, null, 'Центральный', null, null, 100, 0
   ) where area = 'Москва';
   if v_location.orders <> 10 or v_location.product_count <> 1 then raise exception 'Geography location aggregation failed'; end if;
+
+  select * into v_location from public.v5_geography_locations(
+    date '2026-08-10', date '2026-08-11', 'city', 'all', null, null, 'Центральный', null, 'Тверь', 100, 0
+  );
+  if v_location.city <> 'Тверь' or v_location.orders <> 5 then raise exception 'Geography city filtering failed'; end if;
 
   select * into v_product from public.v5_geography_product_leaders(
     date '2026-08-10', date '2026-08-11', 'all', 'Центральный', null, null, 20
