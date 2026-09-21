@@ -88,6 +88,15 @@ test('V5 profitability route is server-only and its import uses automatic cabine
   assert.match(importPage, /Опубликовать рентабельность в V5/u);
 });
 
+test('V5 reporting composes only bounded server sources without importing the local store', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/pages/analytics/ReportingServerPage.tsx', import.meta.url), 'utf8');
+  assert.match(app, /isV5MarketBackendEnabled && isV5FunnelBackendEnabled && isV5ProfitabilityBackendEnabled \? <ReportingServerPage \/>/u);
+  assert.doesNotMatch(page, /data\/store|profitStore/iu);
+  for (const loader of ['loadV5MarketData', 'loadFunnelSummary', 'loadFunnelSeries', 'loadProfitabilitySummary']) assert.match(page, new RegExp(loader, 'u'));
+  assert.match(page, /V5 · Supabase · без локального хранилища/u);
+});
+
 test('full funnel publications receive a function-local timeout budget', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260916029000_v5_funnel_publish_timeout.sql', import.meta.url), 'utf8');
   assert.match(sql, /alter function public\.v5_funnel_publish_batch\(uuid\)\s+set statement_timeout to '120s'/iu);

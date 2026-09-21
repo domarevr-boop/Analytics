@@ -35,6 +35,7 @@ import GeographyPage from './pages/analytics/GeographyPage';
 import ClientExperiencePage from './pages/analytics/ClientExperiencePage';
 import CompetitorsPage from './pages/analytics/CompetitorsPage';
 import ReportingPage from './pages/analytics/ReportingPage';
+import ReportingServerPage from './pages/analytics/ReportingServerPage';
 import ProductOverviewPage from './pages/ProductOverviewPage';
 import ChartsBlock from './components/ChartsBlock';
 import MiniChartsBlock from './components/MiniChartsBlock';
@@ -442,7 +443,7 @@ function App() {
       ) : displayPage === 'competitors' ? (
         <div className="page-content"><CompetitorsPage /></div>
       ) : displayPage === 'reporting' ? (
-        <div className="page-content"><ReportingPage /></div>
+        <div className="page-content">{isV5MarketBackendEnabled && isV5FunnelBackendEnabled && isV5ProfitabilityBackendEnabled ? <ReportingServerPage /> : <ReportingPage />}</div>
       ) : displayPage === 'planning' ? (
         <PlanningPage />
       ) : displayPage === 'import' ? (
