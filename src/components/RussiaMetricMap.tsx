@@ -11,7 +11,7 @@ export interface RussiaMapAreaRow {
   orderedAmount: number | null;
   deliveryHours: number | null;
   netProfitShare: number | null;
-  orderedAmountShare: number;
+  orderedAmountShare: number | null;
 }
 
 interface RussiaMetricMapProps {

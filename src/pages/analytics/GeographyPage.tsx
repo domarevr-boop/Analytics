@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, useSyncExternalStore } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import FilterBar from '../../components/FilterBar';
@@ -15,6 +15,7 @@ import { hasKnownGeoArea, hasKnownGeoCity, normalizeGeoArea, normalizeGeoCity, s
 import { geographyHelp } from './analyticsHelpContent';
 import type { GeographyOrderRecord } from '../../types';
 import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 
 type ChartMetric = 'orders' | 'deliveryHours';
 type FunnelMetric = 'orderedAmount' | 'impressions' | 'clicks' | 'carts' | 'orders' | 'ctr' | 'cartCr' | 'impressionOrderCr';
@@ -39,10 +40,10 @@ const mapMetricLabels: Record<MapMetric, string> = {
 };
 const regionColors = ['#2563EB', '#38BDF8', '#10B981', '#34D399', '#8B5CF6', '#F59E0B', '#F97316'];
 const mapDateFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-type FinanceGeoRow = { region: string; area: string; city: string; orders: number; orderedAmount: number; netProfit: number; profitRevenue: number; profitability: number };
+type FinanceGeoRow = { region: string; area: string; city: string; orders: number; orderedAmount: number; netProfit: number; profitRevenue: number; profitability: number; orderedAmountKnown: boolean; netProfitKnown: boolean };
 
 function sumFinance(rows: FinanceGeoRow[]) {
-  const result = rows.reduce((sum, row) => ({ orders: sum.orders + row.orders, orderedAmount: sum.orderedAmount + row.orderedAmount, netProfit: sum.netProfit + row.netProfit, profitRevenue: sum.profitRevenue + row.profitRevenue }), { orders: 0, orderedAmount: 0, netProfit: 0, profitRevenue: 0 });
+  const result = rows.reduce((sum, row) => ({ orders: sum.orders + row.orders, orderedAmount: sum.orderedAmount + row.orderedAmount, netProfit: sum.netProfit + row.netProfit, profitRevenue: sum.profitRevenue + row.profitRevenue, orderedAmountKnown: sum.orderedAmountKnown || row.orderedAmountKnown, netProfitKnown: sum.netProfitKnown || row.netProfitKnown }), { orders: 0, orderedAmount: 0, netProfit: 0, profitRevenue: 0, orderedAmountKnown: false, netProfitKnown: false });
   return { ...result, profitability: result.profitRevenue ? result.netProfit / result.profitRevenue * 100 : 0 };
 }
 
@@ -66,6 +67,32 @@ function parseDate(value: string) { return new Date(`${value}T00:00:00Z`); }
 function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
 function shiftDate(value: string, days: number) { const date = parseDate(value); date.setUTCDate(date.getUTCDate() + days); return isoDate(date); }
 function formatMapDate(value: string) { return value ? mapDateFormatter.format(parseDate(value)) : 'Нет даты'; }
+function formatMapShortDate(value: string) { return value ? value.slice(8, 10) + '.' + value.slice(5, 7) : '—'; }
+function hasFunnelData(record: ReturnType<typeof getMetrics>[number]) {
+  return record.impressions !== 0 || record.clicks !== 0 || record.carts !== 0 || record.orders !== 0 || record.ordered_amount !== 0;
+}
+
+function MapDateScrubber({ dates, initialDate, onDateChange }: { dates: string[]; initialDate: string; onDateChange: (date: string) => void }) {
+  const initialIndex = Math.max(0, dates.indexOf(initialDate));
+  const [index, setIndex] = useState(initialIndex);
+  const frameRef = useRef<number | null>(null);
+  const currentDate = dates[index] || initialDate;
+  const moveTo = (nextIndex: number) => {
+    const bounded = Math.min(Math.max(nextIndex, 0), Math.max(0, dates.length - 1));
+    setIndex(bounded);
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => onDateChange(dates[bounded] || initialDate));
+  };
+  useEffect(() => () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current); }, []);
+  return <div className="geo-map-scrubber">
+    <button type="button" aria-label="Предыдущая дата карты" disabled={index <= 0} onClick={() => moveTo(index - 1)}>‹</button>
+    <div className="geo-map-scrubber-track">
+      <input id="geo-map-date-slider" type="range" min={0} max={Math.max(0, dates.length - 1)} step={1} value={index} disabled={dates.length <= 1} aria-label="Дата карты" aria-valuetext={formatMapDate(currentDate)} onChange={event => moveTo(Number(event.target.value))} />
+      <div><span>{formatMapShortDate(dates[0] || '')}</span><output htmlFor="geo-map-date-slider">{formatMapDate(currentDate)}</output><span>{formatMapShortDate(dates.at(-1) || '')}</span></div>
+    </div>
+    <button type="button" aria-label="Следующая дата карты" disabled={index >= dates.length - 1} onClick={() => moveTo(index + 1)}>›</button>
+  </div>;
+}
 function previousPeriod(start: string, end: string) {
   if (!start || !end) return { start: '', end: '' };
   const days = Math.round((parseDate(end).getTime() - parseDate(start).getTime()) / 86_400_000) + 1;
@@ -80,7 +107,7 @@ function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: Geography
     const key = `${record.date}|${record.product_id}`;
     geographyTotals.set(key, (geographyTotals.get(key) || 0) + record.orders_total);
   });
-  const amountByKey = new Map(dailyMetrics.map(record => [`${record.date}|${record.product_id}`, record.ordered_amount || 0]));
+  const amountByKey = new Map(dailyMetrics.filter(hasFunnelData).map(record => [`${record.date}|${record.product_id}`, record.ordered_amount || 0]));
   const profitabilityByKey = new Map(profitability.map(record => [`${record.period_start}|${record.product_id}`, record]));
   const byLocation = new Map<string, Omit<FinanceGeoRow, 'profitability'>>();
   filtered.forEach(record => {
@@ -95,12 +122,16 @@ function buildFinanceLeaves(filtered: GeographyOrderRecord[], records: Geography
     const normalizedArea = normalizeGeoArea(record.area);
     const normalizedCity = normalizeGeoCity(record.city);
     const locationKey = `${record.region}|${normalizedArea}|${normalizedCity}`;
-    const current = byLocation.get(locationKey) || { region: record.region, area: normalizedArea, city: normalizedCity, orders: 0, orderedAmount: 0, netProfit: 0, profitRevenue: 0 };
+    const current = byLocation.get(locationKey) || { region: record.region, area: normalizedArea, city: normalizedCity, orders: 0, orderedAmount: 0, netProfit: 0, profitRevenue: 0, orderedAmountKnown: false, netProfitKnown: false };
     current.orders += orders;
-    current.orderedAmount += (amountByKey.get(key) || 0) * share;
+    if (amountByKey.has(key)) {
+      current.orderedAmount += (amountByKey.get(key) || 0) * share;
+      current.orderedAmountKnown = true;
+    }
     if (profitRecord) {
       current.netProfit += getReportNetProfit(profitRecord, extraExpense) * share;
       current.profitRevenue += profitRecord.profit_revenue * share;
+      current.netProfitKnown = true;
     }
     byLocation.set(locationKey, current);
   });
@@ -126,8 +157,9 @@ export default function GeographyPage() {
   const memberships = getMemberships();
   const groupHistory = getGroupMembershipHistory();
   const dates = records.map(record => record.date).sort();
-  const [start, setStart] = useState(() => dates[0] || '');
-  const [end, setEnd] = useState(() => dates[dates.length - 1] || '');
+  const initialPeriod = getLatestWeekPeriod(dates.at(-1) || '');
+  const [start, setStart] = useState(() => initialPeriod.start);
+  const [end, setEnd] = useState(() => initialPeriod.end);
   const [region, setRegion] = useState('');
   const [area, setArea] = useState('');
   const [city, setCity] = useState('');
@@ -182,7 +214,6 @@ export default function GeographyPage() {
     return result;
   }, [start, end]);
   const effectiveMapDate = mapDates.includes(mapDate) ? mapDate : mapDates.at(-1) || '';
-  const mapDateIndex = Math.max(0, mapDates.indexOf(effectiveMapDate));
   const mapRecordsByDate = useMemo(() => {
     const result = new Map<string, GeographyOrderRecord[]>();
     filtered.forEach(record => appendToMap(result, record.date, record));
@@ -313,7 +344,7 @@ export default function GeographyPage() {
     return [...recordsByArea.entries()].map(([key, entry]) => {
       const summary = aggregateGeography(entry.rows, fulfillment);
       const finance = sumFinance(financeByArea.get(key) || []);
-      return { name: entry.name, district: entry.district, orders: summary.total, deliveryHours: summary.deliveryHours, orderedAmount: hasFinance ? finance.orderedAmount : null, netProfit: hasFinance ? finance.netProfit : null };
+      return { name: entry.name, district: entry.district, orders: summary.total, deliveryHours: summary.deliveryHours, orderedAmount: hasFinance && finance.orderedAmountKnown ? finance.orderedAmount : null, netProfit: hasFinance && finance.netProfitKnown ? finance.netProfit : null };
     }).filter(row => row.orders > 0);
   }, [mapFiltered, mapFinanceLeaves, fulfillment, mapMetric]);
   const mapRows = useMemo<RussiaMapAreaRow[]>(() => {
@@ -321,7 +352,7 @@ export default function GeographyPage() {
     const totalNetProfit = mapAreaRows.reduce((sum, row) => sum + (row.netProfit || 0), 0);
     return mapAreaRows.map(row => {
       const netProfitShare = totalNetProfit && row.netProfit !== null ? row.netProfit / totalNetProfit * 100 : null;
-      const orderedAmountShare = totalOrderedAmount && row.orderedAmount !== null ? row.orderedAmount / totalOrderedAmount * 100 : 0;
+      const orderedAmountShare = totalOrderedAmount && row.orderedAmount !== null ? row.orderedAmount / totalOrderedAmount * 100 : null;
       const value = mapMetric === 'orders'
         ? row.orders
         : mapMetric === 'orderedAmount'
@@ -343,11 +374,13 @@ export default function GeographyPage() {
       };
     });
   }, [mapAreaRows, mapMetric]);
+  const mapHasMetricData = mapRows.some(row => row.value !== null && Number.isFinite(row.value));
+  const mapOrdersForDate = mapAreaRows.reduce((sum, row) => sum + row.orders, 0);
   const detailPageCount = Math.max(1, Math.ceil(detailAreas.length / DETAIL_PAGE_SIZE));
   const currentDetailPage = Math.min(detailPage, detailPageCount - 1);
   const visibleDetailAreas = detailAreas.slice(currentDetailPage * DETAIL_PAGE_SIZE, (currentDetailPage + 1) * DETAIL_PAGE_SIZE);
   const comparisonData = useMemo(() => {
-    const funnelByKey = new Map(getMetrics().map(row => [`${row.date}|${row.product_id}`, row]));
+    const funnelByKey = new Map(getMetrics().filter(hasFunnelData).map(row => [`${row.date}|${row.product_id}`, row]));
     const allGeoTotals = new Map<string, number>();
     records.forEach(row => { const key = `${row.date}|${row.product_id}`; allGeoTotals.set(key, (allGeoTotals.get(key) || 0) + row.orders_total); });
     const byDate = new Map<string, GeographyOrderRecord[]>();
@@ -450,16 +483,8 @@ export default function GeographyPage() {
     <div className="geo-map-grid">
       <article className="geo-card geo-map-card">
         <div className="geo-card-head"><div><h2>Карта областей России</h2><p>Дневной срез: двигайте дату и наблюдайте изменение спроса. Нажмите на область, чтобы применить фильтр.</p></div><label className="geo-map-metric">Показатель<select value={mapMetric} onChange={event => setMapMetric(event.target.value as MapMetric)}>{Object.entries(mapMetricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-        <div className="geo-map-timeline">
-          <button type="button" aria-label="Предыдущая дата карты" disabled={mapDateIndex <= 0} onClick={() => setMapDate(mapDates[Math.max(0, mapDateIndex - 1)] || effectiveMapDate)}>‹</button>
-          <div className="geo-map-timeline-control">
-            <div><span>Дата карты</span><output htmlFor="geo-map-date-slider">{formatMapDate(effectiveMapDate)}</output></div>
-            <input id="geo-map-date-slider" type="range" min={0} max={Math.max(0, mapDates.length - 1)} step={1} value={mapDateIndex} disabled={mapDates.length <= 1} aria-label="Дата карты" aria-valuetext={formatMapDate(effectiveMapDate)} onChange={event => setMapDate(mapDates[Number(event.target.value)] || effectiveMapDate)} />
-            <div className="geo-map-timeline-bounds"><span>{formatMapDate(mapDates[0] || '')}</span><span>{formatMapDate(mapDates.at(-1) || '')}</span></div>
-          </div>
-          <button type="button" aria-label="Следующая дата карты" disabled={mapDateIndex >= mapDates.length - 1} onClick={() => setMapDate(mapDates[Math.min(mapDates.length - 1, mapDateIndex + 1)] || effectiveMapDate)}>›</button>
-        </div>
-        {mapRows.length === 0 && <div className="geo-map-empty">На {formatMapDate(effectiveMapDate)} в выбранном срезе нет заказов.</div>}
+        <MapDateScrubber key={`${mapDates[0]}-${mapDates.at(-1)}`} dates={mapDates} initialDate={effectiveMapDate} onDateChange={setMapDate} />
+        {!mapHasMetricData && <div className="geo-map-empty">На {formatMapDate(effectiveMapDate)} нет данных для показателя «{mapMetricLabels[mapMetric]}».{mapOrdersForDate > 0 ? ` Географический отчёт содержит ${formatNumber(mapOrdersForDate)} заказов — выберите «Заказы».` : ''}</div>}
         <RussiaMetricMap
           rows={mapRows}
           metricLabel={mapMetricLabels[mapMetric]}

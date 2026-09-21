@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { calculateCompetitorStockSlice } from '../../data/competitorCalculations';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 import type { CompetitorStockRecord } from '../../types';
 import CompetitorMultiChoice from './CompetitorMultiChoice';
 
@@ -14,11 +15,12 @@ export default function CompetitorStockDistribution({ rows }: { rows: Competitor
   const dates = useMemo(() => [...new Set(rows.map(row => row.date).filter(Boolean))].sort(), [rows]);
   const brandOptions = useMemo(() => [...new Map(rows.map(row => [normalize(row.brand || 'Без бренда'), row.brand.trim() || 'Без бренда'])).entries()].map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label, 'ru')), [rows]);
   const warehouseOptions = useMemo(() => [...new Map(rows.map(row => [normalize(row.warehouse || 'Без склада'), row.warehouse.trim() || 'Без склада'])).entries()].map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label, 'ru')), [rows]);
-  const [start, setStart] = useState(dates[0] || '');
-  const [end, setEnd] = useState(dates.at(-1) || '');
+  const initialPeriod = getLatestWeekPeriod(dates.at(-1) || '');
+  const [start, setStart] = useState(initialPeriod.start);
+  const [end, setEnd] = useState(initialPeriod.end);
   const [brands, setBrands] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
-  const activeStart = start || dates[0] || '';
+  const activeStart = start || initialPeriod.start;
   const activeEnd = end || dates.at(-1) || '';
   const slice = useMemo(() => calculateCompetitorStockSlice(rows, activeStart, activeEnd, new Set(brands), new Set(warehouses)), [rows, activeStart, activeEnd, brands, warehouses]);
   const hasComparison = !!slice.dateStart && slice.dateStart !== slice.dateEnd;
@@ -32,7 +34,7 @@ export default function CompetitorStockDistribution({ rows }: { rows: Competitor
 
   return <section className="competitors-section competitor-stock-section">
     <header><div><span>ОСТАТКИ ПО СКЛАДАМ</span><h2>Распределение запасов и изменение по брендам</h2><p>Pie chart использует последний доступный снимок периода; сводка справа сравнивает первый и последний снимки.</p></div></header>
-    <div className="competitor-stock-toolbar"><DateRangeFilter label="Период остатков" value={{ start: activeStart, end: activeEnd }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || activeEnd} /><CompetitorMultiChoice label="Бренды" values={brands} options={brandOptions} max={6} onChange={setBrands} /><CompetitorMultiChoice label="Склады" values={warehouses} options={warehouseOptions} max={8} onChange={setWarehouses} /><button type="button" onClick={() => { setBrands([]); setWarehouses([]); setStart(dates[0]); setEnd(dates.at(-1)!); }}>Сбросить</button></div>
+    <div className="competitor-stock-toolbar"><DateRangeFilter label="Период остатков" value={{ start: activeStart, end: activeEnd }} onChange={period => { setStart(period.start); setEnd(period.end); }} maxDate={dates.at(-1) || activeEnd} /><CompetitorMultiChoice label="Бренды" values={brands} options={brandOptions} max={6} onChange={setBrands} /><CompetitorMultiChoice label="Склады" values={warehouses} options={warehouseOptions} max={8} onChange={setWarehouses} /><button type="button" onClick={() => { const period = getLatestWeekPeriod(dates.at(-1) || ''); setBrands([]); setWarehouses([]); setStart(period.start); setEnd(period.end); }}>Сбросить</button></div>
     <div className="competitor-stock-grid">
       <div className="competitor-stock-chart">
         {slice.totalCurrent > 0 ? <><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={shownWarehouses} dataKey="stock" nameKey="warehouse" innerRadius={72} outerRadius={112} paddingAngle={1.5} stroke="#fff" strokeWidth={2}>{shownWarehouses.map((row, index) => <Cell key={row.key} fill={colors[index % colors.length]} />)}</Pie><Tooltip formatter={(value, _name, item) => [`${number.format(Number(value))} шт. · ${number.format(Number(item.payload?.share || 0))}%`, item.payload?.warehouse]} /></PieChart></ResponsiveContainer><div className="competitor-stock-center"><strong>{number.format(slice.totalCurrent)}</strong><span>шт. на {shortDate(slice.dateEnd)}</span></div></> : <div className="competitor-stock-empty">По выбранным фильтрам остатки отсутствуют.</div>}

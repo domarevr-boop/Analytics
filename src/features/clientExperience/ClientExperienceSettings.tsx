@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { AnalyticsPanel, PanelHeader } from '../../components/AnalyticsPrimitives';
 import type { DatePeriod } from '../../data/mock';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 import {
   createCxDictionaryDraft, deleteCxTopicRule, getCxAnalysisSettings, saveCxTopic, saveCxTopicRule,
   cancelCxAnalysis, publishCxDictionary, recalculateCxRange, testCxDictionaryRules,
@@ -12,11 +13,6 @@ import { getCxDateBounds } from './clientExperienceApi';
 import { backfillReviewLemmas, getLemmaBackfillPending } from './lemmaBackfill';
 
 const EMPTY: CxAnalysisSettings = { groups: [], topics: [], versions: [], rules: [], methodologies: [], analysisRuns: [] };
-
-function latestMonthPeriod(end: string): DatePeriod {
-  if (!end) return { start: '', end: '' };
-  return { start: `${end.slice(0, 7)}-01`, end };
-}
 
 export default function ClientExperienceSettings() {
   const [settings, setSettings] = useState(EMPTY);
@@ -63,7 +59,7 @@ export default function ClientExperienceSettings() {
       const activeRange = data.analysisRuns.find(run => run.status === 'processing' && run.analysisScope === 'range');
       setRangePeriod(activeRange?.reviewDateFrom && activeRange.reviewDateTo
         ? { start: activeRange.reviewDateFrom, end: activeRange.reviewDateTo }
-        : latestMonthPeriod(bounds.end));
+        : getLatestWeekPeriod(bounds.end));
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
     }).finally(() => {

@@ -2,7 +2,7 @@ import type { MetricValues, TableRow, Product } from '../types';
 import { getProducts, getMetrics, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, getProfitabilityRecords, getGroupMembershipHistory, UNGROUPED_GROUP_ID } from './store';
 import { getCabinetExtraExpense } from './profitStore';
 import { getReportGrossProfit } from './profitabilityCalculations';
-import { addDays, formatDate } from './dateUtils';
+import { addDays, formatDate, getLatestWeekPeriod } from './dateUtils';
 import { getFilteredProductIds } from './productFilters';
 import { resolveGroupAtDate } from './groupMembershipHistory';
 import { canonicalizeDashboardGroupData, getDashboardGroupIdsForLinkedProduct } from './dashboardGroupAttribution';
@@ -35,8 +35,8 @@ export function getDefaultPeriods(fallbackMaxDate?: string): { a: DatePeriod; b:
     maxDate = fallbackMaxDate;
   }
   const defPeriods = {
-    a: { start: maxDate, end: maxDate },
-    b: { start: addDays(maxDate, -1), end: addDays(maxDate, -1) },
+    a: getLatestWeekPeriod(maxDate),
+    b: { start: addDays(maxDate, -13), end: addDays(maxDate, -7) },
     maxDate,
   };
   if (DEV) console.log('[getDefaultPeriods] metrics=' + metrics.length + ' maxDate=' + maxDate + ' periodA=' + JSON.stringify(defPeriods.a));

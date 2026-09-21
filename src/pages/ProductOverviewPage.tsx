@@ -7,6 +7,7 @@ import { getReportNetProfit } from '../data/profitabilityCalculations';
 import { getWbImageUrls } from '../data/images';
 import type { DailyMetrics, EntryPointRecord, GeographyOrderRecord, ProfitabilityRecord } from '../types';
 import { resolveGroupAtDate } from '../data/groupMembershipHistory';
+import { getLatestWeekPeriod } from '../data/dateUtils';
 
 const fmt = (value: number, digits = 0) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: digits }).format(value);
 const money = (value: number) => `${fmt(value)} ₽`;
@@ -224,7 +225,7 @@ export default function ProductOverviewPage({ productId, onBack }: { productId: 
   const allGeography = useMemo(() => geographyRows.filter(row => relatedIds.has(row.product_id)), [geographyRows, relatedIds]);
   const allEntryPoints = useMemo(() => entryPointRows.filter(row => relatedIds.has(row.product_id)), [entryPointRows, relatedIds]);
   const maxDate = allMetrics.at(-1)?.date || new Date().toISOString().slice(0, 10);
-  const initialPeriod = useMemo<DatePeriod>(() => ({ start: `${maxDate.slice(0, 7)}-01`, end: maxDate }), [maxDate]);
+  const initialPeriod = useMemo<DatePeriod>(() => getLatestWeekPeriod(maxDate), [maxDate]);
   const [period, setPeriod] = useState<DatePeriod>(initialPeriod);
   const [comparison, setComparison] = useState<DatePeriod>(() => previousPeriod(initialPeriod));
   const changePeriod = (nextPeriod: DatePeriod) => {

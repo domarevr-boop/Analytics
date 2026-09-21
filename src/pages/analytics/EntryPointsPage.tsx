@@ -17,9 +17,9 @@ import AnalyticsHelp from '../../components/AnalyticsHelp';
 import { AnalyticsPageHeader, AnalyticsToolbar, EmptyState, KpiTile } from '../../components/AnalyticsPrimitives';
 import { getEntryPoints, getMemberships, getGroupMembershipHistory, getProducts, getVersion, subscribe } from '../../data/store';
 import { getWbImageUrls, rememberWbImageUrl } from '../../data/images';
+import { addDays, daysBetween, getLatestWeekPeriod } from '../../data/dateUtils';
 import { entryPointsHelp } from './analyticsHelpContent';
 import { appendToMap } from '../../data/collectionUtils';
-import { addDays, daysBetween } from '../../data/dateUtils';
 import type { EntryPointRecord, Product } from '../../types';
 import { groupMatchesAtDate } from '../../data/groupMembershipHistory';
 
@@ -163,8 +163,9 @@ export default function EntryPointsPage() {
   const groupHistory = getGroupMembershipHistory();
   const availableDates = rows.map(row => row.date).sort();
 
-  const [start, setStart] = useState(() => availableDates[0] || '');
-  const [end, setEnd] = useState(() => availableDates.at(-1) || '');
+  const initialPeriod = getLatestWeekPeriod(availableDates.at(-1) || '');
+  const [start, setStart] = useState(() => initialPeriod.start);
+  const [end, setEnd] = useState(() => initialPeriod.end);
   const [section, setSection] = useState('');
   const [entryPoint, setEntryPoint] = useState('');
   const [category, setCategory] = useState('');

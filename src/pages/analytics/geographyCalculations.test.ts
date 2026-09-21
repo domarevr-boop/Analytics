@@ -41,7 +41,8 @@ test('reports incomplete fulfillment coverage without falling back to total orde
   assert.equal(getFulfillmentOrders(record({ orders_total: 10, wb_local_orders: 0, wb_nonlocal_orders: 0, marketplace_local_orders: 0, marketplace_nonlocal_orders: 0 }), 'fbo'), 0);
 });
 
-test('builds a continuous red-yellow-green heat scale', () => {
+test('builds a continuous gray-yellow-green heat scale', () => {
+  assert.equal(geographyHeatColors.low, '#A8B1BC');
   assert.equal(geographyHeatColor(10, 10, 30), geographyHeatColors.low);
   assert.equal(geographyHeatColor(20, 10, 30), geographyHeatColors.middle);
   assert.equal(geographyHeatColor(30, 10, 30), geographyHeatColors.high);

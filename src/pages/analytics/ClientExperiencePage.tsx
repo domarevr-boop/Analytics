@@ -8,6 +8,7 @@ import {
 } from '../../components/AnalyticsPrimitives';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import type { DatePeriod } from '../../data/mock';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 import {
   getBrands, getCabinets, getGroups, getMemberships, getProducts, getVersion, subscribe,
 } from '../../data/store';
@@ -41,11 +42,6 @@ function formatDate(value: string) {
   if (!value) return '—';
   const [year, month, day] = value.split('-');
   return `${day}.${month}.${year}`;
-}
-
-function latestDataMonth(bounds: DatePeriod): DatePeriod {
-  if (!bounds.end) return bounds;
-  return { start: `${bounds.end.slice(0, 7)}-01`, end: bounds.end };
 }
 
 export default function ClientExperiencePage() {
@@ -109,7 +105,7 @@ export default function ClientExperiencePage() {
     void getCxDateBounds().then(nextBounds => {
       if (cancelled) return;
       setBounds(nextBounds);
-      setPeriod(current => current.start ? current : latestDataMonth(nextBounds));
+      setPeriod(current => current.start ? current : getLatestWeekPeriod(nextBounds.end));
     }).catch(reason => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -157,7 +153,7 @@ export default function ClientExperiencePage() {
   }));
 
   const resetFilters = () => {
-    setPeriod(latestDataMonth(bounds));
+    setPeriod(getLatestWeekPeriod(bounds.end));
     setCabinet('');
     setCategory('');
     setBrand('');

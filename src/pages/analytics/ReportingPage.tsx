@@ -6,6 +6,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import { getCabinetExtraExpense, getExtraExpensesVersion, subscribeExtraExpenses } from '../../data/profitStore';
 import { getCabinets, getMarketDynamics, getMetrics, getProducts, getProfitabilityRecords, getVersion, subscribe } from '../../data/store';
 import type { Cabinet, DailyMetrics, Product } from '../../types';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 import {
   aggregateMarket,
   aggregateOwnMetrics,
@@ -77,8 +78,7 @@ function shortDate(value: string) {
 
 function getInitialPeriod(dates: string[]): ReportingPeriod {
   const end = dates.at(-1) || new Date().toISOString().slice(0, 10);
-  const start = dates[Math.max(0, dates.length - 7)] || end;
-  return { start, end };
+  return getLatestWeekPeriod(end);
 }
 
 function getMetricValue(point: OwnPoint, metric: OwnMetric): number | null {

@@ -12,6 +12,7 @@ import { resolveGroupAtDate } from '../data/groupMembershipHistory';
 import { classifyProfitabilityRows, flattenExpandedHierarchy } from '../data/profitabilityTableCalculations';
 import type { BusinessRole } from '../data/profitabilityTableCalculations';
 import { AnalyticsPageHeader, AnalyticsPanel, AnalyticsToolbar, KpiTile, PanelHeader, SegmentedControl } from './AnalyticsPrimitives';
+import { getLatestWeekPeriod } from '../data/dateUtils';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const monthOf = (date: string) => date.slice(0, 7);
@@ -69,7 +70,8 @@ export default function ProfitabilityPage(filterProps: FilterBarProps) {
   const metrics = getMetrics();
   const availableMonths = useMemo(() => [...new Set(records.map(row => monthOf(row.period_start)))].sort(), [records]);
   const latestMonth = availableMonths.at(-1) || `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
-  const [period, setPeriod] = useState<DatePeriod>(() => ({ start: monthStart(latestMonth), end: monthEnd(latestMonth) }));
+  const latestDate = records.map(row => row.period_end).sort().at(-1) || monthEnd(latestMonth);
+  const [period, setPeriod] = useState<DatePeriod>(() => getLatestWeekPeriod(latestDate));
   const [expenseMonth, setExpenseMonth] = useState(latestMonth);
   const activeMonth = period.start === monthStart(monthOf(period.start)) && period.end === monthEnd(monthOf(period.start))
     ? monthOf(period.start)

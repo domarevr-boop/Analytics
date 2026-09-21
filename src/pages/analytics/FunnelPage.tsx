@@ -9,6 +9,7 @@ import { getCabinets, getGroups, getGroupMembershipHistory, getMemberships, getM
 import type { DailyMetrics, Product } from '../../types';
 import { resolveGroupAtDate } from '../../data/groupMembershipHistory';
 import { aggregateFunnel as aggregate } from './funnelCalculations';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 
 type Grouping = 'product' | 'group' | 'cabinet';
 type Volume = 'impressions' | 'clicks' | 'carts' | 'orders' | 'ordered_amount';
@@ -44,7 +45,8 @@ export default function FunnelPage() {
   useSyncExternalStore(subscribe, getVersion);
   const metrics = getMetrics(); const products = getProducts(); const groups = getGroups(); const memberships = getMemberships(); const groupHistory = getGroupMembershipHistory(); const cabinets = getCabinets();
   const dates = useMemo(() => [...new Set(metrics.map(metric => metric.date))].sort(), [metrics]);
-  const [start, setStart] = useState(() => dates[0] || ''); const [end, setEnd] = useState(() => dates.at(-1) || '');
+  const initialPeriod = getLatestWeekPeriod(dates.at(-1) || '');
+  const [start, setStart] = useState(() => initialPeriod.start); const [end, setEnd] = useState(() => initialPeriod.end);
   const [cabinet, setCabinet] = useState(''); const [category, setCategory] = useState(''); const [brand, setBrand] = useState(''); const [group, setGroup] = useState(''); const [query, setQuery] = useState('');
   const [grouping, setGrouping] = useState<Grouping>('product'); const [xMetric, setXMetric] = useState<Volume>('impressions'); const [yMetric, setYMetric] = useState<Rate>('impressionOrderCr'); const [sizeMetric, setSizeMetric] = useState<Volume>('ordered_amount'); const [colorMetric, setColorMetric] = useState<Rate>('clickOrderCr');
   const [rangesInput, setRangesInput] = useState('0-1000, 1000-2000, 2000-4000, 4000-∞'); const [hideAnomalies, setHideAnomalies] = useState(true);

@@ -13,6 +13,11 @@ export function addDays(dateStr: string, days: number): string {
   return formatDate(date);
 }
 
+export function getLatestWeekPeriod(end: string): { start: string; end: string } {
+  if (!end) return { start: '', end: '' };
+  return { start: addDays(end, -6), end };
+}
+
 export function daysBetween(start: string, end: string): number {
   const [y1, m1, d1] = start.split('-').map(Number);
   const [y2, m2, d2] = end.split('-').map(Number);

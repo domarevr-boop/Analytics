@@ -3,7 +3,7 @@ import type { GeographyOrderRecord } from '../../types';
 export type GeographyFulfillment = 'all' | 'fbo' | 'fbs';
 
 export const geographyHeatColors = {
-  low: '#D95D4F',
+  low: '#A8B1BC',
   middle: '#F2C94C',
   high: '#2F9E68',
 } as const;

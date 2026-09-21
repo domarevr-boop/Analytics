@@ -16,6 +16,7 @@ import type { MarketDynamicsRecord } from '../../types';
 import { marketHelp } from './analyticsHelpContent';
 import MarketDeepDive from './MarketDeepDive';
 import './MarketPage.css';
+import { getLatestWeekPeriod } from '../../data/dateUtils';
 
 type Granularity = 'day' | 'week' | 'month';
 type MetricKey = 'marketAmount' | 'ownAmount' | 'amountShare' | 'marketOrders' | 'ownOrders' | 'ordersShare' | 'marketCheck' | 'ownCheck';
@@ -67,7 +68,7 @@ export default function MarketPage() {
   const records = getMarketDynamics();
   const dates = useMemo(() => [...new Set(records.map(row => row.date))].sort(), [records]);
   const maxDate = dates.at(-1) || new Date().toISOString().slice(0, 10);
-  const [period, setPeriod] = useState(() => ({ start: dates.at(0) || maxDate, end: maxDate }));
+  const [period, setPeriod] = useState(() => getLatestWeekPeriod(maxDate));
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [showHelp, setShowHelp] = useState(false);
   const currentRows = useMemo(() => records.filter(row => row.date >= period.start && row.date <= period.end), [records, period]);
@@ -111,7 +112,7 @@ export default function MarketPage() {
 
   return <div className="market-page-pilot analytics-page-shell ds-page">
     <AnalyticsPageHeader eyebrow="Аналитика › Рынок" title="Рынок" description="Сравнение объёма рынка и наших результатов по сумме заказов, штукам, доле и среднему чеку." meta={<span>Данные по {shortDate(maxDate)}</span>} actions={<button type="button" className="ds-button" onClick={() => setShowHelp(true)}>Справка</button>} />
-    <AnalyticsToolbar trailing={<><SegmentedControl value={granularity} label="Гранулярность графиков" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button" onClick={() => setPeriod({ start: dates.at(0) || maxDate, end: maxDate })}>Сбросить</button></>}>
+    <AnalyticsToolbar trailing={<><SegmentedControl value={granularity} label="Гранулярность графиков" options={[{ value: 'day', label: 'День' }, { value: 'week', label: 'Неделя' }, { value: 'month', label: 'Месяц' }]} onChange={setGranularity} /><button type="button" className="ds-button" onClick={() => setPeriod(getLatestWeekPeriod(maxDate))}>Сбросить</button></>}>
       <DateRangeFilter label="Период" value={period} onChange={setPeriod} maxDate={maxDate} />
     </AnalyticsToolbar>
     {!currentRows.length ? <EmptyState title="Нет данных рынка в выбранном периоде" description="Импортируйте файл с колонками «Дата», «Заказы рынок», «Наши заказы» и показателями в штуках." /> : <>
