@@ -3,6 +3,24 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const PORTABLE_POSTGRES_BIN = resolve(
+  process.cwd(),
+  '.tools',
+  'postgresql17-portable',
+  'pgsql',
+  'bin',
+);
+
+export function portableCommandAvailable(
+  command,
+  platform = process.platform,
+  binDir = PORTABLE_POSTGRES_BIN,
+  pathExists = existsSync,
+) {
+  const executable = platform === 'win32' ? `${command}.exe` : command;
+  return pathExists(resolve(binDir, executable));
+}
+
 export function commandAvailable(command, platform = process.platform) {
   const locator = platform === 'win32' ? 'where.exe' : 'which';
   const result = spawnSync(locator, [command], {
@@ -42,9 +60,9 @@ function run() {
   const tools = {
     hasSupabaseCli: existsSync(cliEntry),
     hasDocker: commandAvailable('docker'),
-    hasPgDump: commandAvailable('pg_dump'),
-    hasPgRestore: commandAvailable('pg_restore'),
-    hasPsql: commandAvailable('psql'),
+    hasPgDump: commandAvailable('pg_dump') || portableCommandAvailable('pg_dump'),
+    hasPgRestore: commandAvailable('pg_restore') || portableCommandAvailable('pg_restore'),
+    hasPsql: commandAvailable('psql') || portableCommandAvailable('psql'),
   };
   const readiness = summarizeBackupPrerequisites(tools);
 
