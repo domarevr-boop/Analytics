@@ -895,10 +895,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               eyebrow="Миграция V4 → V5"
               title="Первичная загрузка справочника"
               description="Только подготовленный и локально проверенный JSON-манифест"
-              controls={<span>{isV5DirectoryBootstrapEnabled ? 'Разрешена' : 'Заблокирована до проверки restore'}</span>}
+              controls={<span>{isV5DirectoryBootstrapEnabled ? 'Разрешена' : 'Необязательный перенос выключен'}</span>}
             />
           </div>
-          <p className="dev-hint">Манифест сохраняется в private Storage, затем одной транзакцией публикует товары, алиасы и историю склеек. Конфликты не перезаписываются, неоднозначности остаются в очереди администратора.</p>
+          <p className="dev-hint">Манифест сохраняется в private Storage, затем одной транзакцией публикует товары, алиасы и историю склеек. Конфликты не перезаписываются, неоднозначности остаются в очереди администратора. Обычные отчёты можно загружать без этого переноса: товары создаются при импорте.</p>
           <div className="admin-form-actions">
             <input id="directory-bootstrap-input" type="file" accept=".json,application/json" hidden onChange={handleDirectoryBootstrapInput} />
             <button
@@ -907,7 +907,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
               disabled={!isV5DirectoryBootstrapEnabled || loading}
               onClick={() => document.getElementById('directory-bootstrap-input')?.click()}
             >
-              {isV5DirectoryBootstrapEnabled ? 'Выбрать bootstrap-манифест' : 'Ожидается проверка восстановления'}
+              {isV5DirectoryBootstrapEnabled ? 'Выбрать bootstrap-манифест' : 'Отключён в этой сборке'}
             </button>
             {latestDirectoryBootstrap && <span>Партия {latestDirectoryBootstrap.batchId} · принято {latestDirectoryBootstrap.acceptedRows} · разбор {latestDirectoryBootstrap.rejectedRows}</span>}
           </div>
