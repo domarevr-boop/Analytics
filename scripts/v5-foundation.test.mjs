@@ -50,6 +50,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260920031000_v5_geography_location_city_filter.sql',
     '20260920032000_v5_profitability_read_api.sql',
     '20260920033000_v5_profitability_read_access_fix.sql',
+    '20260923034000_v5_single_full_access_user.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -283,14 +284,14 @@ test('admin smoke check is transactional and does not expose identity', () => {
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 
-test('viewer and importer smoke checks roll back role, cabinet and batch fixtures', () => {
+test('single full-access user smoke checks roll back active and inactive fixtures', () => {
   const sql = readFileSync(new URL('../supabase/tests/role_access_smoke.sql', import.meta.url), 'utf8');
   assert.equal((sql.match(/^begin;/gimu) ?? []).length, 2);
   assert.equal((sql.match(/^rollback;/gimu) ?? []).length, 2);
-  assert.match(sql, /set access_role = 'viewer'/iu);
-  assert.match(sql, /set access_role = 'importer'/iu);
+  assert.match(sql, /app\.current_access_role\(\) is distinct from 'admin'/iu);
+  assert.match(sql, /set is_active = false/iu);
   assert.match(sql, /insert into ingest\.import_batches/iu);
-  assert.match(sql, /denied_cabinet_hidden/iu);
+  assert.match(sql, /app\.can_access_cabinet\(cabinet\.id\)/iu);
   assert.doesNotMatch(sql, /[\w.+-]+@[\w.-]+/iu);
 });
 

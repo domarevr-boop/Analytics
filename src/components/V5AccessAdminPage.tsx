@@ -1,25 +1,14 @@
 import { useEffect, useState } from 'react';
 import { getAuthState } from '../auth/auth';
-import type { V5AccessRole } from '../auth/v5AccessCore';
 import { listV5AccessUsers, setV5UserAccess, type V5AccessUserRow } from '../admin/v5AccessAdminApi';
 import { AnalyticsPageHeader, AnalyticsPanel, EmptyState, PanelHeader } from './AnalyticsPrimitives';
 
 interface AccessDraft {
-  role: V5AccessRole;
-  allCabinets: boolean;
   active: boolean;
 }
 
-const roleLabels: Record<V5AccessRole, string> = {
-  viewer: 'Просмотр',
-  importer: 'Импорт',
-  admin: 'Администратор',
-};
-
 function draftFromUser(user: V5AccessUserRow): AccessDraft {
   return {
-    role: user.accessRole || 'viewer',
-    allCabinets: user.accessRole ? user.allCabinets : true,
     active: user.accessRole ? user.isActive : true,
   };
 }
@@ -55,7 +44,7 @@ export default function V5AccessAdminPage({ onAccessChanged }: { onAccessChanged
   const updateDraft = (userId: string, patch: Partial<AccessDraft>) => {
     setDrafts(current => ({
       ...current,
-      [userId]: { ...(current[userId] || { role: 'viewer', allCabinets: true, active: true }), ...patch },
+      [userId]: { ...(current[userId] || { active: true }), ...patch },
     }));
   };
 
@@ -65,7 +54,7 @@ export default function V5AccessAdminPage({ onAccessChanged }: { onAccessChanged
     setError('');
     setMessage('');
     try {
-      await setV5UserAccess(user.userId, draft.role, draft.allCabinets, draft.active);
+      await setV5UserAccess(user.userId, draft.active);
       setMessage(`Доступ ${user.email || user.userId} сохранён.`);
       onAccessChanged?.();
       await load();
@@ -77,25 +66,22 @@ export default function V5AccessAdminPage({ onAccessChanged }: { onAccessChanged
   };
 
   return <div className="admin-page analytics-page-shell ds-page admin-design-page">
-    <AnalyticsPageHeader eyebrow="Управление V5" title="Доступ пользователей" description="Создайте аккаунт в Supabase Authentication, затем назначьте здесь роль приложения." />
+    <AnalyticsPageHeader eyebrow="Управление V5" title="Доступ пользователей" description="Создайте аккаунт в Supabase Authentication, затем включите ему полный доступ к V5." />
     {message && <div className="admin-message" role="status">{message}</div>}
     {error && <div className="admin-error" role="alert">{error}</div>}
     <AnalyticsPanel className="admin-block admin-table-panel" density="data">
-      <div className="admin-panel-heading"><PanelHeader eyebrow="Auth и RLS" title="Пользователи V5" description={`${users.length} аккаунтов в отдельном проекте`} /></div>
+      <div className="admin-panel-heading"><PanelHeader eyebrow="Auth и RLS" title="Пользователи V5" description={`${users.length} ${users.length === 1 ? 'аккаунт' : 'аккаунтов'} в отдельном проекте`} /></div>
       {loading ? <div className="admin-loading" role="status">Загрузка доступов V5…</div> : null}
       <div className="admin-table-wrap"><table>
-        <thead><tr><th>Email</th><th>Роль</th><th>Все кабинеты</th><th>Активен</th><th>Кабинетов явно</th><th>Последний вход</th><th></th></tr></thead>
+        <thead><tr><th>Email</th><th>Доступ V5</th><th>Последний вход</th><th></th></tr></thead>
         <tbody>{users.map(user => {
           const draft = drafts[user.userId] || draftFromUser(user);
           const isSelf = user.userId === currentUserId;
           return <tr key={user.userId}>
             <td><strong>{user.email || 'Без email'}</strong><small style={{ display: 'block' }}>{user.userId}</small></td>
-            <td><select value={draft.role} disabled={isSelf || busyUserId === user.userId} onChange={event => updateDraft(user.userId, { role: event.target.value as V5AccessRole })}>{(Object.keys(roleLabels) as V5AccessRole[]).map(role => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></td>
-            <td><input type="checkbox" checked={draft.allCabinets} disabled={busyUserId === user.userId} onChange={event => updateDraft(user.userId, { allCabinets: event.target.checked })} /></td>
-            <td><input type="checkbox" checked={draft.active} disabled={isSelf || busyUserId === user.userId} onChange={event => updateDraft(user.userId, { active: event.target.checked })} /></td>
-            <td>{user.cabinetIds.length}</td>
+            <td><label><input type="checkbox" checked={draft.active} disabled={isSelf || busyUserId === user.userId} onChange={event => updateDraft(user.userId, { active: event.target.checked })} /> Полный доступ</label></td>
             <td>{user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString('ru-RU') : '—'}</td>
-            <td><button type="button" disabled={busyUserId === user.userId} onClick={() => void save(user)}>{busyUserId === user.userId ? 'Сохранение…' : 'Сохранить'}</button></td>
+            <td><button type="button" disabled={isSelf || busyUserId === user.userId} onClick={() => void save(user)}>{busyUserId === user.userId ? 'Сохранение…' : 'Сохранить'}</button></td>
           </tr>;
         })}</tbody>
       </table></div>

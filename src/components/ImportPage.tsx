@@ -347,7 +347,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a competitors workbook:', error);
         }
       }
-      if (serverOnly) throw new Error(`Для роли importer в V5 разрешены серверные отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5ProfitabilityImportEnabled ? ', «Рентабельность» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
+      if (serverOnly) throw new Error(`В серверном режиме V5 разрешены отчёты «Рынок» (.xlsx/.csv)${isV5CompetitorImportEnabled ? ', «Конкуренты» (.xlsx)' : ''}${isV5GeographyImportEnabled ? ', «География заказов» (.xlsx)' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа» (.xlsx)' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay (.xlsx)' : ''}${isV5ProfitabilityImportEnabled ? ', «Рентабельность» (.xlsx)' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы» (.xlsx)' : ''}.`);
       if (ext === 'xlsx' || ext === 'xls') {
         try {
           const competitorData = await parseCompetitorWorkbook(file);
@@ -609,7 +609,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   ) => {
     if (!parsed || importRunningRef.current) return;
     if (serverOnly && source !== 'market_dynamics') {
-      alert('Для роли importer в V5 разрешён только серверный отчёт «Рынок».');
+      alert('В серверном режиме V5 этот источник не поддерживается.');
       return;
     }
     importRunningRef.current = true;

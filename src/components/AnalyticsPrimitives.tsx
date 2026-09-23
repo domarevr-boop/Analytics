@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type Density = 'overview' | 'analytics' | 'data';
+type Density = 'overview' | 'analytics' | 'data' | 'compact';
 type Tone = 'positive' | 'negative' | 'neutral';
 type TrendDirection = 'up' | 'down' | 'flat';
 

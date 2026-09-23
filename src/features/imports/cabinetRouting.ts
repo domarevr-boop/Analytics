@@ -99,14 +99,14 @@ export function subsetWorkbookByCabinet<T extends RoutableWorkbook>(
     .map(row => String(row.date ?? ''))
     .filter(value => /^\d{4}-\d{2}-\d{2}$/u.test(value))
     .sort();
-  const subset: RoutableWorkbook & Record<string, unknown> = {
+  const subset = {
     ...workbook,
     rows,
     sourceRowNumbers,
     inputRows: rows.length,
     dateStart: dates[0] || '',
     dateEnd: dates.at(-1) || dates[0] || '',
-  };
+  } as unknown as RoutableWorkbook & Record<string, unknown>;
   if ('aggregatedRows' in subset) subset.aggregatedRows = 0;
   if ('replacedDuplicateRows' in subset) subset.replacedDuplicateRows = 0;
   return subset as T;

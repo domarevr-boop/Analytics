@@ -1,6 +1,7 @@
 import type { PageName } from '../types';
 
-export type V5AccessRole = 'viewer' | 'importer' | 'admin';
+// The database keeps `admin` as the legacy enum value for the single full-access user.
+export type V5AccessRole = 'admin';
 
 export interface V5Access {
   role: V5AccessRole;
@@ -14,37 +15,30 @@ export interface V5Capabilities {
   canManage: boolean;
 }
 
-const V5_ROLES = new Set<V5AccessRole>(['viewer', 'importer', 'admin']);
-
 export function normalizeV5Access(value: unknown): V5Access | null {
   const row = Array.isArray(value) ? value[0] : value;
   if (!row || typeof row !== 'object') return null;
 
   const candidate = row as Record<string, unknown>;
   const role = candidate.access_role;
-  if (typeof role !== 'string' || !V5_ROLES.has(role as V5AccessRole)) return null;
+  if (role !== 'admin' || candidate.all_cabinets !== true) return null;
 
   return {
-    role: role as V5AccessRole,
-    allCabinets: candidate.all_cabinets === true,
-    cabinetIds: Array.isArray(candidate.cabinet_ids)
-      ? candidate.cabinet_ids.filter((id): id is string => typeof id === 'string')
-      : [],
+    role: 'admin',
+    allCabinets: true,
+    cabinetIds: [],
   };
 }
 
 export function getV5Capabilities(access: V5Access | null): V5Capabilities {
-  const role = access?.role;
+  const allowed = access?.role === 'admin' && access.allCabinets;
   return {
-    canRead: role === 'viewer' || role === 'importer' || role === 'admin',
-    canImport: role === 'importer' || role === 'admin',
-    canManage: role === 'admin',
+    canRead: allowed,
+    canImport: allowed,
+    canManage: allowed,
   };
 }
 
 export function isV5PageAllowed(access: V5Access | null, page: PageName): boolean {
-  if (access?.role === 'admin') return true;
-  if (page === 'market') return access?.role === 'viewer' || access?.role === 'importer';
-  if (page === 'import') return access?.role === 'importer';
-  return false;
+  return Boolean(page && access?.role === 'admin' && access.allCabinets);
 }

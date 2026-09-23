@@ -6682,6 +6682,14 @@ thead .at-metric:last-child {
   white-space: nowrap;
 }
 
+@media (min-width: 761px) and (max-width: 1100px) {
+  .navbar { padding-inline: 12px; }
+  .navbar-left { gap: 10px; }
+  .navbar-right { gap: 6px; }
+  .navbar-right .sync-indicator { display: none; }
+  .nav-tab { padding-inline: 8px; }
+}
+
 .dashboard .page-content:has(> :is(.analytics-page-shell, .entry-page, .funnel-page, .geo-page, .search-analytics-page, .product-overview-page, .registry-page, .import-page)) {
   gap: 0;
   padding: 0;

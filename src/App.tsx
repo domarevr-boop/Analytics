@@ -4,7 +4,7 @@ import './styles/design-system.css';
 import type { DatePeriod } from './data/mock';
 import { getDefaultPeriods } from './data/mock';
 import { getAuthState, initAuth, isConfiguredAdminEmail, signOut, subscribeAuth } from './auth/auth';
-import { fetchV5Access, getV5Capabilities, isV5PageAllowed, type V5Access } from './auth/v5Access';
+import { fetchV5Access, getV5Capabilities, type V5Access } from './auth/v5Access';
 import { isV5MarketBackendEnabled } from './features/market/marketData';
 import { isV5FunnelBackendEnabled } from './features/funnel/funnelData';
 import { isV5ProfitabilityBackendEnabled } from './features/profitability/profitabilityData';
@@ -234,14 +234,10 @@ function App() {
   const v5Capabilities = getV5Capabilities(v5Access);
   const isAdmin = IS_V5_ENVIRONMENT ? v5Capabilities.canManage : legacyIsAdmin;
   const canBootstrap = !IS_V5_ENVIRONMENT && (!!adminMeta?.bootstrapAllowed || isConfiguredAdminEmail(auth.user?.email));
-  const v5SafeScenarioReady = v5Capabilities.canManage || isV5MarketBackendEnabled;
-  const canUseApp = IS_V5_ENVIRONMENT ? v5Capabilities.canRead && v5SafeScenarioReady : isAdmin || canBootstrap;
+  const canUseApp = IS_V5_ENVIRONMENT ? v5Capabilities.canRead : isAdmin || canBootstrap;
   const canImport = IS_V5_ENVIRONMENT ? v5Capabilities.canImport : canUseApp;
   const canManage = IS_V5_ENVIRONMENT ? v5Capabilities.canManage : isAdmin;
-  const allowedPages: PageName[] | undefined = IS_V5_ENVIRONMENT && !canManage
-    ? PAGE_NAMES.filter(candidate => isV5PageAllowed(v5Access, candidate))
-    : undefined;
-  const displayPage = allowedPages && !allowedPages.includes(page) ? 'market' : page;
+  const displayPage = page;
   const storeVersion = useSyncExternalStore(subscribe, getVersion);
 
   useEffect(() => {
@@ -331,11 +327,6 @@ function App() {
       setDataReady(false);
       return;
     }
-    if (IS_V5_ENVIRONMENT && !canManage) {
-      setDataError('');
-      setDataReady(true);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -357,7 +348,7 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [auth.initialized, auth.user, accessChecked, canUseApp, canManage, authTick]);
+  }, [auth.initialized, auth.user, accessChecked, canUseApp, authTick]);
 
   useEffect(() => {
     if (!dataReady || page !== 'dashboard') return;
@@ -389,9 +380,7 @@ function App() {
       <div className="dashboard">
         <NavBar activePage={page} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={false} showImport={false} showDictionary={false} allowedPages={[]} />
         <div style={{padding: 24}}>{IS_V5_ENVIRONMENT
-          ? v5Capabilities.canRead && !v5SafeScenarioReady
-            ? 'Безопасный серверный сценарий V5 не включён в конфигурации.'
-            : 'Для пользователя не назначен активный доступ V5.'
+          ? 'Для пользователя не включён доступ V5.'
           : 'Доступ только для админа.'}</div>
       </div>
     );
@@ -399,7 +388,7 @@ function App() {
 
   return (
     <div className="dashboard">
-      <NavBar activePage={displayPage} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={canManage} showImport={canImport} showDictionary={canManage} allowedPages={allowedPages} />
+      <NavBar activePage={displayPage} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={canManage} showImport={canImport} showDictionary={canManage} />
 
       {!dataReady ? (
         <div className="page-content"><div className="page-card" style={{ padding: 24 }}>
@@ -447,7 +436,7 @@ function App() {
       ) : displayPage === 'planning' ? (
         <PlanningPage />
       ) : displayPage === 'import' ? (
-        <div className="page-content"><ImportPage serverOnly={IS_V5_ENVIRONMENT && !canManage} /></div>
+        <div className="page-content"><ImportPage /></div>
       ) : displayPage === 'profitability' ? (
         <div className="page-content">{isV5ProfitabilityBackendEnabled ? <ProfitabilityServerPage /> : <ProfitabilityPage {...filterBarProps} />}</div>
       ) : displayPage === 'admin' ? (
