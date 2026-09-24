@@ -53,7 +53,8 @@ import type { ParsedSearchQueriesFile } from '../features/searchQueries/searchQu
 import { importSearchQueriesToSupabase, isV5SearchQueriesImportEnabled } from '../features/searchQueries/searchQueriesImport';
 import type { SearchQueriesImportResult } from '../features/searchQueries/searchQueriesImport';
 import { parseFunnelFileInWorker, type ParsedFunnelFile } from '../features/funnel/funnelImportParser';
-import { importFunnelToSupabase, isV5FunnelImportEnabled, loadFunnelImportCabinets, type FunnelImportResult } from '../features/funnel/funnelImport';
+import { hashFunnelFile, importFunnelToSupabase, isV5FunnelImportEnabled, loadFunnelImportCabinets, type FunnelImportResult } from '../features/funnel/funnelImport';
+import { clearFunnelDraft, loadFunnelDraft, saveFunnelDraft } from '../features/funnel/funnelImportDraft';
 import { parseProfitabilityFileInWorker, type ParsedProfitabilityFile } from '../features/profitability/profitabilityImportParser';
 import { importProfitabilityToSupabase, isV5ProfitabilityImportEnabled, loadProfitabilityImportCabinets, type ProfitabilityImportResult } from '../features/profitability/profitabilityImport';
 import type { V5DirectoryDimension } from '../features/directory/directoryDataCore';
@@ -148,6 +149,8 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [entryPointsServerPreview, setEntryPointsServerPreview] = useState<ParsedEntryPointsFile | null>(null);
   const [searchQueriesServerPreview, setSearchQueriesServerPreview] = useState<ParsedSearchQueriesFile | null>(null);
   const [funnelServerPreview, setFunnelServerPreview] = useState<ParsedFunnelFile | null>(null);
+  const [funnelDraftName, setFunnelDraftName] = useState('');
+  const [funnelImportError, setFunnelImportError] = useState('');
   const [profitabilityServerPreview, setProfitabilityServerPreview] = useState<ParsedProfitabilityFile | null>(null);
   const [geographyCabinets, setGeographyCabinets] = useState<V5DirectoryDimension[]>([]);
   const [geographyCabinetError, setGeographyCabinetError] = useState('');
@@ -155,6 +158,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [entryPointsCabinetError, setEntryPointsCabinetError] = useState('');
   const [funnelCabinets, setFunnelCabinets] = useState<V5DirectoryDimension[]>([]);
   const [funnelCabinetError, setFunnelCabinetError] = useState('');
+  useEffect(() => {
+    if (!isV5FunnelImportEnabled) return;
+    void loadFunnelDraft().then(file => setFunnelDraftName(file?.name || '')).catch(() => undefined);
+  }, []);
   const [profitabilityCabinets, setProfitabilityCabinets] = useState<V5DirectoryDimension[]>([]);
   const [profitabilityCabinetError, setProfitabilityCabinetError] = useState('');
   const [competitorYear, setCompetitorYear] = useState(new Date().getFullYear());
@@ -263,6 +270,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setEntryPointsServerPreview(null);
     setSearchQueriesServerPreview(null);
     setFunnelServerPreview(null);
+    setFunnelImportError('');
     setProfitabilityServerPreview(null);
     setCompetitorPreview(null);
     setProgress(`Чтение ${file.name}...`);
@@ -306,14 +314,20 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
         try {
           const xway = await parseFunnelFileInWorker(file, 'xway');
           if (xway.presentMetricFields.some(field => ['ad_orders_qty', 'ad_ordered_amount', 'ad_spend'].includes(field))) {
-            setFunnelServerPreview(xway); setSelectedFile(file); return;
+            setFunnelServerPreview(xway); setSelectedFile(file);
+            try { await saveFunnelDraft(file); setFunnelDraftName(file.name); }
+            catch { setFunnelImportError('Не удалось сохранить локальную копию: после перезагрузки вкладки файл потребуется выбрать снова.'); }
+            return;
           }
         } catch (error) {
           if (DEV) console.debug('[import-ui] not an XWay workbook:', error);
         }
         try {
           const funnel = await parseFunnelFileInWorker(file, 'wb_funnel');
-          setFunnelServerPreview(funnel); setSelectedFile(file); return;
+          setFunnelServerPreview(funnel); setSelectedFile(file);
+          try { await saveFunnelDraft(file); setFunnelDraftName(file.name); }
+          catch { setFunnelImportError('Не удалось сохранить локальную копию: после перезагрузки вкладки файл потребуется выбрать снова.'); }
+          return;
         } catch (error) {
           if (DEV) console.debug('[import-ui] not a WB funnel workbook:', error);
         }
@@ -374,35 +388,46 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
 
   const handleV5FunnelImport = useCallback(async () => {
     if (!selectedFile || !funnelServerPreview || !funnelRouting || funnelRoutingError || importRunningRef.current) return;
-    importRunningRef.current = true; setLoading(true); setProgress('Повторная проверка отчёта воронки...');
+    importRunningRef.current = true; setLoading(true); setFunnelImportError(''); setProgress('Проверка контрольной суммы файла...');
     try {
-      const parsedWorkbook = await parseFunnelFileInWorker(selectedFile, funnelServerPreview.source);
-      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, funnelCabinets);
-      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
-      if (routingError) throw new Error(routingError);
+      const parsedWorkbook = funnelServerPreview;
+      const routing = funnelRouting;
+      const fileHash = await hashFunnelFile(selectedFile);
       const results: FunnelImportResult[] = [];
+      let reusableObjectPath = '';
       for (let index = 0; index < routing.routes.length; index += 1) {
         const route = routing.routes[index];
         const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
-        const result = await importFunnelToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
-          const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача строк воронки' : 'Серверная проверка и публикация';
-          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
-        });
+        let result: FunnelImportResult;
+        try {
+          result = await importFunnelToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+            const stage = current.stage === 'hashing' ? 'Контрольная сумма' : current.stage === 'uploading' ? 'Сохранение исходника' : current.stage === 'staging' ? 'Передача строк воронки' : 'Серверная проверка и публикация';
+            setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+          }, reusableObjectPath, fileHash);
+        } catch (error) {
+          throw new Error(`Кабинет «${route.cabinet.name}» (${index + 1}/${routing.routes.length}): ${error instanceof Error ? error.message : 'ошибка связи'}`, { cause: error });
+        }
+        reusableObjectPath = result.sourceObjectPath;
         results.push(result);
+        setLatestFunnelImport(result);
       }
       const latest = results.at(-1);
       if (latest) setLatestFunnelImport(latest);
       const label = parsedWorkbook.source === 'xway' ? 'XWay' : 'WB Воронка';
       const failed = results.filter(result => result.status === 'failed');
-      if (failed.length) alert(`Импорт «${label}» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      if (failed.length) setFunnelImportError(`Импорт «${label}» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
       else if (results.every(result => result.duplicate)) alert(`Этот файл «${label}» уже опубликован во всех определённых кабинетах V5.`);
       else alert(`Импорт «${label}» опубликован автоматически. Кабинетов: ${results.length}. Строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
+      if (!failed.length) {
+        setFunnelServerPreview(null); setSelectedFile(null); setFunnelDraftName('');
+        void clearFunnelDraft().catch(() => undefined);
+      }
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Воронки/рекламы»');
+      setFunnelImportError(error instanceof Error ? error.message : 'Ошибка серверного импорта «Воронки/рекламы»');
     } finally {
-      importRunningRef.current = false; setLoading(false); setProgress(''); setFunnelServerPreview(null); setSelectedFile(null);
+      importRunningRef.current = false; setLoading(false); setProgress('');
     }
-  }, [selectedFile, funnelServerPreview, funnelRouting, funnelRoutingError, funnelCabinets]);
+  }, [selectedFile, funnelServerPreview, funnelRouting, funnelRoutingError]);
 
   const handleV5ProfitabilityImport = useCallback(async () => {
     if (!selectedFile || !profitabilityServerPreview || !profitabilityRouting || profitabilityRoutingError || importRunningRef.current) return;
@@ -1020,9 +1045,11 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                 </div>
                 <p className="import-preview-note"><strong>Распределение:</strong> {funnelRouting ? cabinetRoutingSummary(funnelRouting) : 'проверяется'}.</p>
                 {funnelRoutingError && <p className="import-mapper-error">{funnelRoutingError}</p>}
+                {funnelImportError && <p className="import-mapper-error" role="alert">{funnelImportError} Файл остаётся выбранным: нажмите «Повторить» после восстановления связи.</p>}
+                {loading && <p className="import-preview-note" role="status">{progress || 'Импорт выполняется…'} Не закрывайте вкладку. Если браузер перезагрузит её, восстановите файл из локальной копии ниже.</p>}
                 <p className="import-preview-note">Кабинет определяется по первой цифре артикула продавца: 3/4 — «Светпланет», 5 — «Ледситипро». Смешанный файл автоматически разделяется на кабинетные партии. Для XWay «Orders qty» — количество рекламных заказов, «Orders rub» — их сумма; CPO рассчитывается как расход / количество заказов.</p>
               </div>
-              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setFunnelServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(funnelRoutingError)} onClick={() => void handleV5FunnelImport()}>Опубликовать {funnelServerPreview.source === 'xway' ? 'XWay' : 'воронку WB'} в V5</button></div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" disabled={loading} onClick={() => { setFunnelServerPreview(null); setSelectedFile(null); setFunnelImportError(''); setFunnelDraftName(''); void clearFunnelDraft().catch(() => undefined); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(funnelRoutingError)} onClick={() => void handleV5FunnelImport()}>{funnelImportError ? 'Повторить импорт' : `Опубликовать ${funnelServerPreview.source === 'xway' ? 'XWay' : 'воронку WB'} в V5`}</button></div>
             </div>
           </div>
         </div>
@@ -1124,6 +1151,14 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
             : 'Поддерживаются: CSV, Excel (.xlsx, .xls) — аналитические отчёты и отзывы WB'}
         </div>
       </div>
+
+      {isV5FunnelImportEnabled && funnelDraftName && !funnelServerPreview && !loading && (
+        <div className="import-preview-note" role="status">
+          Незавершённый импорт: «{funnelDraftName}». Файл сохранён только в этом браузере.
+          {' '}<button type="button" className="btn-secondary" onClick={() => void loadFunnelDraft().then(file => { if (file) void handleFile(file); else setFunnelDraftName(''); }).catch(() => setFunnelImportError('Не удалось восстановить локальный файл. Выберите его заново.'))}>Восстановить файл</button>
+          {' '}<button type="button" className="btn-secondary" onClick={() => { setFunnelDraftName(''); void clearFunnelDraft().catch(() => undefined); }}>Удалить копию</button>
+        </div>
+      )}
 
       {!serverOnly && latestReviewImport && (
         <AnalyticsPanel className="import-log import-review-latest" density="data">

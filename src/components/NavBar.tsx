@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useSyncExternalStore, type KeyboardEvent } from 'react';
 import type { PageName } from '../types';
 import { getVersion, subscribe } from '../data/store';
-import { V5_ROADMAP_PERCENT } from '../config/v5Release';
 
 interface NavBarProps {
   activePage: PageName;
@@ -268,7 +267,7 @@ export default function NavBar({ activePage, onNavigate, onLogout, showAdmin, sh
         </div>
       </div>
       <div className="navbar-right">
-        {isV5Environment && <span className="v5-staging-indicator" title="Проверочная версия, не production">V5 staging · {V5_ROADMAP_PERCENT}%</span>}
+        {isV5Environment && <span className="v5-staging-indicator" title="Проверочная версия, рабочая приёмка продолжается">V5 staging · проверка</span>}
         <span className="sync-indicator" title="Локальное хранилище">
           <span className="sync-dot online" />
           локально{storageUsage === null ? '' : ` · ${formatBytes(storageUsage)}`}
