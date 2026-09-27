@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { AnalyticsPageHeader, AnalyticsPanel, AnalyticsToolbar, EmptyState, KpiTile, PanelHeader } from '../../components/AnalyticsPrimitives';
@@ -15,6 +15,7 @@ const percent = (value: number) => `${nf.format(value)}%`;
 
 function shiftDate(value: string, days: number) { const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function ids(value: string) { return value ? [value] : null; }
+function recentPeriod(minDate: string, maxDate: string) { return { start: shiftDate(maxDate, -6) < minDate ? minDate : shiftDate(maxDate, -6), end: maxDate }; }
 
 export default function FunnelServerPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -29,13 +30,14 @@ export default function FunnelServerPage() {
   const [search, setSearch] = useState(''); const [appliedSearch, setAppliedSearch] = useState('');
   const [sort, setSort] = useState<FunnelSort>('ordered_amount'); const [page, setPage] = useState(0);
   const [ready, setReady] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [request, setRequest] = useState(0);
+  const optionsCache = useRef(new Map<string, FunnelFilterOptions>());
   const pageSize = 50;
 
   useEffect(() => {
     let active = true; queueMicrotask(() => { if (active) { setLoading(true); setError(''); } });
     loadFunnelBounds().then(value => {
       if (!active) return;
-      if (value.minDate && value.maxDate) { setBounds({ minDate: value.minDate, maxDate: value.maxDate }); setPeriod({ start: value.minDate, end: value.maxDate }); }
+      if (value.minDate && value.maxDate) { setBounds({ minDate: value.minDate, maxDate: value.maxDate }); setPeriod(recentPeriod(value.minDate, value.maxDate)); }
       setReady(true);
     }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Не удалось определить период воронки'); })
       .finally(() => { if (active) setLoading(false); });
@@ -47,10 +49,29 @@ export default function FunnelServerPage() {
     let active = true;
     const filters: FunnelFilters = { start: period.start, end: period.end, cabinetIds: ids(cabinet), categoryIds: ids(category), brandIds: ids(brand), groupIds: ids(group), search: appliedSearch || null };
     queueMicrotask(() => { if (active) { setLoading(true); setError(''); } });
-    Promise.all([loadFunnelFilterOptions(filters), loadFunnelSummary(filters), loadFunnelSeries(filters), loadFunnelRows(filters, 'ordered_amount', 0, 1000), loadFunnelRows(filters, sort, page * pageSize, pageSize)])
-      .then(([nextOptions, nextSummary, nextSeries, nextAnalysis, nextTable]) => {
-        if (!active) return; setOptions(nextOptions); setSummary(nextSummary); setSeries(nextSeries); setAnalysisRows(nextAnalysis); setTableRows(nextTable);
-      }).catch(reason => {
+    // Each RPC resolves the same source versions. Running five of them at once
+    // overwhelms the small staging database on a full-period request.
+    (async () => {
+      const optionsKey = `${period.start}|${period.end}`;
+      let nextOptions = optionsCache.current.get(optionsKey);
+      if (!nextOptions) {
+        nextOptions = await loadFunnelFilterOptions(filters);
+        optionsCache.current.set(optionsKey, nextOptions);
+      }
+      if (!active) return;
+      setOptions(nextOptions);
+      const nextSummary = await loadFunnelSummary(filters);
+      if (!active) return;
+      const nextSeries = await loadFunnelSeries(filters);
+      if (!active) return;
+      const nextAnalysis = await loadFunnelRows(filters, 'ordered_amount', 0, 1000);
+      if (!active) return;
+      const nextTable = sort === 'ordered_amount' && (nextAnalysis.length < 1000 || (page + 1) * pageSize <= 1000)
+        ? nextAnalysis.slice(page * pageSize, (page + 1) * pageSize)
+        : await loadFunnelRows(filters, sort, page * pageSize, pageSize);
+      if (!active) return;
+      setSummary(nextSummary); setSeries(nextSeries); setAnalysisRows(nextAnalysis); setTableRows(nextTable);
+    })().catch(reason => {
         if (!active) return; setSummary(EMPTY_SUMMARY); setSeries([]); setAnalysisRows([]); setTableRows([]); setError(reason instanceof Error ? reason.message : 'Не удалось загрузить серверную воронку');
       }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -72,7 +93,7 @@ export default function FunnelServerPage() {
 
   return <section className="funnel-page funnel-page-v2 analytics-page-shell ds-page">
     <AnalyticsPageHeader eyebrow="Аналитика › Трафик" title="Воронка продаж" description="Серверные WB-этапы и XWay-реклама с раздельными заказами в штуках и рублях." meta={<span>V5 · Supabase{bounds.maxDate ? ` · данные по ${bounds.maxDate}` : ''}</span>} />
-    <AnalyticsToolbar className="funnel-toolbar" status={<span>Частичные импорты разрешаются по последнему непустому значению каждой метрики</span>} trailing={<button className="ds-button" type="button" onClick={() => { setCabinet(''); setCategory(''); setBrand(''); setGroup(''); setSearch(''); setAppliedSearch(''); setSort('ordered_amount'); setPage(0); if (bounds.minDate) setPeriod({ start: bounds.minDate, end: bounds.maxDate }); }}>Сбросить</button>}>
+    <AnalyticsToolbar className="funnel-toolbar" status={<span>Частичные импорты разрешаются по последнему непустому значению каждой метрики</span>} trailing={<button className="ds-button" type="button" onClick={() => { setCabinet(''); setCategory(''); setBrand(''); setGroup(''); setSearch(''); setAppliedSearch(''); setSort('ordered_amount'); setPage(0); if (bounds.minDate) setPeriod(recentPeriod(bounds.minDate, bounds.maxDate)); }}>Сбросить</button>}>
       <DateRangeFilter label="Период" value={period} onChange={value => { setPeriod(value); setPage(0); }} maxDate={bounds.maxDate || today} />
       {[['Кабинет', cabinet, setCabinet, options.cabinets], ['Категория', category, setCategory, options.categories], ['Бренд', brand, setBrand, options.brands], ['Склейка', group, setGroup, options.groups]].map(([label, value, setter, items]) => <select key={String(label)} aria-label={String(label)} value={String(value)} onChange={event => { (setter as (value: string) => void)(event.target.value); setPage(0); }}><option value="">Все: {String(label).toLocaleLowerCase('ru-RU')}</option>{(items as FunnelFilterOptions['cabinets']).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>)}
       <form className="entry-server-search" onSubmit={event => { event.preventDefault(); setAppliedSearch(search.trim()); setPage(0); }}><input aria-label="Поиск товара" value={search} onChange={event => setSearch(event.target.value)} placeholder="SKU или товар" /><button className="ds-button" type="submit">Найти</button></form>
