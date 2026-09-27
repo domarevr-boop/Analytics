@@ -1,4 +1,4 @@
-import type { MetricValues, TableRow, Product } from '../types';
+import type { DailyMetrics, MetricValues, ProfitabilityRecord, TableRow, Product } from '../types';
 import { getProducts, getMetrics, getBrands, getGroups, getMemberships, getCabinets, getMonthlyPlansForMonth, getProfitabilityRecords, getGroupMembershipHistory, UNGROUPED_GROUP_ID } from './store';
 import { getCabinetExtraExpense } from './profitStore';
 import { getReportGrossProfit } from './profitabilityCalculations';
@@ -7,6 +7,46 @@ import { getFilteredProductIds } from './productFilters';
 import { resolveGroupAtDate } from './groupMembershipHistory';
 const DEV = import.meta.env.DEV;
 const _zeroLogged = new Set<string>();
+
+// The dashboard asks for two periods for every product. Scanning every imported
+// fact for each cell makes opening the page quadratic in the size of the data.
+// Store getters return a new snapshot when their data changes, so the indexes
+// follow the same invalidation boundary without changing any calculations.
+let indexedMetrics: DailyMetrics[] | null = null;
+let metricsByProduct = new Map<string, DailyMetrics[]>();
+let indexedProfitability: ProfitabilityRecord[] | null = null;
+let profitabilityByProduct = new Map<string, ProfitabilityRecord[]>();
+let indexedProducts: Product[] | null = null;
+let productsById = new Map<string, Product>();
+
+function getFactIndexes() {
+  const metrics = getMetrics();
+  if (metrics !== indexedMetrics) {
+    metricsByProduct = new Map();
+    for (const row of metrics) {
+      const rows = metricsByProduct.get(row.product_id) || [];
+      rows.push(row);
+      metricsByProduct.set(row.product_id, rows);
+    }
+    indexedMetrics = metrics;
+  }
+  const profitability = getProfitabilityRecords();
+  if (profitability !== indexedProfitability) {
+    profitabilityByProduct = new Map();
+    for (const row of profitability) {
+      const rows = profitabilityByProduct.get(row.product_id) || [];
+      rows.push(row);
+      profitabilityByProduct.set(row.product_id, rows);
+    }
+    indexedProfitability = profitability;
+  }
+  const products = getProducts();
+  if (products !== indexedProducts) {
+    productsById = new Map(products.map(product => [product.id, product]));
+    indexedProducts = products;
+  }
+  return { metrics, metricsByProduct, profitabilityByProduct, productsById };
+}
 
 export interface DatePeriod {
   start: string;
@@ -79,19 +119,17 @@ export function getPlanMap(periodStart: string): Map<string, PlanData> {
 }
 
 export function sumForProduct(productId: string, start: string, end: string, planMap?: Map<string, PlanData>, productSku?: string, relatedProductIds?: Iterable<string>, groupId?: string, groupHistory = getGroupMembershipHistory(), legacyMemberships = getMemberships()) {
-  const allMetrics = getMetrics();
-  const products = getProducts();
-  const product = products.find(p => p.id === productId);
+  const { metrics: allMetrics, metricsByProduct, profitabilityByProduct, productsById } = getFactIndexes();
+  const product = productsById.get(productId);
   const cabinetId = product?.cabinet_id || '';
   const month = start.slice(0, 7);
   const extraExpensePct = getCabinetExtraExpense(month, cabinetId);
 
   const productIds = new Set(relatedProductIds || [productId]);
   productIds.add(productId);
-  const rows = allMetrics.filter(m => productIds.has(m.product_id) && m.date >= start && m.date <= end && (!groupId || (() => { const resolution = resolveGroupAtDate(m.product_id, m.date, groupHistory, legacyMemberships); return resolution.known && resolution.groupId === groupId; })()));
-  const profitabilityRows = getProfitabilityRecords().filter(record =>
-    productIds.has(record.product_id)
-    && record.period_end >= start
+  const rows = [...productIds].flatMap(id => metricsByProduct.get(id) || []).filter(m => m.date >= start && m.date <= end && (!groupId || (() => { const resolution = resolveGroupAtDate(m.product_id, m.date, groupHistory, legacyMemberships); return resolution.known && resolution.groupId === groupId; })()));
+  const profitabilityRows = [...productIds].flatMap(id => profitabilityByProduct.get(id) || []).filter(record =>
+    record.period_end >= start
     && record.period_start <= end
     && (!groupId || (() => {
       const resolution = resolveGroupAtDate(record.product_id, record.period_start, groupHistory, legacyMemberships);
@@ -226,6 +264,7 @@ function getCategoryTableData(periodA: DatePeriod, periodB: DatePeriod, filters?
   const products = getProducts(); const groups = getGroups(); const cabinets = getCabinets(); const memberships = getMemberships();
   const planA = getPlanMap(periodA.start); const planB = getPlanMap(periodB.start);
   const productById = new Map(products.map(product => [product.id, product]));
+  const { metricsByProduct } = getFactIndexes();
   
   const productIdsByExternalId = new Map<string, Set<string>>();
   for (const product of products) {
@@ -275,26 +314,39 @@ function getCategoryTableData(periodA: DatePeriod, periodB: DatePeriod, filters?
   };
   for (const product of products) canonicalProduct(product);
   const canonicalProducts = products.filter(product => canonicalProduct(product).id === product.id && product.cabinet_id);
+  const membershipKeys = new Set<string>();
   const canonicalMemberships = memberships.reduce<typeof memberships>((result, membership) => {
     const product = productById.get(membership.product_id);
     if (!product) return result;
     const canonical = canonicalProduct(product);
-    if (!result.some(item => item.product_id === canonical.id && item.group_id === membership.group_id)) result.push({ product_id: canonical.id, group_id: membership.group_id });
+    const key = `${canonical.id}\u0000${membership.group_id}`;
+    if (!membershipKeys.has(key)) {
+      membershipKeys.add(key);
+      result.push({ product_id: canonical.id, group_id: membership.group_id });
+    }
     return result;
   }, []);
   const groupHistory = getGroupMembershipHistory();
   const allowed = getFilteredProductIds(canonicalProducts, canonicalMemberships, { cabinetFilter: filters?.cabinetId, categoryFilter: filters?.category, brandFilter: filters?.brandId, groupFilter: filters?.groupId, skuFilter: filters?.sku }, { groupHistory, period: { start: periodB.start < periodA.start ? periodB.start : periodA.start, end: periodA.end > periodB.end ? periodA.end : periodB.end } });
   const cabinetForProduct = (product: Product) => canonicalProduct(product).cabinet_id;
   const categoryForProduct = (product: Product) => canonicalProduct(product).category || 'Без категории';
+  const groupIdsCache = new Map<string, Set<string>>();
   const groupIdsForProduct = (product: Product) => {
     const canonicalId = canonicalProduct(product).id;
-    if (!groupHistory.length) return new Set(canonicalMemberships.filter(item => item.product_id === canonicalId).map(item => item.group_id || UNGROUPED_GROUP_ID));
-    const dates = getMetrics().filter(row => row.product_id === canonicalId && row.date >= periodB.start && row.date <= periodA.end).map(row => row.date);
+    const cached = groupIdsCache.get(canonicalId);
+    if (cached) return cached;
+    if (!groupHistory.length) {
+      const ids = new Set(canonicalMemberships.filter(item => item.product_id === canonicalId).map(item => item.group_id || UNGROUPED_GROUP_ID));
+      groupIdsCache.set(canonicalId, ids);
+      return ids;
+    }
+    const dates = (metricsByProduct.get(canonicalId) || []).filter(row => row.date >= periodB.start && row.date <= periodA.end).map(row => row.date);
     const ids = new Set<string>();
     for (const date of dates) {
       const resolution = resolveGroupAtDate(canonicalId, date, groupHistory, canonicalMemberships);
       if (resolution.known && resolution.groupId) ids.add(resolution.groupId);
     }
+    groupIdsCache.set(canonicalId, ids);
     return ids;
   };
   const rows: TableRow[] = [];
