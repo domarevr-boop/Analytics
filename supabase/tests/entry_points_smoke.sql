@@ -59,6 +59,16 @@ begin
       'impressions', 80, 'clicks', 16, 'carts', 6, 'orders', 3
     ))
   ));
+  -- Retrying a timed-out chunk must not inflate the staged-row counter.
+  if (public.v5_entry_points_stage_rows(v_batch_id, jsonb_build_array(
+    jsonb_build_object('row_number', 2, 'payload', jsonb_build_object(
+      'date', '2026-08-10', 'seller_sku', 'ENTRY-SELLER.0', 'wb_sku', '910001',
+      'section', 'Поиск', 'entry_point', 'Поиск WB',
+      'impressions', 100, 'clicks', 20, 'carts', 8, 'orders', 4
+    ))
+  )) ->> 'staged_rows')::integer <> 3 then
+    raise exception 'Entry points staging retry inflated the row counter';
+  end if;
   v_result := public.v5_entry_points_publish_batch(v_batch_id);
   if v_result ->> 'status' <> 'published'
     or (v_result ->> 'input_rows')::integer <> 3

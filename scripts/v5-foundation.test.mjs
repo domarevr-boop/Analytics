@@ -52,9 +52,19 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260920033000_v5_profitability_read_access_fix.sql',
     '20260923034000_v5_single_full_access_user.sql',
     '20260928035000_v5_funnel_product_metadata.sql',
+    '20260928040000_v5_entry_points_staging_scale.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
+});
+
+test('entry-points staging counts only new row keys and keeps repeated chunks idempotent', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20260928040000_v5_entry_points_staging_scale.sql', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/entry_points_smoke.sql', import.meta.url), 'utf8');
+  assert.match(migration, /where not exists\s*\(\s*select 1 from ingest\.import_rows row_data/iu);
+  assert.match(migration, /input_rows = input_rows \+ v_new_rows/iu);
+  assert.doesNotMatch(migration, /select count\(\*\)::integer into v_total_rows from ingest\.import_rows/iu);
+  assert.match(smoke, /staging retry inflated the row counter/iu);
 });
 
 test('geography location RPC accepts and applies the frontend city filter', () => {
