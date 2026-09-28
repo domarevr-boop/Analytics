@@ -48,6 +48,7 @@ import {
   loadEntryPointsImportCabinets,
 } from '../features/entryPoints/entryPointsImport';
 import type { EntryPointsImportResult } from '../features/entryPoints/entryPointsImport';
+import { clearEntryPointsDraft, loadEntryPointsDraft, saveEntryPointsDraft } from '../features/entryPoints/entryPointsImportDraft';
 import { parseSearchQueriesFileInWorker } from '../features/searchQueries/searchQueriesImportParser';
 import type { ParsedSearchQueriesFile } from '../features/searchQueries/searchQueriesImportParser';
 import { importSearchQueriesToSupabase, isV5SearchQueriesImportEnabled } from '../features/searchQueries/searchQueriesImport';
@@ -147,6 +148,8 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   const [competitorServerPreview, setCompetitorServerPreview] = useState<ParsedCompetitorFile | null>(null);
   const [geographyServerPreview, setGeographyServerPreview] = useState<ParsedGeographyFile | null>(null);
   const [entryPointsServerPreview, setEntryPointsServerPreview] = useState<ParsedEntryPointsFile | null>(null);
+  const [entryPointsDraftName, setEntryPointsDraftName] = useState('');
+  const [entryPointsImportError, setEntryPointsImportError] = useState('');
   const [searchQueriesServerPreview, setSearchQueriesServerPreview] = useState<ParsedSearchQueriesFile | null>(null);
   const [funnelServerPreview, setFunnelServerPreview] = useState<ParsedFunnelFile | null>(null);
   const [funnelDraftName, setFunnelDraftName] = useState('');
@@ -161,6 +164,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   useEffect(() => {
     if (!isV5FunnelImportEnabled) return;
     void loadFunnelDraft().then(file => setFunnelDraftName(file?.name || '')).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!isV5EntryPointsImportEnabled) return;
+    void loadEntryPointsDraft().then(file => setEntryPointsDraftName(file?.name || '')).catch(() => undefined);
   }, []);
   const [profitabilityCabinets, setProfitabilityCabinets] = useState<V5DirectoryDimension[]>([]);
   const [profitabilityCabinetError, setProfitabilityCabinetError] = useState('');
@@ -268,6 +275,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     setCompetitorServerPreview(null);
     setGeographyServerPreview(null);
     setEntryPointsServerPreview(null);
+    setEntryPointsImportError('');
     setSearchQueriesServerPreview(null);
     setFunnelServerPreview(null);
     setFunnelImportError('');
@@ -290,6 +298,19 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           if (DEV) console.debug('[import-ui] not a market workbook:', error);
         }
       }
+      // Large entry-point exports are otherwise decoded once by geography and again here.
+      if (ext === 'xlsx' && isV5EntryPointsImportEnabled && /точк[иауы]|entry.?point/i.test(file.name)) {
+        try {
+          const entryPointsData = await parseEntryPointsFileInWorker(file);
+          setEntryPointsServerPreview(entryPointsData);
+          setSelectedFile(file);
+          try { await saveEntryPointsDraft(file); setEntryPointsDraftName(file.name); }
+          catch { setEntryPointsImportError('Не удалось сохранить локальную копию: после перезагрузки вкладки файл потребуется выбрать снова.'); }
+          return;
+        } catch (error) {
+          if (DEV) console.debug('[import-ui] not an entry points workbook:', error);
+        }
+      }
       if (ext === 'xlsx' && isV5GeographyImportEnabled) {
         try {
           const geographyData = await parseGeographyFileInWorker(file);
@@ -305,6 +326,8 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           const entryPointsData = await parseEntryPointsFileInWorker(file);
           setEntryPointsServerPreview(entryPointsData);
           setSelectedFile(file);
+          try { await saveEntryPointsDraft(file); setEntryPointsDraftName(file.name); }
+          catch { setEntryPointsImportError('Не удалось сохранить локальную копию: после перезагрузки вкладки файл потребуется выбрать снова.'); }
           return;
         } catch (error) {
           if (DEV) console.debug('[import-ui] not an entry points workbook:', error);
@@ -463,40 +486,47 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
     if (!selectedFile || !entryPointsServerPreview || !entryPointsRouting || entryPointsRoutingError || importRunningRef.current) return;
     importRunningRef.current = true;
     setLoading(true);
-    setProgress('Повторная проверка отчёта точек входа...');
+    setEntryPointsImportError('');
+    setProgress('Подготовка отчёта точек входа...');
     try {
-      const parsedWorkbook = await parseEntryPointsFileInWorker(selectedFile);
-      const routing = buildCabinetRoutingPlan(parsedWorkbook.rows, entryPointsCabinets);
-      const routingError = cabinetRoutingError(routing, parsedWorkbook.sourceRowNumbers);
-      if (routingError) throw new Error(routingError);
+      const parsedWorkbook = entryPointsServerPreview;
+      const routing = entryPointsRouting;
       const results: EntryPointsImportResult[] = [];
       for (let index = 0; index < routing.routes.length; index += 1) {
         const route = routing.routes[index];
         const cabinetWorkbook = subsetWorkbookByCabinet(parsedWorkbook, route.rowIndexes);
-        const result = await importEntryPointsToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
-          const stage = current.stage === 'hashing' ? 'Контрольная сумма'
-            : current.stage === 'uploading' ? 'Сохранение исходника'
-              : current.stage === 'staging' ? 'Передача строк точек входа' : 'Серверная проверка и публикация';
-          setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
-        });
+        let result: EntryPointsImportResult;
+        try {
+          result = await importEntryPointsToSupabase(selectedFile, route.cabinet.id, cabinetWorkbook, current => {
+            const stage = current.stage === 'hashing' ? 'Контрольная сумма'
+              : current.stage === 'uploading' ? 'Сохранение исходника'
+                : current.stage === 'staging' ? 'Передача строк точек входа' : 'Серверная проверка и публикация';
+            setProgress(`${route.cabinet.name} (${index + 1}/${routing.routes.length}) · ${stage}: ${current.processed}/${current.total}`);
+          });
+        } catch (error) {
+          throw new Error(`Кабинет «${route.cabinet.name}» (${index + 1}/${routing.routes.length}): ${error instanceof Error ? error.message : 'ошибка связи'}`, { cause: error });
+        }
         results.push(result);
+        setLatestEntryPointsImport(result);
       }
       const latest = results.at(-1);
       if (latest) setLatestEntryPointsImport(latest);
       const failed = results.filter(result => result.status === 'failed');
-      if (failed.length) alert(`Импорт «Точек входа» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}.`);
+      if (failed.length) setEntryPointsImportError(`Импорт «Точек входа» отклонён для ${failed.length} кабинет(а/ов). Ошибок: ${failed.reduce((sum, result) => sum + result.errorCount, 0)}. Файл сохранён для повторной попытки.`);
       else if (results.every(result => result.duplicate)) alert('Этот файл «Точек входа» уже опубликован во всех определённых кабинетах V5.');
       else alert(`Импорт «Точек входа» опубликован автоматически. Кабинетов: ${results.length}. Строк: ${results.reduce((sum, result) => sum + result.canonicalRows, 0)}. Товаров создано: ${results.reduce((sum, result) => sum + result.productsCreated, 0)}. Период: ${parsedWorkbook.dateStart || '—'} — ${parsedWorkbook.dateEnd || '—'}.`);
+      if (!failed.length) {
+        setEntryPointsServerPreview(null); setSelectedFile(null); setEntryPointsDraftName('');
+        void clearEntryPointsDraft().catch(() => undefined);
+      }
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Ошибка серверного импорта «Точек входа»');
+      setEntryPointsImportError(error instanceof Error ? error.message : 'Ошибка серверного импорта «Точек входа»');
     } finally {
       importRunningRef.current = false;
       setLoading(false);
       setProgress('');
-      setEntryPointsServerPreview(null);
-      setSelectedFile(null);
     }
-  }, [selectedFile, entryPointsServerPreview, entryPointsRouting, entryPointsRoutingError, entryPointsCabinets]);
+  }, [selectedFile, entryPointsServerPreview, entryPointsRouting, entryPointsRoutingError]);
 
   const handleV5SearchQueriesImport = useCallback(async () => {
     if (!selectedFile || !searchQueriesServerPreview || importRunningRef.current) return;
@@ -1018,9 +1048,10 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
                   <article><span>Распределение</span><strong>{entryPointsRouting?.routes.length || 0} каб.</strong><small>{entryPointsRouting ? cabinetRoutingSummary(entryPointsRouting) : 'проверяется'}</small></article>
                 </div>
                 {entryPointsRoutingError && <p className="import-mapper-error">{entryPointsRoutingError}</p>}
+                {entryPointsImportError && <p className="import-mapper-error" role="alert">{entryPointsImportError}</p>}
                 <p className="import-preview-note">Кабинет определяется по первой цифре артикула продавца: 3/4 — «Светпланет», 5 — «Ледситипро». Смешанный файл автоматически разделяется на кабинетные партии; сервер разрешит или создаст товары по SKU/WB ID/алиасам.</p>
               </div>
-              <div className="import-mapper-footer"><button type="button" className="btn-secondary" onClick={() => { setEntryPointsServerPreview(null); setSelectedFile(null); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(entryPointsRoutingError)} onClick={() => void handleV5EntryPointsImport()}>Опубликовать точки входа в V5</button></div>
+              <div className="import-mapper-footer"><button type="button" className="btn-secondary" disabled={loading} onClick={() => { setEntryPointsServerPreview(null); setSelectedFile(null); setEntryPointsImportError(''); setEntryPointsDraftName(''); void clearEntryPointsDraft().catch(() => undefined); }}>Отмена</button><button type="button" className="btn-primary" disabled={loading || Boolean(entryPointsRoutingError)} onClick={() => void handleV5EntryPointsImport()}>{entryPointsImportError ? 'Повторить импорт' : 'Опубликовать точки входа в V5'}</button></div>
             </div>
           </div>
         </div>
@@ -1158,6 +1189,14 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           Незавершённый импорт: «{funnelDraftName}». Файл сохранён только в этом браузере.
           {' '}<button type="button" className="btn-secondary" onClick={() => void loadFunnelDraft().then(file => { if (file) void handleFile(file); else setFunnelDraftName(''); }).catch(() => setFunnelImportError('Не удалось восстановить локальный файл. Выберите его заново.'))}>Восстановить файл</button>
           {' '}<button type="button" className="btn-secondary" onClick={() => { setFunnelDraftName(''); void clearFunnelDraft().catch(() => undefined); }}>Удалить копию</button>
+        </div>
+      )}
+
+      {isV5EntryPointsImportEnabled && entryPointsDraftName && !entryPointsServerPreview && !loading && (
+        <div className="import-preview-note" role="status">
+          Незавершённый импорт точек входа: «{entryPointsDraftName}». Файл сохранён только в этом браузере.
+          {' '}<button type="button" className="btn-secondary" onClick={() => void loadEntryPointsDraft().then(file => { if (file) void handleFile(file); else setEntryPointsDraftName(''); }).catch(() => setEntryPointsImportError('Не удалось восстановить локальный файл. Выберите его заново.'))}>Восстановить файл</button>
+          {' '}<button type="button" className="btn-secondary" onClick={() => { setEntryPointsDraftName(''); void clearEntryPointsDraft().catch(() => undefined); }}>Удалить копию</button>
         </div>
       )}
 
