@@ -438,7 +438,7 @@ function App() {
       ) : displayPage === 'planning' ? (
         <PlanningPage />
       ) : displayPage === 'import' ? (
-        <div className="page-content"><ImportPage /></div>
+        <div className="page-content"><ImportPage serverOnly={IS_V5_ENVIRONMENT} /></div>
       ) : displayPage === 'profitability' ? (
         <div className="page-content">{isV5ProfitabilityBackendEnabled ? <ProfitabilityServerPage /> : <ProfitabilityPage {...filterBarProps} />}</div>
       ) : displayPage === 'admin' ? (

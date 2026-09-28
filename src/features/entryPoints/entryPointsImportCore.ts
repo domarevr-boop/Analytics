@@ -88,15 +88,17 @@ function businessKey(payload: EntryPointsPayload): string {
 }
 
 function parseSheet(sheet: EntryPointsSheetGrid): EntryPointsParsedWorkbook | null {
-  const normalizedRows = sheet.data.map(row => row.map(normalizeEntryPointsHeader));
-  const headerIndex = normalizedRows.findIndex(headers =>
-    findFieldIndex(headers, 'date') >= 0
-    && (findFieldIndex(headers, 'seller_sku') >= 0 || findFieldIndex(headers, 'wb_sku') >= 0)
-    && findFieldIndex(headers, 'section') >= 0
-    && findFieldIndex(headers, 'entry_point') >= 0,
-  );
+  const headerIndex = sheet.data.findIndex(row => {
+    const headers = row.map(normalizeEntryPointsHeader);
+    return (
+      findFieldIndex(headers, 'date') >= 0
+      && (findFieldIndex(headers, 'seller_sku') >= 0 || findFieldIndex(headers, 'wb_sku') >= 0)
+      && findFieldIndex(headers, 'section') >= 0
+      && findFieldIndex(headers, 'entry_point') >= 0
+    );
+  });
   if (headerIndex < 0) return null;
-  const headers = normalizedRows[headerIndex];
+  const headers = sheet.data[headerIndex].map(normalizeEntryPointsHeader);
   const indexes = Object.fromEntries((Object.keys(HEADER_ALIASES) as Field[]).map(field => [field, findFieldIndex(headers, field)])) as Record<Field, number>;
   const missing = REQUIRED_FIELDS.filter(field => indexes[field] < 0);
   if (indexes.seller_sku < 0 && indexes.wb_sku < 0) missing.push('seller_sku');

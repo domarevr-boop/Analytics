@@ -65,7 +65,12 @@ function findFieldIndex(headers: string[], field: Field): number {
   return headers.findIndex(header => NORMALIZED_ALIASES[field].includes(header));
 }
 
-function parseDateOrRaw(value: unknown): string {
+function sourceYear(fileName: string): number | null {
+  const years = [...fileName.matchAll(/(?:^|\D)(20\d{2})(?=\D|$)/gu)].map(match => Number(match[1]));
+  return new Set(years).size === 1 ? years[0] : null;
+}
+
+function parseDateOrRaw(value: unknown, fallbackYear: number | null): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
   }
@@ -74,6 +79,10 @@ function parseDateOrRaw(value: unknown): string {
   if (!match) {
     const local = source.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2}|\d{4})$/u);
     if (local) match = [source, local[3].length === 2 ? `20${local[3]}` : local[3], local[2], local[1]];
+  }
+  if (!match && fallbackYear) {
+    const short = source.match(/^(\d{1,2})[./](\d{1,2})$/u);
+    if (short) match = [source, String(fallbackYear), short[2], short[1]];
   }
   if (!match) return source;
   const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3]);
@@ -102,13 +111,15 @@ function businessKey(payload: SearchQueriesPayload): string {
     .join('\u001f');
 }
 
-function parseSheet(sheet: SearchQueriesSheetGrid): SearchQueriesParsedWorkbook | null {
-  const normalizedRows = sheet.data.map(row => row.map(normalizeSearchQueriesHeader));
-  const headerIndex = normalizedRows.findIndex(headers =>
-    findFieldIndex(headers, 'date') >= 0 && findFieldIndex(headers, 'query') >= 0 && findFieldIndex(headers, 'requests') >= 0,
-  );
+function parseSheet(sheet: SearchQueriesSheetGrid, fallbackYear: number | null): SearchQueriesParsedWorkbook | null {
+  const headerIndex = sheet.data.findIndex(row => {
+    const headers = row.map(normalizeSearchQueriesHeader);
+    return findFieldIndex(headers, 'date') >= 0
+      && findFieldIndex(headers, 'query') >= 0
+      && findFieldIndex(headers, 'requests') >= 0;
+  });
   if (headerIndex < 0) return null;
-  const headers = normalizedRows[headerIndex];
+  const headers = sheet.data[headerIndex].map(normalizeSearchQueriesHeader);
   const indexes = Object.fromEntries((Object.keys(HEADER_ALIASES) as Field[]).map(field => [field, findFieldIndex(headers, field)])) as Record<Field, number>;
   const missing = REQUIRED_FIELDS.filter(field => indexes[field] < 0);
   if (missing.length) throw new Error(`Файл поисковых запросов не распознан: отсутствуют обязательные колонки ${missing.join(', ')}.`);
@@ -122,7 +133,7 @@ function parseSheet(sheet: SearchQueriesSheetGrid): SearchQueriesParsedWorkbook 
     if (inputRows > SEARCH_QUERIES_MAX_ROWS) throw new Error(`Отчёт «Поисковые запросы» содержит больше ${SEARCH_QUERIES_MAX_ROWS.toLocaleString('ru-RU')} строк`);
     const value = (field: Field) => indexes[field] >= 0 ? source[indexes[field]] : '';
     const payload: SearchQueriesPayload = {
-      date: parseDateOrRaw(value('date')),
+      date: parseDateOrRaw(value('date'), fallbackYear),
       query: normalizeSearchQuery(value('query')),
       category: cellText(value('category')) || 'Без предмета',
       requests: parseNumberOrRaw(value('requests')),
@@ -144,6 +155,9 @@ function parseSheet(sheet: SearchQueriesSheetGrid): SearchQueriesParsedWorkbook 
       products: parseNumberOrRaw(value('products')),
       products_previous: parseNumberOrRaw(value('products_previous')),
     };
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(payload.date))) {
+      throw new Error(`Некорректная дата в строке ${rowIndex + 1}: «${cellText(value('date'))}». Для дат без года укажите один год в имени файла, например 2026.xlsx.`);
+    }
     latestByKey.set(businessKey(payload), { payload, rowNumber: rowIndex + 1 });
   }
   if (!inputRows) throw new Error('Отчёт «Поисковые запросы» не содержит строк данных.');
@@ -160,9 +174,10 @@ function parseSheet(sheet: SearchQueriesSheetGrid): SearchQueriesParsedWorkbook 
   };
 }
 
-export function extractSearchQueriesWorkbook(sheets: SearchQueriesSheetGrid[]): SearchQueriesParsedWorkbook {
+export function extractSearchQueriesWorkbook(sheets: SearchQueriesSheetGrid[], fileName = ''): SearchQueriesParsedWorkbook {
+  const fallbackYear = sourceYear(fileName);
   for (const sheet of sheets) {
-    const parsed = parseSheet(sheet);
+    const parsed = parseSheet(sheet, fallbackYear);
     if (parsed) return parsed;
   }
   throw new Error('Файл не содержит распознаваемого листа «Поисковые запросы».');

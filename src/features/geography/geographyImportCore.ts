@@ -123,16 +123,18 @@ function businessKey(payload: GeographyPayload): string {
 }
 
 function parseSheet(sheet: GeographySheetGrid): GeographyParsedWorkbook | null {
-  const normalizedRows = sheet.data.map(row => row.map(normalizeGeographyHeader));
-  const headerIndex = normalizedRows.findIndex(headers =>
-    findFieldIndex(headers, 'date') >= 0
-    && (findFieldIndex(headers, 'seller_sku') >= 0 || findFieldIndex(headers, 'wb_sku') >= 0)
-    && findFieldIndex(headers, 'region') >= 0
-    && findFieldIndex(headers, 'orders_total') >= 0,
-  );
+  const headerIndex = sheet.data.findIndex(row => {
+    const headers = row.map(normalizeGeographyHeader);
+    return (
+      findFieldIndex(headers, 'date') >= 0
+      && (findFieldIndex(headers, 'seller_sku') >= 0 || findFieldIndex(headers, 'wb_sku') >= 0)
+      && findFieldIndex(headers, 'region') >= 0
+      && findFieldIndex(headers, 'orders_total') >= 0
+    );
+  });
   if (headerIndex < 0) return null;
 
-  const headers = normalizedRows[headerIndex];
+  const headers = sheet.data[headerIndex].map(normalizeGeographyHeader);
   const indexes = Object.fromEntries(
     (Object.keys(HEADER_ALIASES) as GeographyField[]).map(field => [field, findFieldIndex(headers, field)]),
   ) as Record<GeographyField, number>;

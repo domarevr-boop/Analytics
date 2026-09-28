@@ -101,14 +101,16 @@ function keyOf(payload: FunnelPayload): string {
 function parseSheet(sheet: FunnelSheetGrid, source: FunnelImportSource): FunnelParsedWorkbook | null {
   const aliases = normalizedAliases(source);
   const metricFields = Object.keys(source === 'wb_funnel' ? WB_ALIASES : XWAY_ALIASES) as Array<WbMetric | XwayMetric>;
-  const normalizedRows = sheet.data.map(row => row.map(normalizeFunnelHeader));
-  const headerIndex = normalizedRows.findIndex(headers =>
-    findFieldIndex(headers, aliases.date) >= 0
-    && (findFieldIndex(headers, aliases.seller_sku) >= 0 || findFieldIndex(headers, aliases.wb_sku) >= 0)
-    && metricFields.some(field => findFieldIndex(headers, aliases[field]) >= 0),
-  );
+  const headerIndex = sheet.data.findIndex(row => {
+    const headers = row.map(normalizeFunnelHeader);
+    return (
+      findFieldIndex(headers, aliases.date) >= 0
+      && (findFieldIndex(headers, aliases.seller_sku) >= 0 || findFieldIndex(headers, aliases.wb_sku) >= 0)
+      && metricFields.some(field => findFieldIndex(headers, aliases[field]) >= 0)
+    );
+  });
   if (headerIndex < 0) return null;
-  const headers = normalizedRows[headerIndex];
+  const headers = sheet.data[headerIndex].map(normalizeFunnelHeader);
   const indexes = Object.fromEntries((Object.keys(aliases) as Field[])
     .map(field => [field, findFieldIndex(headers, aliases[field])])) as Record<Field, number>;
   const presentMetricFields = metricFields.filter(field => indexes[field] >= 0);

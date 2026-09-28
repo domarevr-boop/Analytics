@@ -67,12 +67,14 @@ const keyOf = (payload: ProfitabilityPayload) => `${payload.date || ''}\u001f${s
 
 export function extractProfitabilityWorkbook(sheets: ProfitabilitySheetGrid[]): ProfitabilityParsedWorkbook {
   for (const sheet of sheets) {
-    const normalizedRows = sheet.data.map(row => row.map(normalizeProfitabilityHeader));
-    const headerIndex = normalizedRows.findIndex(headers => indexOf(headers, normalizedAliases.date) >= 0
+    const headerIndex = sheet.data.findIndex(row => {
+      const headers = row.map(normalizeProfitabilityHeader);
+      return indexOf(headers, normalizedAliases.date) >= 0
       && (indexOf(headers, normalizedAliases.seller_sku) >= 0 || indexOf(headers, normalizedAliases.wb_sku) >= 0)
-      && indexOf(headers, normalizedAliases.revenue) >= 0);
+      && indexOf(headers, normalizedAliases.revenue) >= 0;
+    });
     if (headerIndex < 0) continue;
-    const headers = normalizedRows[headerIndex];
+    const headers = sheet.data[headerIndex].map(normalizeProfitabilityHeader);
     const indexes = Object.fromEntries((Object.keys(ALIASES) as Field[]).map(field => [field, indexOf(headers, normalizedAliases[field])])) as Record<Field, number>;
     const presentFields = METRICS.filter(field => indexes[field] >= 0);
     const canonical = new Map<string, { payload: ProfitabilityPayload; rowNumber: number }>(); let inputRows = 0;

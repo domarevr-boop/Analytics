@@ -32,3 +32,18 @@ test('сохраняет зерно V4 и последнюю строку дуб
 test('делит строки на серверные чанки', () => {
   assert.deepEqual(splitSearchQueriesRows([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
 });
+
+test('распознаёт реальные даты без года из файла 2026.xlsx', () => {
+  const first = ['19.07', 'люстра потолочная', 8447, 7901, 8447, 7901, 'Люстры', 39349, 36346, 2851, 2701, 7, 7, 467, 418, 16, 15, 24, 16, 258179, 263405];
+  const last = [...first]; last[0] = '24.09'; last[1] = 'храброф светодиодная лента';
+  const parsed = extractSearchQueriesWorkbook([{ name: 'Лист1', data: [headers, first, last] }], '2026.xlsx');
+  assert.deepEqual([parsed.dateStart, parsed.dateEnd], ['2026-07-19', '2026-09-24']);
+  assert.equal(parsed.rows[1].date, '2026-09-24');
+});
+
+test('не отправляет на сервер даты без однозначного года', () => {
+  const row = ['24.09', 'люстра', 1, 0, 1, 0, 'Люстры', 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+  const data = [{ name: 'Лист1', data: [headers, row] }];
+  assert.throws(() => extractSearchQueriesWorkbook(data, 'отчёт.xlsx'), /укажите один год в имени файла/u);
+  assert.throws(() => extractSearchQueriesWorkbook(data, '2025-2026.xlsx'), /укажите один год в имени файла/u);
+});

@@ -347,6 +347,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
           setSelectedFile(file);
           return;
         } catch (error) {
+          if (error instanceof Error && error.message.startsWith('Некорректная дата в строке')) throw error;
           if (DEV) console.debug('[import-ui] not a search queries workbook:', error);
         }
       }
@@ -911,7 +912,7 @@ export default function ImportPage({ serverOnly = false }: ImportPageProps) {
   return (
     <div className="import-page analytics-page-shell ds-page import-design-page">
       <AnalyticsPageHeader eyebrow="Данные" title="Импорт отчётов" description={serverOnly
-        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ', «География заказов»' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа»' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы»' : ''} в V5.`
+        ? `Безопасная загрузка серверных отчётов «Рынок»${isV5CompetitorImportEnabled ? ', «Конкуренты»' : ''}${isV5GeographyImportEnabled ? ', «География заказов»' : ''}${isV5EntryPointsImportEnabled ? ', «Точки входа»' : ''}${isV5FunnelImportEnabled ? ', «Воронка WB»/XWay' : ''}${isV5ProfitabilityImportEnabled ? ', «Рентабельность»' : ''}${isV5SearchQueriesImportEnabled ? ' и «Поисковые запросы»' : ''} в V5.`
         : 'Единая точка загрузки, проверки покрытия и обновления аналитических источников.'} />
       {isV5DirectoryBootstrapEnvironment && !serverOnly && (
         <AnalyticsPanel className="import-log import-directory-bootstrap" density="data">

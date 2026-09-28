@@ -25,6 +25,6 @@ export async function parseSearchQueriesFileInWorker(file: File): Promise<Parsed
       resolve({ ...event.data.workbook, fileName: file.name, pipeline: 'v5-search-queries' });
     };
     worker.onerror = event => { window.clearTimeout(timeout); worker.terminate(); reject(new Error(event.message || 'Ошибка фонового разбора отчёта «Поисковые запросы»')); };
-    worker.postMessage({ id, buffer }, [buffer]);
+    worker.postMessage({ id, fileName: file.name, buffer }, [buffer]);
   });
 }
