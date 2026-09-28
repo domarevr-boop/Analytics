@@ -523,6 +523,14 @@ test('V5 import cannot silently write a local-only source', () => {
   assert.match(page, /Некорректная дата в строке/u);
 });
 
+test('V5 server routes do not wait for the legacy local store', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /function pageNeedsLocalStore\(page: PageName\)/u);
+  assert.match(app, /case 'import': case 'admin': return false/u);
+  assert.match(app, /if \(!needsLocalStore\) return;/u);
+  assert.match(app, /needsLocalStore && !dataReady/u);
+});
+
 test('competitor storage versions all four sheets as one replaceable batch', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260908011000_v5_competitors_storage.sql', import.meta.url), 'utf8');
   for (const table of ['competitor_funnel_versions', 'competitor_search_versions', 'competitor_stock_versions', 'competitor_position_versions']) {

@@ -9,6 +9,10 @@ import { isV5MarketBackendEnabled } from './features/market/marketData';
 import { isV5FunnelBackendEnabled } from './features/funnel/funnelData';
 import { isV5ProfitabilityBackendEnabled } from './features/profitability/profitabilityData';
 import { isV5DirectoryBackendEnabled } from './features/directory/directoryData';
+import { isV5EntryPointsBackendEnabled } from './features/entryPoints/entryPointsData';
+import { isV5SearchQueriesBackendEnabled } from './features/searchQueries/searchQueriesData';
+import { isV5GeographyBackendEnabled } from './features/geography/geographyData';
+import { isV5CompetitorBackendEnabled } from './features/competitors/competitorData';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
@@ -50,6 +54,23 @@ const LAST_PAGE_KEY = 'analytics_last_page_v1';
 const IS_V5_ENVIRONMENT = import.meta.env.VITE_APP_ENV === 'v5-development';
 const ALL_TABLE_METRICS = TABLE_METRIC_GROUPS.flatMap(group => [...group.keys]);
 const PAGE_NAMES: PageName[] = ['dashboard', 'import', 'dictionary', 'planning', 'profitability', 'admin', 'dev', 'funnel', 'entry-points', 'search-phrases', 'market', 'geography', 'client-experience', 'competitors', 'reporting', 'product'];
+
+function pageNeedsLocalStore(page: PageName): boolean {
+  if (!IS_V5_ENVIRONMENT) return true;
+  switch (page) {
+    case 'import': case 'admin': return false;
+    case 'dictionary': return !isV5DirectoryBackendEnabled;
+    case 'funnel': return !isV5FunnelBackendEnabled;
+    case 'entry-points': return !isV5EntryPointsBackendEnabled;
+    case 'search-phrases': return !isV5SearchQueriesBackendEnabled;
+    case 'market': return !isV5MarketBackendEnabled;
+    case 'geography': return !isV5GeographyBackendEnabled;
+    case 'competitors': return !isV5CompetitorBackendEnabled;
+    case 'profitability': return !isV5ProfitabilityBackendEnabled;
+    case 'reporting': return !(isV5MarketBackendEnabled && isV5FunnelBackendEnabled && isV5ProfitabilityBackendEnabled);
+    default: return true;
+  }
+}
 
 function getInitialPage(): PageName {
   if (typeof localStorage === 'undefined') return 'dashboard';
@@ -240,6 +261,7 @@ function App() {
   const canImport = IS_V5_ENVIRONMENT ? v5Capabilities.canImport : canUseApp;
   const canManage = IS_V5_ENVIRONMENT ? v5Capabilities.canManage : isAdmin;
   const displayPage = page;
+  const needsLocalStore = pageNeedsLocalStore(displayPage);
   const storeVersion = useSyncExternalStore(subscribe, getVersion);
 
   useEffect(() => {
@@ -329,6 +351,7 @@ function App() {
       setDataReady(false);
       return;
     }
+    if (!needsLocalStore) return;
     let cancelled = false;
     (async () => {
       try {
@@ -350,7 +373,7 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [auth.initialized, auth.user, accessChecked, canUseApp, authTick]);
+  }, [auth.initialized, auth.user, accessChecked, canUseApp, authTick, needsLocalStore]);
 
   useEffect(() => {
     if (!dataReady || page !== 'dashboard') return;
@@ -392,7 +415,7 @@ function App() {
     <div className="dashboard">
       <NavBar activePage={displayPage} onNavigate={navigatePage} onLogout={() => void signOut()} showAdmin={canManage} showImport={canImport} showDictionary={canManage} />
 
-      {!dataReady ? (
+      {needsLocalStore && !dataReady ? (
         <div className="page-content"><div className="page-card" style={{ padding: 24 }}>
           {dataError ? <><strong>Не удалось загрузить локальные данные</strong><p>{dataError}</p></> : 'Загрузка локальных данных...'}
         </div></div>
