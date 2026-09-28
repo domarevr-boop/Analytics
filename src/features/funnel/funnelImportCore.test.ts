@@ -47,7 +47,7 @@ test('keeps absent WB columns out of a partial patch and preserves invalid value
 test('recognizes the current WB funnel export layout and keeps cabinet prefixes', () => {
   const workbook = extractFunnelWorkbook([{ name: 'Лист1', data: [
     ['Артикул продавца', 'Артикул WB', 'Название', 'Предмет', 'Бренд', 'Ярлыки', 'Удаленный товар', 'Рейтинг карточки', 'Рейтинг по отзывам', 'Дата', 'Показы', 'CTR', 'Переходы в карточку', 'Положили в корзину', 'Добавили в отложенные', 'Заказали товаров, шт', 'Выкупили, шт', 'Отменили, шт', 'Конверсия в корзину, %', 'Конверсия в заказ, %', 'Процент выкупа', 'Заказали на сумму, ₽', 'Выкупили на сумму, ₽', 'Отменили на сумму, ₽'],
-    ['39024', 222906909, '', '', '', '', '', '', '', '2026-09-01', 109383, 4, 4611, 622, 85, 140, 129, 11, 13, 23, 92, 251859, 232070, 19789],
+    ['39024', 222906909, 'Люстра потолочная', 'Люстры', 'LEDCITY', '', '', '', '', '2026-09-01', 109383, 4, 4611, 622, 85, 140, 129, 11, 13, 23, 92, 251859, 232070, 19789],
     ['50001', 494674743, '', '', '', '', '', '', '', '2026-09-24', 100, 2, 2, 1, 0, 1, 0, 0, 50, 100, 0, 1000, 0, 0],
   ] }], 'wb_funnel');
   assert.equal(workbook.inputRows, 2);
@@ -57,6 +57,7 @@ test('recognizes the current WB funnel export layout and keeps cabinet prefixes'
   assert.deepEqual(workbook.rows.map(row => row.seller_sku), ['39024', '50001']);
   assert.equal(workbook.rows[0].orders, 140);
   assert.equal(workbook.rows[0].ordered_amount, 251859);
+  assert.deepEqual([workbook.rows[0].product_name, workbook.rows[0].category_name, workbook.rows[0].brand_name], ['Люстра потолочная', 'Люстры', 'LEDCITY']);
 });
 
 test('recognizes the current wide XWay export with a leading index column', () => {

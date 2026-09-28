@@ -51,6 +51,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260920032000_v5_profitability_read_api.sql',
     '20260920033000_v5_profitability_read_access_fix.sql',
     '20260923034000_v5_single_full_access_user.sql',
+    '20260928035000_v5_funnel_product_metadata.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -202,6 +203,20 @@ test('V5 funnel import is gated, worker-based and wired into the Import UI', () 
   assert.match(fileSmoke, /--local-only/iu);
   assert.match(buildScript, /VITE_V5_FUNNEL_IMPORT_ENABLED:\s*'true'/u);
   assert.match(exampleEnv, /VITE_V5_FUNNEL_IMPORT_ENABLED=false/u);
+});
+
+test('published funnel metadata enriches only import-created directory placeholders', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20260928035000_v5_funnel_product_metadata.sql', import.meta.url), 'utf8');
+  const parser = readFileSync(new URL('../src/features/funnel/funnelImportCore.ts', import.meta.url), 'utf8');
+  const smoke = readFileSync(new URL('../supabase/tests/funnel_product_metadata_smoke.sql', import.meta.url), 'utf8');
+  assert.match(parser, /product_name: \['название'/u);
+  assert.match(migration, /after update of status on ingest\.import_batches/iu);
+  assert.match(migration, /product\.data_source = 'import'/iu);
+  assert.match(migration, /coalesce\(product\.category_id, category\.id\)/iu);
+  assert.match(migration, /coalesce\(product\.brand_id, brand\.id\)/iu);
+  assert.match(smoke, /funnel_product_metadata_enriched/iu);
+  assert.match(smoke, /rollback;/iu);
+  assert.doesNotMatch(smoke, /commit;/iu);
 });
 
 test('profitability migration audit keeps gross and net profit semantics separate', () => {

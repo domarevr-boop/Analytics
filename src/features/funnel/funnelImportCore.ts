@@ -23,11 +23,17 @@ type IdentityField = 'date' | 'seller_sku' | 'wb_sku';
 type WbMetric = 'impressions' | 'clicks' | 'carts' | 'orders' | 'ordered_amount';
 type XwayMetric = 'ad_impressions' | 'ad_clicks' | 'ad_orders_qty' | 'ad_ordered_amount' | 'ad_spend';
 type Field = IdentityField | WbMetric | XwayMetric;
+type ProductField = 'product_name' | 'category_name' | 'brand_name';
 
 const IDENTITY_ALIASES: Record<IdentityField, string[]> = {
   date: ['дата', 'date'],
   seller_sku: ['артикул продавца', 'артикул поставщика', 'артикул', 'sku', 'seller sku'],
   wb_sku: ['артикул wb', 'артикул вб', 'nm id', 'nm_id', 'номенклатура', 'wb sku'],
+};
+const PRODUCT_ALIASES: Record<ProductField, string[]> = {
+  product_name: ['название', 'наименование', 'name'],
+  category_name: ['предмет', 'категория', 'subject', 'category'],
+  brand_name: ['бренд', 'brand'],
 };
 const WB_ALIASES: Record<WbMetric, string[]> = {
   impressions: ['показы', 'impressions'],
@@ -57,6 +63,9 @@ function normalizedAliases(source: FunnelImportSource): Record<Field, string[]> 
   return Object.fromEntries(Object.entries({ ...IDENTITY_ALIASES, ...metrics })
     .map(([field, aliases]) => [field, aliases.map(normalizeFunnelHeader)])) as Record<Field, string[]>;
 }
+
+const normalizedProductAliases = Object.fromEntries(Object.entries(PRODUCT_ALIASES)
+  .map(([field, aliases]) => [field, aliases.map(normalizeFunnelHeader)])) as Record<ProductField, string[]>;
 
 function findFieldIndex(headers: string[], aliases: string[]): number {
   return headers.findIndex(header => aliases.includes(header));
@@ -113,6 +122,8 @@ function parseSheet(sheet: FunnelSheetGrid, source: FunnelImportSource): FunnelP
   const headers = sheet.data[headerIndex].map(normalizeFunnelHeader);
   const indexes = Object.fromEntries((Object.keys(aliases) as Field[])
     .map(field => [field, findFieldIndex(headers, aliases[field])])) as Record<Field, number>;
+  const productIndexes = Object.fromEntries((Object.keys(PRODUCT_ALIASES) as ProductField[])
+    .map(field => [field, findFieldIndex(headers, normalizedProductAliases[field])])) as Record<ProductField, number>;
   const presentMetricFields = metricFields.filter(field => indexes[field] >= 0);
   if (!presentMetricFields.length) throw new Error('Файл не содержит ни одной распознанной метрики воронки или рекламы.');
 
@@ -129,6 +140,11 @@ function parseSheet(sheet: FunnelSheetGrid, source: FunnelImportSource): FunnelP
       seller_sku: canonicalSku(value('seller_sku')),
       wb_sku: canonicalSku(value('wb_sku')),
     };
+    for (const field of Object.keys(PRODUCT_ALIASES) as ProductField[]) {
+      if (productIndexes[field] < 0) continue;
+      const label = cellText(row[productIndexes[field]]);
+      if (label) payload[field] = label;
+    }
     for (const field of presentMetricFields) payload[field] = parseNumberOrRaw(value(field));
     const key = keyOf(payload);
     const existing = aggregated.get(key);
@@ -139,6 +155,9 @@ function parseSheet(sheet: FunnelSheetGrid, source: FunnelImportSource): FunnelP
     for (const field of presentMetricFields) {
       const left = existing.payload[field]; const right = payload[field];
       existing.payload[field] = typeof left === 'number' && typeof right === 'number' ? left + right : right;
+    }
+    for (const field of Object.keys(PRODUCT_ALIASES) as ProductField[]) {
+      if (typeof payload[field] === 'string' && payload[field]) existing.payload[field] = payload[field];
     }
     existing.rowNumber = rowIndex + 1;
   }
