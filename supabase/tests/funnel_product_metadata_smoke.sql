@@ -1,10 +1,9 @@
 begin;
 
-create temporary table funnel_metadata_smoke_ids (label text primary key, value uuid not null) on commit drop;
-grant select, insert on funnel_metadata_smoke_ids to authenticated;
-
 do $$
 declare v_user_id uuid; v_cabinet_id uuid := gen_random_uuid();
+  v_created jsonb; v_result jsonb; v_batch_id uuid;
+  v_product_name text; v_category_name text; v_brand_name text;
 begin
   select access.user_id into strict v_user_id from app.user_access access
   where access.access_role = 'admin' and access.is_active limit 1;
@@ -12,17 +11,6 @@ begin
   perform set_config('request.jwt.claim.role', 'authenticated', true);
   insert into core.cabinets (id, external_key, name)
   values (v_cabinet_id, 'funnel-metadata-smoke', 'Funnel metadata smoke');
-  insert into funnel_metadata_smoke_ids values ('cabinet', v_cabinet_id);
-end
-$$;
-
-set local role authenticated;
-
-do $$
-declare v_created jsonb; v_result jsonb; v_batch_id uuid;
-  v_cabinet_id uuid := (select value from funnel_metadata_smoke_ids where label = 'cabinet');
-  v_product_name text; v_category_name text; v_brand_name text;
-begin
   v_created := public.v5_funnel_create_batch('wb_funnel', v_cabinet_id,
     '__funnel_metadata.xlsx', null, 100, repeat('d', 64));
   v_batch_id := (v_created ->> 'batch_id')::uuid;
