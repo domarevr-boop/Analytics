@@ -101,7 +101,7 @@ begin
         'sheet_name', 'Рынок',
         'row_number', 2,
         'payload', jsonb_build_object(
-          'date', '2026-06-01',
+          'date', '2025-06-01',
           'market_ordered_amount', 49526859,
           'own_ordered_amount', 3904149,
           'amount_share', 7.88,
@@ -116,7 +116,7 @@ begin
         'sheet_name', 'Рынок',
         'row_number', 3,
         'payload', jsonb_build_object(
-          'date', '2026-06-02',
+          'date', '2025-06-02',
           'market_ordered_amount', 50617556,
           'own_ordered_amount', 3814588,
           'amount_share', 7.54,
@@ -153,7 +153,7 @@ begin
 
   select *
   into strict v_day
-  from public.v5_market_series('2026-06-01', '2026-06-01', 'day');
+  from public.v5_market_series('2025-06-01', '2025-06-01', 'day');
 
   if v_day.market_ordered_amount <> 49526859
     or v_day.own_ordered_amount <> 3904149
@@ -167,7 +167,7 @@ begin
 
   select *
   into strict v_month
-  from public.v5_market_series('2026-06-01', '2026-06-30', 'month');
+  from public.v5_market_series('2025-06-01', '2025-06-30', 'month');
 
   if v_month.market_ordered_amount <> 100144415
     or v_month.own_ordered_amount <> 7718737
@@ -209,7 +209,7 @@ begin
         'sheet_name', 'Рынок',
         'row_number', 2,
         'payload', jsonb_build_object(
-          'date', '2026-06-01',
+          'date', '2025-06-01',
           'market_ordered_amount', 49526859,
           'own_ordered_amount', 4000000,
           'market_orders', 15248,
@@ -222,7 +222,7 @@ begin
 
   select data.own_ordered_amount
   into strict v_current_own
-  from public.v5_market_series('2026-06-01', '2026-06-01', 'day') data;
+  from public.v5_market_series('2025-06-01', '2025-06-01', 'day') data;
 
   if v_result ->> 'status' <> 'published' or v_current_own <> 4000000 then
     raise exception 'Latest published market version assertion failed';
@@ -232,7 +232,7 @@ begin
 
   select data.own_ordered_amount
   into strict v_current_own
-  from public.v5_market_series('2026-06-01', '2026-06-01', 'day') data;
+  from public.v5_market_series('2025-06-01', '2025-06-01', 'day') data;
 
   if v_result ->> 'status' <> 'cancelled' or v_current_own <> 3904149 then
     raise exception 'Market rollback assertion failed';

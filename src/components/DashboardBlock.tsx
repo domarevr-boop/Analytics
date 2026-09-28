@@ -127,7 +127,10 @@ interface DashboardBlockProps {
 export default function DashboardBlock({ selectedCategory = '', onCategorySelect, onExport }: DashboardBlockProps) {
   const version = useSyncExternalStore(subscribe, getVersion);
   const extraExpensesVersion = useSyncExternalStore(subscribeExtraExpenses, getExtraExpensesVersion);
-  const [selectedMonth, setSelectedMonth] = useState(getDefaultMonth);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const latestDate = getMetrics().reduce((latest, metric) => metric.date > latest ? metric.date : latest, '');
+    return latestDate ? latestDate.slice(0, 7) : getDefaultMonth();
+  });
   const [selectedMetric, setSelectedMetric] = useState('');
   const lastDataDate = useMemo(() => getMetrics().reduce((latest, metric) => metric.date > latest ? metric.date : latest, ''), [version]);
 
@@ -333,7 +336,7 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
       const imageProduct = productList.find(product => (product.category || 'Без категории') === name && product.wb_sku);
       return { name, ...values, profit, planPct: values.plan ? values.revenue / values.plan * 100 : 0, margin: revenue ? profit / revenue * 100 : 0, image: imageProduct?.wb_sku ? getWbImageUrls(imageProduct.wb_sku)[0] : '' };
     }).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
-  }, [version, extraExpensesVersion, periodA]);
+  }, [version, extraExpensesVersion, periodA, selectedMonth]);
   const handleMetricSelect = (metricKey: string) => {
     const active = selectedMetric !== metricKey;
     setSelectedMetric(active ? metricKey : '');

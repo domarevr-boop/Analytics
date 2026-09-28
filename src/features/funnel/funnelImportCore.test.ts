@@ -43,3 +43,29 @@ test('keeps absent WB columns out of a partial patch and preserves invalid value
   assert.equal('ordered_amount' in workbook.rows[0], false);
   assert.deepEqual(splitFunnelRows([1, 2, 3], 2), [[1, 2], [3]]);
 });
+
+test('recognizes the current WB funnel export layout and keeps cabinet prefixes', () => {
+  const workbook = extractFunnelWorkbook([{ name: 'Лист1', data: [
+    ['Артикул продавца', 'Артикул WB', 'Название', 'Предмет', 'Бренд', 'Ярлыки', 'Удаленный товар', 'Рейтинг карточки', 'Рейтинг по отзывам', 'Дата', 'Показы', 'CTR', 'Переходы в карточку', 'Положили в корзину', 'Добавили в отложенные', 'Заказали товаров, шт', 'Выкупили, шт', 'Отменили, шт', 'Конверсия в корзину, %', 'Конверсия в заказ, %', 'Процент выкупа', 'Заказали на сумму, ₽', 'Выкупили на сумму, ₽', 'Отменили на сумму, ₽'],
+    ['39024', 222906909, '', '', '', '', '', '', '', '2026-09-01', 109383, 4, 4611, 622, 85, 140, 129, 11, 13, 23, 92, 251859, 232070, 19789],
+    ['50001', 494674743, '', '', '', '', '', '', '', '2026-09-24', 100, 2, 2, 1, 0, 1, 0, 0, 50, 100, 0, 1000, 0, 0],
+  ] }], 'wb_funnel');
+  assert.equal(workbook.inputRows, 2);
+  assert.equal(workbook.dateStart, '2026-09-01');
+  assert.equal(workbook.dateEnd, '2026-09-24');
+  assert.deepEqual(workbook.presentMetricFields, ['impressions', 'clicks', 'carts', 'orders', 'ordered_amount']);
+  assert.deepEqual(workbook.rows.map(row => row.seller_sku), ['39024', '50001']);
+  assert.equal(workbook.rows[0].orders, 140);
+  assert.equal(workbook.rows[0].ordered_amount, 251859);
+});
+
+test('recognizes the current wide XWay export with a leading index column', () => {
+  const workbook = extractFunnelWorkbook([{ name: 'Лист1', data: [
+    ['', 'Дата', 'id', 'Название', 'Артикул WB', 'Артикул продавца', 'Группа', 'Теги', 'Бренд', 'Категория', 'Общее количество заказов', 'Общая сумма заказов', 'Текущий остаток товара', 'Цена со скидкой, руб.', 'Цена с СПП, руб.', 'СПП, %', 'Активных РК', 'Бюджет на РК', 'Показы', 'Клики', 'Корзины', 'Заказы, шт', 'Стоимость корзины, руб.', 'Заказы, руб', 'Факт. CPM, руб.', 'CPC, руб.', 'CPO, руб.', 'CTR, %', 'Клик → Корзина, %', 'Корзина → Заказ, %', 'Показы → Корзина, %', 'Показы → Заказ, %', 'Клик → Заказ, %', 'Расход, руб.'],
+    [0, '2026-09-01 00:00:00', 494025, '', 496466378, '50193', '', '', '', '', '', '', '', '', '', '', '', '', 1000, 50, 4, 2, '', 3000, '', '', '', '', '', '', '', '', '', '5 033,35'],
+  ] }], 'xway');
+  assert.deepEqual(workbook.presentMetricFields, ['ad_impressions', 'ad_clicks', 'ad_orders_qty', 'ad_ordered_amount', 'ad_spend']);
+  assert.equal(workbook.rows[0].seller_sku, '50193');
+  assert.equal(workbook.rows[0].ad_spend, 5033.35);
+  assert.equal(workbook.rows[0].date, '2026-09-01');
+});
