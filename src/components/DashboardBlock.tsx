@@ -345,6 +345,9 @@ export default function DashboardBlock({ selectedCategory = '', onCategorySelect
 
   return (
     <div className="dashboard-block analytics-sheet">
+      {import.meta.env.VITE_APP_ENV === 'v5-development' && <div className="v5-local-source-notice" role="status">
+        Главная пока использует локальный снимок{lastDataDate ? ` по ${new Date(`${lastDataDate}T00:00:00`).toLocaleDateString('ru-RU')}` : ''}. Для актуальных серверных данных откройте «Отчётность» и «Воронка»; показатели этой страницы не отражают новые импорты V5.
+      </div>}
       <div className="db-overview-toolbar analytics-toolbar">
         <div className="db-month-selector">
           <label className="db-month-label">Месяц</label>

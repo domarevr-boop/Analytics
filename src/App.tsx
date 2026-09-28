@@ -8,6 +8,7 @@ import { fetchV5Access, getV5Capabilities, type V5Access } from './auth/v5Access
 import { isV5MarketBackendEnabled } from './features/market/marketData';
 import { isV5FunnelBackendEnabled } from './features/funnel/funnelData';
 import { isV5ProfitabilityBackendEnabled } from './features/profitability/profitabilityData';
+import { isV5DirectoryBackendEnabled } from './features/directory/directoryData';
 import { adminMe } from './admin/adminApi';
 import { initStore, subscribe, getVersion } from './data/store';
 import NavBar from './components/NavBar';
@@ -20,6 +21,7 @@ import { PanelHeader } from './components/AnalyticsPrimitives';
 import PlanningPage from './components/PlanningPage';
 import ImportPage from './components/ImportPage';
 import DictionaryPage from './components/DictionaryPage';
+import DirectoryServerPage from './pages/analytics/DirectoryServerPage';
 import ProfitabilityPage from './components/ProfitabilityPage';
 import AuthPage from './components/AuthPage';
 import AdminPage from './components/AdminPage';
@@ -446,7 +448,7 @@ function App() {
       ) : displayPage === 'dev' ? (
         <DevPage />
       ) : (
-        <DictionaryPage />
+        isV5DirectoryBackendEnabled ? <DirectoryServerPage /> : <DictionaryPage />
       )}
     </div>
   );

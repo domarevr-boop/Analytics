@@ -505,6 +505,16 @@ test('directory frontend adapter is V5-only and stays behind an explicit release
   assert.match(exampleEnv, /VITE_V5_DIRECTORY_BACKEND_ENABLED=false/iu);
 });
 
+test('V5 staging routes the dictionary to a read-only server page', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/pages/analytics/DirectoryServerPage.tsx', import.meta.url), 'utf8');
+  const build = readFileSync(new URL('./build-v5.mjs', import.meta.url), 'utf8');
+  assert.match(app, /isV5DirectoryBackendEnabled \? <DirectoryServerPage \/> : <DictionaryPage \/>/u);
+  assert.match(build, /VITE_V5_DIRECTORY_BACKEND_ENABLED: 'true'/u);
+  assert.match(page, /loadV5DirectoryPage/u);
+  assert.doesNotMatch(page, /data\/store|addProduct|updateProduct/u);
+});
+
 test('competitor storage versions all four sheets as one replaceable batch', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260908011000_v5_competitors_storage.sql', import.meta.url), 'utf8');
   for (const table of ['competitor_funnel_versions', 'competitor_search_versions', 'competitor_stock_versions', 'competitor_position_versions']) {

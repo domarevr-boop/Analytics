@@ -20,7 +20,7 @@ const run = (args) => {
       VITE_V5_PROFITABILITY_IMPORT_ENABLED: 'true',
       VITE_V5_SEARCH_QUERIES_IMPORT_ENABLED: 'true',
       VITE_V5_SEARCH_QUERIES_BACKEND_ENABLED: 'true',
-      VITE_V5_DIRECTORY_BACKEND_ENABLED: 'false',
+      VITE_V5_DIRECTORY_BACKEND_ENABLED: 'true',
       VITE_V5_DIRECTORY_BOOTSTRAP_ENABLED: 'false',
     },
     stdio: 'inherit',

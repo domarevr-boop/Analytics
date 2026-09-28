@@ -794,6 +794,7 @@
 .registry-design-page .registry-table tbody tr:hover td { background: #f8fafd; }
 .registry-design-page .registry-table td:last-child { text-align: center; }
 .registry-design-page .registry-table-wrap > .ds-empty { min-height: 220px; border: 0; border-radius: 0; box-shadow: none; }
+.registry-design-page .v5-directory-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 10px 15px; border-top: 1px solid var(--ds-color-border-soft); color: var(--ds-color-muted); font-size: 11px; }
 
 .registry-design-page .registry-editor {
   border-left-color: var(--ds-color-border);

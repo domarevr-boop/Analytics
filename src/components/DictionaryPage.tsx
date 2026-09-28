@@ -114,6 +114,7 @@ function ProductEditor({ product, onClose, asOfDate }: { product: Product; onClo
 }
 
 export default function DictionaryPage() {
+  const isV5 = import.meta.env.VITE_APP_ENV === 'v5-development';
   const version = useSyncExternalStore(subscribe, getVersion);
   const products = useMemo(() => { void version; return getProducts(); }, [version]);
   const brands = useMemo(() => { void version; return getBrands(); }, [version]);
@@ -166,7 +167,8 @@ export default function DictionaryPage() {
 
   return (
     <div className="registry-page analytics-page-shell ds-page registry-design-page">
-      <AnalyticsPageHeader eyebrow="Справочник" title="Справочник товаров" description="Постоянная карточка товара и фактический состав склеек на выбранную дату." actions={<button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>} />
+      <AnalyticsPageHeader eyebrow="Справочник" title="Справочник товаров" description="Постоянная карточка товара и фактический состав склеек на выбранную дату." actions={!isV5 && <button className="dict-btn dict-btn-primary" onClick={createProduct}>+ Добавить товар</button>} />
+      {isV5 && <div className="v5-local-source-notice" role="status">Справочник здесь показывает локальный снимок, который не связан с серверными импортами V5. Редактирование отключено, чтобы изменения не потерялись и не создавали ложного впечатления обновления серверных товаров.</div>}
       <section className="registry-stats" aria-label="Фильтр по качеству карточек">
         <button type="button" aria-pressed={quality === 'all'} onClick={() => setQuality('all')} className={quality === 'all' ? 'active' : ''}><span>Всего</span><strong>{stats.all}</strong></button>
         <button type="button" aria-pressed={quality === 'complete'} onClick={() => setQuality('complete')} className={quality === 'complete' ? 'active' : ''}><span>Полные карточки</span><strong>{stats.complete}</strong></button>
@@ -188,7 +190,7 @@ export default function DictionaryPage() {
               {visibleProducts.map(product => {
                 const complete = isComplete(product);
                 return (
-              <tr key={product.id} onClick={() => setSelectedId(product.id)}>
+              <tr key={product.id} onClick={isV5 ? undefined : () => setSelectedId(product.id)}>
                     <td><div className="registry-product-cell"><ProductThumb product={product} /><div><strong>{product.name || product.sku}</strong><span>{product.aliases?.length ? `Алиасов: ${product.aliases.length}` : 'Без алиасов'}</span></div></div></td>
                     <td><strong>{product.sku}</strong></td>
                     <td>{product.wb_sku || <span className="registry-missing">Не указан</span>}</td>
@@ -205,7 +207,7 @@ export default function DictionaryPage() {
           {!visibleProducts.length && <EmptyState title="Товары не найдены" description="Измените поиск, кабинет, дату состава или фильтр качества карточек." />}
         </div>
       </AnalyticsPanel>
-      {selectedProduct && <ProductEditor key={`${selectedProduct.id}:${asOfDate}`} product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
+      {!isV5 && selectedProduct && <ProductEditor key={`${selectedProduct.id}:${asOfDate}`} product={selectedProduct} asOfDate={asOfDate} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }
