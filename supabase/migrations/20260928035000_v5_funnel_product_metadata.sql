@@ -79,6 +79,7 @@ $$;
 
 revoke all on function core.enrich_funnel_product_metadata() from public, anon, authenticated;
 
+drop trigger if exists v5_funnel_product_metadata_after_publish on ingest.import_batches;
 create trigger v5_funnel_product_metadata_after_publish
 after update of status on ingest.import_batches
 for each row

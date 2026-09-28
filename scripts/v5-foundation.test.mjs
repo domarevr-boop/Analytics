@@ -211,6 +211,7 @@ test('published funnel metadata enriches only import-created directory placehold
   const smoke = readFileSync(new URL('../supabase/tests/funnel_product_metadata_smoke.sql', import.meta.url), 'utf8');
   assert.match(parser, /product_name: \['название'/u);
   assert.match(migration, /after update of status on ingest\.import_batches/iu);
+  assert.match(migration, /drop trigger if exists v5_funnel_product_metadata_after_publish/iu);
   assert.match(migration, /product\.data_source = 'import'/iu);
   assert.match(migration, /coalesce\(product\.category_id, category\.id\)/iu);
   assert.match(migration, /coalesce\(product\.brand_id, brand\.id\)/iu);
