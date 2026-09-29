@@ -73,6 +73,8 @@ test('entry-points publication resolves distinct product identities before a set
   assert.match(migration, /select distinct on \(source_seller_sku, source_wb_sku\)/iu);
   assert.match(migration, /v_product_map := v_product_map \|\| jsonb_build_object/iu);
   assert.match(migration, /with resolved_rows as materialized/iu);
+  assert.match(migration, /jsonb_build_array\(source_seller_sku, source_wb_sku\)::text/iu);
+  assert.doesNotMatch(migration, /chr\(0\)/iu);
   assert.match(migration, /update ingest\.import_rows row_data\s+set payload = enriched\.payload/iu);
   assert.match(migration, /set statement_timeout = '180s'/iu);
   assert.doesNotMatch(migration, /for v_row in\s+select row_data\.sheet_name, row_data\.row_number, row_data\.payload/iu);

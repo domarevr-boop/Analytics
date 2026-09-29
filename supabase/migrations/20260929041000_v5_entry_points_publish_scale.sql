@@ -161,7 +161,7 @@ begin
       source_wb_sku,
       effective_date,
       encode(extensions.digest(
-        coalesce(source_seller_sku, '') || chr(0) || coalesce(source_wb_sku, ''),
+        jsonb_build_array(source_seller_sku, source_wb_sku)::text,
         'sha256'
       ), 'hex') as identity_key
     from (
@@ -201,7 +201,7 @@ begin
       row_data.row_number,
       row_data.payload,
       v_product_map -> encode(extensions.digest(
-        coalesce(row_data.payload ->> 'seller_sku', '') || chr(0) || coalesce(row_data.payload ->> 'wb_sku', ''),
+        jsonb_build_array(row_data.payload ->> 'seller_sku', row_data.payload ->> 'wb_sku')::text,
         'sha256'
       ), 'hex') as resolved_product
     from ingest.import_rows row_data
