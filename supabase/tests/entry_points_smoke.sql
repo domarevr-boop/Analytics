@@ -106,6 +106,14 @@ begin
     select 1 from analytics.entry_point_versions row_data
     where row_data.batch_id = v_batch_id and row_data.entry_point = 'Без уточнения'
   ) then raise exception 'Blank entry point was not normalized'; end if;
+  if (select count(distinct (row_data.payload ->> 'product_id')::uuid)
+      from ingest.import_rows row_data where row_data.batch_id = v_batch_id) <> 1
+  then raise exception 'Repeated raw entry-point identities were not mapped to one product'; end if;
+  if exists (
+    select 1 from ingest.import_rows row_data
+    where row_data.batch_id = v_batch_id
+      and (row_data.payload ->> 'product_id') is null
+  ) then raise exception 'Set-based entry-point product mapping left unresolved rows'; end if;
 end
 $$;
 
@@ -198,6 +206,7 @@ select jsonb_build_object(
   'file_idempotency_verified', true,
   'private_source_required', true,
   'import_driven_product_resolution', true,
+  'set_based_product_mapping', true,
   'last_duplicate_wins', true,
   'aggregate_conversions_preserved', true,
   'bounded_read_api_verified', true,

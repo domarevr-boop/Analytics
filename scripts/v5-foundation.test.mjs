@@ -53,6 +53,7 @@ test('active V5 migration chain is isolated from the V4 and CX history', () => {
     '20260923034000_v5_single_full_access_user.sql',
     '20260928035000_v5_funnel_product_metadata.sql',
     '20260928040000_v5_entry_points_staging_scale.sql',
+    '20260929041000_v5_entry_points_publish_scale.sql',
   ]);
   assert.equal(legacy.length, 21);
   assert.ok(legacy.some(name => name.includes('client_experience')));
@@ -65,6 +66,16 @@ test('entry-points staging counts only new row keys and keeps repeated chunks id
   assert.match(migration, /input_rows = input_rows \+ v_new_rows/iu);
   assert.doesNotMatch(migration, /select count\(\*\)::integer into v_total_rows from ingest\.import_rows/iu);
   assert.match(smoke, /staging retry inflated the row counter/iu);
+});
+
+test('entry-points publication resolves distinct product identities before a set-based row update', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20260929041000_v5_entry_points_publish_scale.sql', import.meta.url), 'utf8');
+  assert.match(migration, /select distinct on \(source_seller_sku, source_wb_sku\)/iu);
+  assert.match(migration, /v_product_map := v_product_map \|\| jsonb_build_object/iu);
+  assert.match(migration, /with resolved_rows as materialized/iu);
+  assert.match(migration, /update ingest\.import_rows row_data\s+set payload = enriched\.payload/iu);
+  assert.match(migration, /set statement_timeout = '180s'/iu);
+  assert.doesNotMatch(migration, /for v_row in\s+select row_data\.sheet_name, row_data\.row_number, row_data\.payload/iu);
 });
 
 test('geography location RPC accepts and applies the frontend city filter', () => {
